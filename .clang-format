@@ -1,0 +1,13 @@
+BasedOnStyle: WebKit
+ColumnLimit: 100
+IndentWidth: 4
+AccessModifierOffset: -4
+NamespaceIndentation: None
+BreakBeforeBraces: Custom
+BraceWrapping:
+  AfterClass: true
+  AfterFunction: true
+  AfterStruct: true
+AllowShortFunctionsOnASingleLine: Inline
+PointerAlignment: Right
+SortIncludes: true

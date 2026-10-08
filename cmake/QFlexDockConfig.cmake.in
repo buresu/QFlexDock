@@ -1,0 +1,25 @@
+@PACKAGE_INIT@
+
+include(CMakeFindDependencyMacro)
+find_dependency(Qt6 @QFLEXDOCK_QT_MIN_VERSION@ COMPONENTS Core Gui Widgets)
+
+include("${CMAKE_CURRENT_LIST_DIR}/QFlexDockTargets.cmake")
+
+# Optional component: Quick (QFlexDock::Quick). Loaded when it was built and
+# either requested explicitly or Qt Quick is available anyway.
+set(QFlexDock_Quick_FOUND FALSE)
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/QFlexDockQuickTargets.cmake")
+    if("Quick" IN_LIST QFlexDock_FIND_COMPONENTS)
+        find_dependency(Qt6 @QFLEXDOCK_QT_MIN_VERSION@ COMPONENTS Quick QuickWidgets)
+        include("${CMAKE_CURRENT_LIST_DIR}/QFlexDockQuickTargets.cmake")
+        set(QFlexDock_Quick_FOUND TRUE)
+    else()
+        find_package(Qt6 @QFLEXDOCK_QT_MIN_VERSION@ QUIET COMPONENTS Quick QuickWidgets)
+        if(Qt6Quick_FOUND AND Qt6QuickWidgets_FOUND)
+            include("${CMAKE_CURRENT_LIST_DIR}/QFlexDockQuickTargets.cmake")
+            set(QFlexDock_Quick_FOUND TRUE)
+        endif()
+    endif()
+endif()
+
+check_required_components(QFlexDock)

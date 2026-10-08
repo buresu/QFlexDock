@@ -1,0 +1,10 @@
+/build*/
+# The original specification is kept out of the repository.
+/QFlexDock_SPEC.md
+/out/
+/install/
+CMakeUserPresets.json
+compile_commands.json
+*.user
+.vscode/
+.idea/

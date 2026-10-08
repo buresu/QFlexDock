@@ -1,0 +1,125 @@
+# Architecture
+
+> **The docking state of the whole application is one value, `LayoutState`, and only
+> `DockManagerPrivate::apply()` may replace it. The widgets merely show that value.**
+
+```
+  API / drop / menu ─▶ edit a copy of LayoutState ─▶ reconcile ─▶ normalize ─▶ validate
+                              │ failure: nothing changed, a DockResult is returned
+                              ▼ success
+                       swap the state ─▶ syncViews() ─▶ signals
+                              ▼
+   DockWorkspace / DockFloatingWindow ─ DockAreaWidget ─ DockTabGroup / DockSplitHandle / DockDropOverlay
+```
+
+| Layer | Main parts | Needs widgets |
+|---|---|---|
+| Model | `LayoutNode`, `LayoutTree`, `LayoutState` | No |
+| Geometry | `LayoutSolver`, `SplitterCoordinator`, `DropZoneLayout` | No |
+| Controller | `DockManager`, `DockPanel`, `DockDragController` | Yes |
+| View | `DockWorkspace`, `DockAreaWidget`, `DockTabGroup`, `DockTabBar`, `DockSplitHandle`, `DockFloatingWindow`, `DockDropOverlay`, `DockAutoHide*` | Yes |
+| Persistence | `LayoutSerializer`, `LayoutMigration` | No |
+| Optional | `QFlexDock::Quick`, `NativeWindowAdapter` | Yes |
+
+## Layout model
+
+A `LayoutTree` is the layout of one container (a workspace or a floating window). It has two kinds of node:
+**tabs** (panel ids and the active one) and **splits** (an orientation and two or more children — the tree
+is n-ary). Each node has a `weight`, its share among its siblings. Nodes hold no `QWidget*`, so trees are
+plain values that can be copied, edited and thrown away. `NodeId`s are unique within the process, tie a tab
+node to its widget across changes, and are not saved.
+
+Every mutating function leaves the tree in normal form, or unchanged if it fails:
+
+- no empty tab group, no split with fewer than two children;
+- no split directly inside a split of the same orientation;
+- sibling weights are positive and sum to 1;
+- a tab group's active panel is one of its panels;
+- node ids are unique, and a panel id appears once;
+- depth is at most `LayoutTree::MaxDepth` (128).
+
+`LayoutState` adds: a panel is in **one place across all containers** (a tree or an auto-hide bar), floating
+containers are not empty, a maximized panel is in its container. It also remembers, for every panel that is
+not placed (closed, floated, auto-hidden, unregistered, or not yet registered), where it goes back to: its
+former tab neighbours, else the node it was next to, else its floating window, else a default workspace.
+
+## Applying a change
+
+Everything goes through `apply(next, recordUndo)`:
+
+1. **reconcile** — drop containers of workspaces that are gone (their panels are remembered as closed), add
+   the ones that are missing, take unregistered panels out of the trees.
+2. **normalize, validate** — if this fails, nothing has happened.
+3. Emit `layoutAboutToChange()` and `panelAboutToMove()`.
+4. Push the old state for undo, swap, and bring the widgets in line with `syncViews()`.
+5. Emit `panelMoved()`, `layoutChanged()`, …
+
+Between 3 and 4 the manager is busy and refuses changes (`DockError::Busy`), so what the outside sees is
+always the state before or the state after. Undo, redo, presets, reset and JSON restore all hand a stored
+`LayoutState` to `apply()`; reconcile deals with whatever has disappeared since.
+
+`syncViews()` matches tab nodes to tab group widgets by `NodeId` and leaves unchanged groups alone. All dock
+areas are synced first, and only then is content that is shown nowhere moved to a hidden parking widget, so
+a move between groups — even between windows — is a single reparent. That matters for content with a
+native surface. Tab groups that are no longer needed are deleted with `deleteLater()`, since one of them
+may be where the user's action came from.
+
+## Geometry
+
+`DockAreaWidget` has a `QLayout` subclass so that the tree's minimum size reaches the window; the actual
+arithmetic is in `LayoutSolver`. It hands out pixels by weight, pins children that hit their minimum or
+maximum, and redistributes the rest. Rounding gives back one pixel at a time by largest remainder, so no
+pixel is gained or lost.
+
+**Linked splitters.** Two handles move together when they have the same orientation, belong to different
+splits, lie on one line (their positions differ by less than a handle width) and are contiguous along it
+(the gap is at most one handle width, i.e. a crossing handle). The relation is transitive. Aligned handles
+with a panel between them are not linked. A drag is always computed from the layout at its start, so
+rounding does not accumulate, and the range is the intersection of what every handle in the run allows.
+Alt moves a single handle. One drag is one undo step.
+
+**Corners.** Where a vertical and a horizontal boundary meet (always a T or a cross), a `DockSplitCorner`
+sits on top and drags both: the run through the corner along x and the one along y, computed separately,
+since they change different splits and neither axis limits the other.
+
+**Grab margins.** A handle follows the style's `PM_SplitterWidth`, which may be a single pixel — too thin to
+aim at, and not hit-tested at all by Qt 6.12. Handles are therefore at least 7px wide to the mouse, with the
+extra margin masked out of painting.
+
+## Drag and drop
+
+1. Dragging a tab (or the empty part of a tab bar, for the whole group) creates a `DragSession` and starts a
+   `QDrag` whose `QMimeData` carries only a random token.
+2. Dock areas check that the token belongs to **the session in progress**. Mime data that merely names a
+   panel id, or a token from a finished session, moves nothing.
+3. `DockAreaWidget::candidateAt()` turns the pointer position into a `DropCandidate` for the overlay.
+   Nothing changes yet.
+4. A drop only registers its target. **After `QDrag::exec()` has returned**, the policies are checked again
+   and the change is committed as one transaction.
+
+Priority at a position: the band along the border (docking against the whole workspace), then tabs
+(insertion and reordering — only over the tabs themselves), then the five zones of the panel. The five zones
+are a center rectangle and four trapezoids that together cover the target, so there is no small icon to aim
+for. Over the dragged group itself the center zone means "leave it here" and changes nothing.
+
+Only the coordinates of Qt's drag events are used, never global positions or `QApplication::widgetAt()`.
+
+On Wayland a drag can carry a window ([platform-notes.md](platform-notes.md)). A tab drag carries a ghost
+rather than really detaching the panel, which keeps "nothing changes during a drag" true; a ghost that
+nobody took is adopted as the view of a new floating container. What happens after a drag is all in
+`DockDragController::finish()`, which tests drive without a real drag.
+
+## Choices worth knowing
+
+- **Content widgets belong to the manager**, as with `QTabWidget::addTab()`. Destroying a workspace parks
+  its content instead of destroying it.
+- **Closing a floating window** closes its panels and remembers the window, so showing a panel again brings
+  the same arrangement back. If one of its panels is not closable, the window does not close.
+- **Policies restrict user actions only**, so the application can always build the layout it wants.
+- **Native windows are hidden during a dock drag** because they would cover the drop guide. A separate
+  translucent top-level window for the guide was rejected: its position and stacking cannot be guaranteed on Wayland.
+- **Floating windows use the native frame by default**: moving, resizing and snapping then work as the
+  window system intends, with the least custom code to get wrong.
+- **The window-carrying drag relies on an undocumented Qt behaviour.** It is the one exception to "public
+  Qt API only", accepted because everything falls back cleanly when it is absent.
+- **A handle does not push further neighbours** when the one next to it reaches its minimum size.

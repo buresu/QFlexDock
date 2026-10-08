@@ -1,0 +1,84 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: ${{ matrix.os }} / Qt ${{ matrix.qt }} / ${{ matrix.shared && 'shared' || 'static' }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+        qt: ['6.8.*', '6.10.*']
+        shared: [false]
+        include:
+          - os: ubuntu-24.04
+            qt: '6.8.*'
+            shared: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ matrix.qt }}
+          cache: true
+
+      - name: Install Linux packages
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build xvfb libgl1-mesa-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-keysyms1 libxcb-shape0
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DBUILD_SHARED_LIBS=${{ matrix.shared && 'ON' || 'OFF' }}
+          -DQFLEXDOCK_WARNINGS_AS_ERRORS=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test (offscreen)
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Test (X11 via Xvfb)
+        if: runner.os == 'Linux'
+        run: |
+          cmake -S . -B build -DQFLEXDOCK_TEST_PLATFORM=xcb
+          xvfb-run -a ctest --test-dir build -C Release --output-on-failure
+
+      # Real Wayland platform plugin inside a private headless compositor.
+      # (This step has only ever been run locally with kwin_wayland; the
+      # weston path used here is untested.)
+      - name: Test (Wayland, headless)
+        if: runner.os == 'Linux' && !matrix.shared
+        run: |
+          sudo apt-get install -y weston dbus
+          cmake -S . -B build -DQFLEXDOCK_TEST_PLATFORM=
+          tests/run-on-wayland.sh build -C Release
+
+      - name: Install and build the find_package consumer
+        run: |
+          cmake --install build --config Release --prefix "${{ github.workspace }}/prefix"
+          cmake -S tests/consumer -B build-consumer -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH="${{ github.workspace }}/prefix"
+          cmake --build build-consumer --config Release
+
+  sanitizers:
+    name: ASan + UBSan (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libgl1-mesa-dev
+      - run: cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Debug -DQFLEXDOCK_SANITIZERS=address,undefined
+      - run: cmake --build build
+      - run: ctest --test-dir build --output-on-failure
+        env:
+          ASAN_OPTIONS: detect_leaks=0
