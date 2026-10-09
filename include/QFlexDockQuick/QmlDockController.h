@@ -68,6 +68,9 @@ public:
 
     Q_INVOKABLE bool showPanel(const QString &id);
     Q_INVOKABLE bool hidePanel(const QString &id);
+    /// Several panels as one change, e.g. an area that is put away.
+    Q_INVOKABLE bool showPanels(const QStringList &ids);
+    Q_INVOKABLE bool hidePanels(const QStringList &ids);
     Q_INVOKABLE bool togglePanel(const QString &id);
     Q_INVOKABLE bool activatePanel(const QString &id);
     /// Docks `id` relative to the tab group `relativeTo` is in.

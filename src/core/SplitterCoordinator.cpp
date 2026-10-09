@@ -79,10 +79,19 @@ std::vector<int> SplitterCoordinator::linkedHandles(const SolvedLayout &layout, 
 
 std::vector<SplitterCoordinator::Corner> SplitterCoordinator::corners(const SolvedLayout &layout)
 {
+    std::vector<Bar> bars;
+    bars.reserve(layout.handles.size());
+    for (const SolvedHandle &handle : layout.handles)
+        bars.push_back(Bar{handle.rect, handle.orientation, 0});
+    return corners(bars);
+}
+
+std::vector<SplitterCoordinator::Corner> SplitterCoordinator::corners(const std::vector<Bar> &bars)
+{
     std::vector<int> upright; // vertical bars: handles that move along x
     std::vector<int> level;
-    for (int i = 0; i < int(layout.handles.size()); ++i)
-        (layout.handles[size_t(i)].orientation == Qt::Horizontal ? upright : level).push_back(i);
+    for (int i = 0; i < int(bars.size()); ++i)
+        (bars[size_t(i)].orientation == Qt::Horizontal ? upright : level).push_back(i);
 
     const auto add = [](std::vector<int> &list, int value) {
         if (std::find(list.begin(), list.end(), value) == list.end())
@@ -91,14 +100,18 @@ std::vector<SplitterCoordinator::Corner> SplitterCoordinator::corners(const Solv
 
     std::vector<Corner> result;
     for (int u : upright) {
-        const QRect a = layout.handles[size_t(u)].rect;
+        const QRect a = bars[size_t(u)].rect;
+        const int reachA = bars[size_t(u)].reach;
         for (int l : level) {
-            const QRect b = layout.handles[size_t(l)].rect;
+            const QRect b = bars[size_t(l)].rect;
+            const int reachB = bars[size_t(l)].reach;
             // Where the two lines cross. The bars meet there if each of them
             // reaches that patch (covers or touches it) and one runs through.
             const QRect patch(a.x(), b.y(), a.width(), b.height());
-            const bool uprightReaches = a.top() <= patch.bottom() + 1 && a.bottom() + 1 >= patch.top();
-            const bool levelReaches = b.left() <= patch.right() + 1 && b.right() + 1 >= patch.left();
+            const bool uprightReaches = a.top() <= patch.bottom() + 1 + reachA
+                && a.bottom() + 1 + reachA >= patch.top();
+            const bool levelReaches = b.left() <= patch.right() + 1 + reachB
+                && b.right() + 1 + reachB >= patch.left();
             if (!uprightReaches || !levelReaches || !(a.intersects(patch) || b.intersects(patch)))
                 continue;
 
@@ -114,6 +127,37 @@ std::vector<SplitterCoordinator::Corner> SplitterCoordinator::corners(const Solv
             add(existing->columns, u);
             add(existing->rows, l);
         }
+    }
+    return result;
+}
+
+std::vector<SplitterCoordinator::Squeezed>
+SplitterCoordinator::squeezed(const LayoutTree &tree, const SolvedLayout &layout,
+                              const std::vector<int> &group, int delta,
+                              const std::function<bool(const LayoutNode &)> &mayGo)
+{
+    std::vector<Squeezed> result;
+    if (delta == 0 || !mayGo)
+        return result;
+    for (int index : group) {
+        if (index < 0 || index >= int(layout.handles.size()))
+            continue;
+        const SolvedHandle &handle = layout.handles[size_t(index)];
+        const LayoutNode *split = tree.findNode(handle.split);
+        if (!split || handle.index + 1 >= int(split->children.size()))
+            continue;
+        const LayoutNode &before = split->children[size_t(handle.index)];
+        const LayoutNode &after = split->children[size_t(handle.index) + 1];
+        // Moving by +d shrinks `after`, by -d `before`.
+        const LayoutNode &shrinking = delta > 0 ? after : before;
+        const LayoutNode &growing = delta > 0 ? before : after;
+        if (!shrinking.isTabs() || !mayGo(shrinking))
+            continue;
+        const Qt::Orientation o = handle.orientation;
+        const int left = extentAlong(layout.rects.value(shrinking.id), o) - std::abs(delta);
+        const int minimum = limitAlong(layout.limits.value(shrinking.id).min, o);
+        if (2 * left < minimum || left < 0)
+            result.push_back(Squeezed{shrinking.id, growing.id});
     }
     return result;
 }

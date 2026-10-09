@@ -62,11 +62,18 @@ Registering does not show a panel.
 | `floatPanel(id, geometry)`, `floatTabGroup(anyPanel, geometry)` | Into a new floating window |
 | `dockPanel(id)` | From floating or auto-hide back to where it was docked last |
 | `showPanel(id)`, `hidePanel(id)`, `togglePanel(id)` | Reopen a closed panel in its old place / close it (it stays registered) |
+| `showPanels(ids)`, `hidePanels(ids)` | The same for several panels as one change and one undo step |
 | `activatePanel(id)`, `activePanel()` | Bring the tab to the front, raise the window, give focus |
 | `maximizePanel(id)`, `restoreMaximizedPanel()` | Let the tab group fill its container; the layout tree is not changed |
 | `setPanelAutoHide(id, on, edge)` | Collapse into an auto-hide bar / pin back |
 
 `fraction` is the share the new side takes: 0.25 by default against a workspace, 0.5 when splitting a group.
+
+A panel that is closed leaves its room to the neighbour it was split off from; nothing else changes size.
+`showPanel()` puts it back at the size it had. Side areas that can be put away are just that:
+`hidePanels()` on what is in them, `showPanels()` to bring them back, in any order. Panels closed together
+return in their old tab order, with the same tab in front. With `DockPanel::setCollapsible(true)` the user
+can put them away as well, by pushing a split handle against them, and pull them out again.
 
 **Policies** — `setDockPolicy(id, policy)`, `setDropFilter(filter)` (called for every drop; return `false` to refuse).
 
@@ -96,7 +103,8 @@ floating window are none.
 | `Tabs` (default) | The tabs, always. Drag a tab to move a panel, the empty part of the bar to move the group |
 | `TitleBar` | A title bar naming the current panel; drag it to move that panel, double click to float it or dock it again. Tabs appear below the content once a group holds more than one panel |
 
-Which buttons the header has is a theme token (`DockTheme::titleButtons`).
+Which built-in buttons the header has is a theme token (`DockTheme::titleButtons`); a panel adds its own
+with `DockPanel::setTitleActions()`.
 
 **Signals** — `layoutAboutToChange()` / `layoutChanged()`, `panelAboutToMove()` / `panelMoved()`,
 `panelOpenChanged()`, `panelWindowChanged()`, `activePanelChanged()`, `panelRegistered()` /
@@ -117,6 +125,48 @@ QFlexDock::DockPanel *view = manager.registerPanel("view", viewWidget);
 view->setFeatures({});              // not movable, closable, floatable or tabbable
 view->setHeaderVisible(false);
 workspace->addPanel("view", QFlexDock::DockArea::Center);
+```
+
+**Collapsible.** `setCollapsible(true)` lets a split handle push the panel's tab group out of the way: once
+the drag would leave the group less than half of its minimum size, it is shown as gone, and it is back if the
+pointer returns. Let go there, its panels are closed (`panelOpenChanged()` tells), and `showPanel()` brings
+them back at the size the group had before the drag. Every panel of a group has to be collapsible for the
+group to go. The whole drag is one undo step.
+
+Closed collapsible panels, however they were closed, leave an edge to pull at: dragging inwards from the
+side they went to shows them again, as wide as the pointer is far from the edge. What comes out is what was
+closed together (one `hidePanels()` call, or one group pushed away), not a tab that was closed on its own
+before. There is no such edge where a split handle already runs.
+
+**Buttons of your own in the header.** `setTitleActions()` takes `QAction`s that are shown in the header of
+the panel's tab group while the panel is the current one there, before the built-in buttons. An action with a
+menu opens it, a separator becomes a line, and a `QWidgetAction` puts its widget there. The actions stay yours.
+
+```cpp
+auto *split = new QAction(splitIcon, "Split Right", panel);
+auto *filter = new QWidgetAction(panel);
+filter->setDefaultWidget(new QLineEdit);
+panel->setTitleActions({filter, split});
+```
+
+**A workspace inside a panel.** The content of a panel may hold another workspace: a place for documents in
+the middle of the tool panels. With `allowedWorkspaces`, each kind of panel stays in its own workspace, and a
+drag goes to the workspace that takes what is dragged. Split handles work across the two: where a boundary
+of the inner workspace ends on one of the outer workspace, the point can be dragged to move both.
+`examples/vscode-style` is built this way.
+
+```cpp
+auto *holder = new QWidget;
+auto *documents = manager.createWorkspace("documents", holder);   // lay it out in `holder`
+QFlexDock::DockPanel *center = manager.registerPanel("center", holder);
+center->setFeatures({});
+center->setHeaderVisible(false);
+tools->addPanel("center", QFlexDock::DockArea::Center);
+
+QFlexDock::DockPolicy policy;
+policy.allowedWorkspaces = {"documents"};
+manager.setDockPolicy("readme", policy);
+documents->addPanel("readme");
 ```
 
 Signals about the content's lifecycle, mainly for GPU and native-window content:
@@ -140,7 +190,7 @@ QFlexDock::QmlPanelAdapter::registerPanel(&manager, "qml", &engine, QUrl("qrc:/P
 ```
 
 `QmlDockController` mirrors `DockManager` and has no state of its own. From QML: `dock.showPanel(id)`,
-`hidePanel`, `togglePanel`, `activatePanel`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,
+`hidePanel`, `showPanels(ids)`, `hidePanels(ids)`, `togglePanel`, `activatePanel`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,
 `floatPanel`, `dockPanel`, `maximizePanel`, `restoreMaximizedPanel`, `setPanelAutoHide`, `undo`, `redo`,
 `resetLayout` (each returns `true` on success; `dock.lastError` has the reason otherwise), the properties
 `activePanel`, `panels`, `openPanels`, `maximizedPanel`, `canUndo`, `canRedo`, and `dock.panel(id)` for

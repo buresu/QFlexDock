@@ -49,7 +49,9 @@ function(qflexdock_configure_target target)
             target_compile_options(${target} PRIVATE -Werror)
         endif()
         if(QFLEXDOCK_SANITIZERS)
-            target_compile_options(${target} PRIVATE -fsanitize=${QFLEXDOCK_SANITIZERS} -fno-omit-frame-pointer)
+            # A report ends the program, so that a test that provokes one fails.
+            target_compile_options(${target} PRIVATE -fsanitize=${QFLEXDOCK_SANITIZERS}
+                                   -fno-sanitize-recover=all -fno-omit-frame-pointer)
             target_link_options(${target} PUBLIC -fsanitize=${QFLEXDOCK_SANITIZERS})
         endif()
     endif()

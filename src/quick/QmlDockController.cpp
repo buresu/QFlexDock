@@ -149,6 +149,16 @@ bool QmlDockController::hidePanel(const QString &id)
     QFLEXDOCK_FORWARD(hidePanel(id));
 }
 
+bool QmlDockController::showPanels(const QStringList &ids)
+{
+    QFLEXDOCK_FORWARD(showPanels(ids));
+}
+
+bool QmlDockController::hidePanels(const QStringList &ids)
+{
+    QFLEXDOCK_FORWARD(hidePanels(ids));
+}
+
 bool QmlDockController::togglePanel(const QString &id)
 {
     QFLEXDOCK_FORWARD(togglePanel(id));

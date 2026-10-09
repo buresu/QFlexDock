@@ -531,17 +531,37 @@ DockResult DockManagerPrivate::setMaximized(const PanelId &panel, bool maximized
 DockResult DockManagerPrivate::closePanels(const QStringList &ids)
 {
     LayoutState next = state;
-    bool any = false;
+    // Where each of them is, noted before any of them leaves: panels that go
+    // together remember each other, and the group as it was.
+    QStringList leaving;
+    QHash<PanelId, PanelMemory> memories;
     for (const PanelId &id : ids) {
         if (!panels.contains(id))
             return unknownPanel(id);
-        if (next.isPlaced(id)) {
-            if (DockResult r = next.detach(id, true); !r)
-                return r;
-            any = true;
+        if (next.isPlaced(id) && !leaving.contains(id)) {
+            leaving.append(id);
+            memories.insert(id, next.capture(id));
         }
     }
-    return any ? apply(std::move(next), true) : DockResult::success();
+    for (const PanelId &id : std::as_const(leaving)) {
+        if (DockResult r = next.detach(id, false); !r)
+            return r;
+    }
+    for (const PanelId &id : std::as_const(leaving))
+        next.memory.insert(id, memories.value(id));
+    return leaving.isEmpty() ? DockResult::success() : apply(std::move(next), true);
+}
+
+DockResult DockManagerPrivate::showPanels(const QStringList &ids)
+{
+    for (const PanelId &id : ids) {
+        if (!panels.contains(id))
+            return unknownPanel(id);
+    }
+    LayoutState next = state;
+    if (DockResult r = next.reattachAll(ids, defaultWorkspaceId()); !r)
+        return r;
+    return apply(std::move(next), true);
 }
 
 DockResult DockManagerPrivate::activate(const PanelId &id, bool focus)
@@ -602,11 +622,35 @@ QStringList DockManagerPrivate::groupPanels(const PanelId &panel) const
 
 // --- Drag and drop -----------------------------------------------------------
 
+bool DockManagerPrivate::containerAdmits(const DragSession &session, const QString &containerId) const
+{
+    const ContainerState *container = state.find(containerId);
+    if (!container)
+        return false;
+    const QString workspaceId = workspaceIdFor(containerId);
+    for (const PanelId &id : session.panels) {
+        const DockPanel *panel = panels.value(id);
+        if (!panel)
+            return false;
+        const DockPolicy policy = panel->policy();
+        if (!policy.features.testFlag(DockFeature::Movable))
+            return false;
+        if (!policy.allowedWorkspaces.isEmpty() && !policy.allowedWorkspaces.contains(workspaceId))
+            return false;
+        if (container->kind == ContainerKind::Floating
+            && !policy.features.testFlag(DockFeature::Floatable)
+            && session.sourceContainer != containerId) {
+            return false;
+        }
+    }
+    return true;
+}
+
 DockAreas DockManagerPrivate::allowedDropAreas(const DragSession &session, const QString &containerId,
                                                NodeId node) const
 {
     const ContainerState *container = state.find(containerId);
-    if (!container)
+    if (!container || !containerAdmits(session, containerId))
         return {};
     const LayoutNode *group = node.isNull() ? nullptr : container->tree.findNode(node);
     if (!node.isNull() && (!group || !group->isTabs()))
@@ -614,22 +658,9 @@ DockAreas DockManagerPrivate::allowedDropAreas(const DragSession &session, const
 
     // What the dragged panels' own policies permit.
     DockAreas areas = AllDockAreas;
-    const QString workspaceId = workspaceIdFor(containerId);
     bool draggedTabbable = true;
     for (const PanelId &id : session.panels) {
-        const DockPanel *panel = panels.value(id);
-        if (!panel)
-            return {};
-        const DockPolicy policy = panel->policy();
-        if (!policy.features.testFlag(DockFeature::Movable))
-            return {};
-        if (!policy.allowedWorkspaces.isEmpty() && !policy.allowedWorkspaces.contains(workspaceId))
-            return {};
-        if (container->kind == ContainerKind::Floating
-            && !policy.features.testFlag(DockFeature::Floatable)
-            && session.sourceContainer != containerId) {
-            return {};
-        }
+        const DockPolicy policy = panels.value(id)->policy();
         areas &= policy.allowedAreas;
         draggedTabbable = draggedTabbable && policy.features.testFlag(DockFeature::Tabbable);
     }
@@ -775,18 +806,125 @@ void DockManagerPrivate::setWeights(const QString &containerId,
         area->setLayoutState(*container);
 }
 
-void DockManagerPrivate::endResize(bool cancel)
+std::vector<ReopenEdge> DockManagerPrivate::reopenEdges(const QString &containerId) const
+{
+    std::vector<ReopenEdge> edges;
+    QSet<PanelId> taken;
+    for (const PanelId &id : panelOrder) {
+        const auto memory = state.memory.constFind(id);
+        if (memory == state.memory.constEnd() || taken.contains(id))
+            continue;
+        // The panels that went together with this one: each of them names
+        // all the others as the tabs it had beside it. A tab that was closed
+        // on its own before the rest is not among them.
+        QStringList together{id};
+        together += memory->tabSiblings;
+        const bool whole = std::all_of(together.cbegin(), together.cend(), [&](const PanelId &member) {
+            const DockPanel *panel = panels.value(member);
+            const auto m = state.memory.constFind(member);
+            if (!panel || !panel->isCollapsible() || m == state.memory.constEnd()
+                || state.isPlaced(member)) {
+                return false;
+            }
+            QStringList others = together;
+            others.removeAll(member);
+            return QSet<PanelId>(m->tabSiblings.cbegin(), m->tabSiblings.cend())
+                == QSet<PanelId>(others.cbegin(), others.cend());
+        });
+        if (!whole)
+            continue;
+        const std::optional<ReturnPlace> place = state.returnPlace(id);
+        if (!place || place->container != containerId)
+            continue;
+        // One per edge: the first to claim it.
+        const bool claimed = std::any_of(edges.cbegin(), edges.cend(), [&](const ReopenEdge &e) {
+            return e.anchor == place->anchor && e.side == place->side;
+        });
+        if (claimed)
+            continue;
+        edges.push_back({together, place->anchor, place->side});
+        for (const PanelId &member : std::as_const(together))
+            taken.insert(member);
+    }
+    return edges;
+}
+
+DockResult DockManagerPrivate::beginReopen(const QStringList &ids)
+{
+    LayoutState before = state;
+    LayoutState next = state;
+    if (DockResult r = next.reattachAll(ids, defaultWorkspaceId()); !r)
+        return r;
+    if (DockResult r = apply(std::move(next), false); !r)
+        return r;
+    reopenStart = std::move(before);
+    reopening = ids;
+    return DockResult::success();
+}
+
+void DockManagerPrivate::endResize(bool cancel, const std::vector<ResizeClose> &closing)
 {
     if (!resizeStart)
         return;
     LayoutState start = std::move(*resizeStart);
     resizeStart.reset();
-    if (cancel) {
-        (void)apply(std::move(start), false);
+    // A drag that began by pulling panels out of an edge goes back, when
+    // undone or given up, to before they were shown.
+    LayoutState origin = reopenStart ? std::move(*reopenStart) : start;
+    const QStringList pulledOut = std::exchange(reopening, {});
+    reopenStart.reset();
+    // Pulled out and pushed back in again: nothing has happened.
+    const bool pushedBack = std::any_of(closing.begin(), closing.end(), [&](const ResizeClose &c) {
+        const ContainerState *container = start.find(c.container);
+        const LayoutNode *group = container ? container->tree.findNode(c.node) : nullptr;
+        return group && std::any_of(group->panels.cbegin(), group->panels.cend(),
+                                    [&](const PanelId &id) { return pulledOut.contains(id); });
+    });
+    if (cancel || pushedBack) {
+        (void)apply(std::move(origin), false);
         return;
     }
-    pushUndo(std::move(start)); // one undo step for the whole drag
-    Q_EMIT q->layoutChanged();
+    if (closing.empty()) {
+        pushUndo(std::move(origin)); // one undo step for the whole drag
+        Q_EMIT q->layoutChanged();
+        return;
+    }
+
+    // The drag squeezed tab groups out: their panels are closed. What is
+    // remembered of each is where it was when the drag began, at the size it
+    // had then, beside the node that now has its room.
+    LayoutState next = state;
+    for (const ResizeClose &close : closing) {
+        ContainerState *container = next.find(close.container);
+        const ContainerState *before = start.find(close.container);
+        if (!container || !before)
+            continue;
+        const LayoutNode *group = before->tree.findNode(close.node);
+        const LayoutNode *heir = before->tree.findNode(close.heir);
+        const LayoutNode *split = before->tree.parentOf(close.node);
+        if (!group || !group->isTabs() || !heir || !split || !container->tree.findNode(close.node))
+            continue;
+        bool groupFirst = true;
+        for (const LayoutNode &child : split->children) {
+            if (child.id == close.node || child.id == close.heir) {
+                groupFirst = child.id == close.node;
+                break;
+            }
+        }
+        const QStringList neighbors = LayoutTree(*heir).panels();
+        for (const PanelId &panel : group->panels) {
+            PanelMemory memory = start.capture(panel);
+            memory.neighbors = neighbors;
+            if (split->orientation == Qt::Horizontal)
+                memory.neighborArea = groupFirst ? DockArea::Left : DockArea::Right;
+            else
+                memory.neighborArea = groupFirst ? DockArea::Top : DockArea::Bottom;
+            next.memory.insert(panel, memory);
+        }
+        (void)container->tree.takeNode(close.node, close.heir);
+    }
+    pushUndo(std::move(origin)); // still one undo step
+    (void)apply(std::move(next), false);
 }
 
 // --- Floating windows --------------------------------------------------------
@@ -1501,6 +1639,16 @@ DockResult DockManager::showPanel(const PanelId &id)
 DockResult DockManager::hidePanel(const PanelId &id)
 {
     return d->closePanels({id});
+}
+
+DockResult DockManager::showPanels(const QStringList &ids)
+{
+    return d->showPanels(ids);
+}
+
+DockResult DockManager::hidePanels(const QStringList &ids)
+{
+    return d->closePanels(ids);
 }
 
 DockResult DockManager::togglePanel(const PanelId &id)

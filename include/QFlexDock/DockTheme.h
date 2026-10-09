@@ -70,6 +70,11 @@ struct QFLEXDOCK_EXPORT DockTheme
 {
     /// Thickness of split handles; -1 uses the host style's PM_SplitterWidth.
     int splitHandleWidth = -1;
+    /// Thickness a split handle is drawn with while the pointer is on it or
+    /// it is dragged; -1 leaves it as thick as always. A larger value lets a
+    /// thin boundary light up wider than it is, over the edges of the tab
+    /// groups next to it.
+    int splitHandleHoverWidth = -1;
     /// Size of tab and button icons; -1 uses the host style's metrics.
     int iconSize = -1;
     /// Which buttons the header of a tab group shows.

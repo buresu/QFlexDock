@@ -99,13 +99,29 @@ bool normalizeNode(LayoutNode &node)
     node.panels.clear();
     node.active.clear();
 
-    std::vector<LayoutNode> kept;
-    kept.reserve(node.children.size());
+    // A child with nothing left in it leaves its share to the neighbour before
+    // it (after it, for the first one). The other children keep theirs, so
+    // putting the panel back beside that neighbour restores every size.
+    std::vector<LayoutNode> alive;
+    alive.reserve(node.children.size());
+    double orphaned = 0.0;
     for (auto &child : node.children) {
-        if (!normalizeNode(child))
+        const double weight = validWeight(child.weight) ? child.weight : 1.0;
+        if (!normalizeNode(child)) {
+            if (alive.empty())
+                orphaned += weight;
+            else
+                alive.back().weight += weight;
             continue;
-        if (!validWeight(child.weight))
-            child.weight = 1.0;
+        }
+        child.weight = weight + orphaned;
+        orphaned = 0.0;
+        alive.push_back(std::move(child));
+    }
+
+    std::vector<LayoutNode> kept;
+    kept.reserve(alive.size());
+    for (auto &child : alive) {
         if (child.isSplit() && child.orientation == node.orientation) {
             // Same direction as us: adopt the grandchildren, each keeping its
             // share of the space the child had.
@@ -409,7 +425,7 @@ DockResult LayoutTree::removePanel(const PanelId &panel)
     return DockResult::success();
 }
 
-std::optional<LayoutNode> LayoutTree::takeNode(NodeId id)
+std::optional<LayoutNode> LayoutTree::takeNode(NodeId id, NodeId heir)
 {
     if (!m_root)
         return std::nullopt;
@@ -420,8 +436,16 @@ std::optional<LayoutNode> LayoutTree::takeNode(NodeId id)
     } else if (LayoutNode *parent = findParentIn(*m_root, id)) {
         const auto it = std::find_if(parent->children.begin(), parent->children.end(),
                                      [id](const LayoutNode &c) { return c.id == id; });
+        // As when a panel is closed: its share goes to a neighbour.
+        const double weight = it->weight;
         taken = std::move(*it);
-        parent->children.erase(it);
+        const auto next = parent->children.erase(it);
+        const auto named = std::find_if(parent->children.begin(), parent->children.end(),
+                                        [heir](const LayoutNode &c) { return c.id == heir; });
+        if (named != parent->children.end())
+            named->weight += weight;
+        else if (!parent->children.empty())
+            (next == parent->children.begin() ? next : next - 1)->weight += weight;
         normalize();
     }
     if (taken)

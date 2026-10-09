@@ -139,6 +139,13 @@ What the tests cannot drive, to be tried with the examples:
   changes nothing; the empty part of a tab bar drags the whole group.
 - **Splitters**, `qflexdock-basic` — boundaries in a line highlight and move together, Alt moves one; the
   point where two boundaries meet shows the four-way cursor and moves both.
+- **Workspace inside a panel**, `qflexdock-vscode-style` — a document tab splits and re-tabs only within
+  the middle area, is dragged as a picture of the tab, and dropped anywhere else does nothing; a view tab
+  (Terminal, …) is offered the side bars, the panel and the edges around the documents, never a place among
+  them; the three buttons in the title bar and the activity bar put the areas away and bring them back at
+  their sizes; so does pushing the edge of an area far enough against it, and dragging inwards from the
+  edge it went to (also at the right edge of the window, for the secondary side bar); with the documents split, the
+  point where their boundary meets the panel's or a side bar's moves both.
 - **Style** — the Theme menu and the system's light/dark switch are followed at once.
 - **GPU**, `qflexdock-gpu-panel` — rendering continues through tabbing, splitting, floating and moving to the
   other window; the native-window panel hides during a drag.

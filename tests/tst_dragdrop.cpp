@@ -11,6 +11,7 @@
 #include <QtCore/QRandomGenerator>
 #include <QtGui/QDragEnterEvent>
 #include <QtTest/QSignalSpy>
+#include <QtWidgets/QBoxLayout>
 
 using namespace QFlexDock;
 using namespace TestUtils;
@@ -547,6 +548,91 @@ private Q_SLOTS:
         c->setFeatures(without(DockFeature::Movable));
         QVERIFY(f.manager.movePanel(p("c"), f.b, DockArea::Left));
         QCOMPARE(describe(f.b), p("H(c, d)"));
+    }
+
+    // A workspace as the content of a panel of another one: the place for
+    // documents in the middle of the tool panels. Each kind of panel is
+    // allowed in its own workspace, and a drag goes to the area that takes it.
+    void workspaceInsideAPanelTakesOnlyWhatIsAllowedInIt()
+    {
+        DockManager manager;
+        QMainWindow window;
+        DockWorkspace *outer = manager.createWorkspace(p("tools"));
+        window.setCentralWidget(outer);
+        auto *holder = new QWidget;
+        auto *holderLayout = new QVBoxLayout(holder);
+        holderLayout->setContentsMargins(0, 0, 0, 0);
+        DockWorkspace *inner = manager.createWorkspace(p("documents"), holder);
+        holderLayout->addWidget(inner);
+
+        DockPanel *center = manager.registerPanel(p("center"), holder);
+        center->setFeatures({});
+        center->setHeaderVisible(false);
+        for (const char *id : {"tool", "doc1", "doc2"}) {
+            DockPanel *panel = manager.registerPanel(p(id), new QLabel(p(id)));
+            DockPolicy policy;
+            policy.allowedWorkspaces = {p(id).startsWith(QLatin1String("doc")) ? p("documents")
+                                                                              : p("tools")};
+            panel->setPolicy(policy);
+        }
+        QVERIFY(outer->addPanel(p("center")));
+        QVERIFY(outer->addPanel(p("tool"), DockArea::Left));
+        QVERIFY(inner->addPanel(p("doc1")));
+        QVERIFY(inner->addPanel(p("doc2")));
+        window.resize(1000, 700);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        DockAreaWidget *outerArea = areaOf(outer);
+        DockAreaWidget *innerArea = areaOf(inner);
+        QCOMPARE(innerArea->window(), &window);
+        QCOMPARE(describe(outer), p("H(tool, center)"));
+        QCOMPARE(describe(inner), p("doc1|doc2"));
+
+        // A document splits the inner workspace, and has no business outside.
+        {
+            Drag drag(manager);
+            QVERIFY(drag.begin("doc2"));
+            QVERIFY(!drag.enter(outerArea, zonePoint(outerArea, "tool", DockArea::Center)));
+            QVERIFY(!outerArea->overlay()->isVisible());
+            QVERIFY(drag.move(innerArea, zonePoint(innerArea, "doc1", DockArea::Right)));
+            QVERIFY(innerArea->overlay()->isVisible());
+            QVERIFY(drag.drop(innerArea, zonePoint(innerArea, "doc1", DockArea::Right)));
+        }
+        QCOMPARE(describe(inner), p("H(doc1, doc2)"));
+        QCOMPARE(describe(outer), p("H(tool, center)"));
+
+        // A tool over the documents: the inner area lets the drag pass, and
+        // the outer one treats the place as what it is to it, the panel in
+        // the middle. It can go beside that, never into it.
+        {
+            Drag drag(manager);
+            QVERIFY(drag.begin("tool"));
+            const QPoint top(innerArea->width() / 2, 60);
+            QVERIFY(drag.move(innerArea, top));
+            QVERIFY(!innerArea->overlay()->isVisible());
+            QVERIFY(outerArea->overlay()->isVisible());
+            const DropCandidate candidate =
+                outerArea->candidateAt(innerArea->mapTo(outerArea, top), drag.session());
+            QVERIFY(candidate.valid);
+            QCOMPARE(candidate.target.area, DockArea::Top);
+            QVERIFY(!candidate.zones.testFlag(DockArea::Center));
+            QVERIFY(drag.drop(innerArea, top));
+        }
+        QCOMPARE(describe(outer), p("V(tool, center)"));
+        QCOMPARE(describe(inner), p("H(doc1, doc2)"));
+        QVERIFY(manager.panel(p("doc1"))->widget()->isVisible());
+
+        // The panel a click lands in is the innermost one.
+        QTest::mouseClick(manager.panel(p("doc2"))->widget(), Qt::LeftButton);
+        QCOMPARE(manager.activePanel(), manager.panel(p("doc2")));
+
+        // The inner workspace goes with the panel holding it; what was in it
+        // is closed, and stays registered.
+        QVERIFY(manager.unregisterPanel(p("center")));
+        QVERIFY(!manager.workspace(p("documents")));
+        QVERIFY(manager.hasPanel(p("doc1")));
+        QVERIFY(!manager.panel(p("doc1"))->isOpen());
+        QCOMPARE(describe(outer), p("tool"));
     }
 
     void dropFilterCanVeto()

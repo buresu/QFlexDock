@@ -4,6 +4,7 @@
 #include "widgets/DockSplitHandle.h"
 
 #include <QtTest/QSignalSpy>
+#include <QtWidgets/QBoxLayout>
 
 using namespace QFlexDock;
 using namespace TestUtils;
@@ -179,6 +180,61 @@ private Q_SLOTS:
                      qPrintable(QStringLiteral("offset %1").arg(offset)));
     }
 
+    // A thin boundary may light up wider than it is while it is pointed at.
+    void hoveredHandleCanBeDrawnWider()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.splitHandleWidth = 1;
+        theme.splitHandleHoverWidth = 4;
+        f.manager.setTheme(theme);
+        f.windowA.setStyleSheet(QStringLiteral(
+            "QFlexDock--DockSplitHandle { background: #00ff00; }"
+            "QFlexDock--DockSplitHandle[hovered=\"true\"] { background: #ff0000; }"));
+        f.show();
+        makeGrid(f);
+        DockAreaWidget *area = areaOf(f.a);
+        DockSplitHandle *handle = handleAfter(area, "a", Qt::Horizontal);
+        QVERIFY(handle);
+        QCOMPARE(handle->barGeometry().width(), 1);
+        QCOMPARE(handle->drawnGeometry(), handle->barGeometry());
+        const QRect grabArea = handle->geometry();
+
+        const auto redColumns = [&] {
+            const QImage image = f.windowA.grab().toImage();
+            const QPoint bar = area->mapTo(&f.windowA, handle->barGeometry().center());
+            QList<int> offsets;
+            for (int offset = -4; offset <= 4; ++offset) {
+                if (image.pixelColor(bar + QPoint(offset, 0)) == QColor(0xff, 0, 0))
+                    offsets << offset;
+            }
+            return offsets;
+        };
+        QVERIFY(redColumns().isEmpty());
+
+        handle->setHovered(true);
+        QCOMPARE(handle->drawnGeometry().width(), 4);
+        QVERIFY(handle->drawnGeometry().contains(handle->barGeometry()));
+        QCOMPARE(handle->drawnGeometry().height(), handle->barGeometry().height());
+        QCOMPARE(redColumns(), (QList<int>{-1, 0, 1, 2}));
+        // Only what is drawn changes: the layout and the reach of the mouse stay.
+        QCOMPARE(handle->barGeometry().width(), 1);
+        QCOMPARE(handle->geometry(), grabArea);
+
+        handle->setHovered(false);
+        QCOMPARE(handle->drawnGeometry(), handle->barGeometry());
+        QVERIFY(redColumns().isEmpty());
+
+        // Without the token a hovered handle is as thick as always.
+        theme.splitHandleHoverWidth = -1;
+        f.manager.setTheme(theme);
+        QCoreApplication::processEvents();
+        handle = handleAfter(area, "a", Qt::Horizontal);
+        handle->setHovered(true);
+        QCOMPARE(handle->drawnGeometry(), handle->barGeometry());
+        QCOMPARE(redColumns(), (QList<int>{0}));
+    }
+
     void draggingMovesAlignedHandlesTogether()
     {
         TwoWindows f;
@@ -326,6 +382,401 @@ private Q_SLOTS:
         QTest::mouseRelease(handle, Qt::LeftButton);
         QCOMPARE(widthOf(area, "a"), a);
         QVERIFY(!f.manager.canUndo());
+    }
+
+    // --- squeezing a group out -----------------------------------------------
+    // A side area that the handle is pushed far enough against gives way,
+    // comes back if the pointer returns, and is closed when the button is
+    // let go there.
+    void collapsibleGroupGivesWayToTheHandle()
+    {
+        TwoWindows f;
+        f.widgets[p("b")]->setMinimumWidth(200);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Left, 0.35));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Right, 0.25));
+        QCOMPARE(describe(f.a), p("H(b, a, c)"));
+        f.manager.clearUndoHistory();
+        DockAreaWidget *area = areaOf(f.a);
+        DockPanel *b = f.manager.panel(p("b"));
+        QVERIFY(!b->isCollapsible());
+        const int width = widthOf(area, "b");
+        const int minimum = area->groupOfPanel(p("b"))->sizeLimits().min.width();
+        const int other = widthOf(area, "c");
+        QVERIFY(width > minimum + 20 && minimum >= 200);
+        const auto press = [&](DockSplitHandle *handle) {
+            QTest::mousePress(handle, Qt::LeftButton, {}, handle->rect().center());
+            return handle->mapToGlobal(handle->rect().center());
+        };
+        const auto moveTo = [](DockSplitHandle *handle, const QPoint &global) {
+            QTest::mouseMove(handle, handle->mapFromGlobal(global));
+        };
+        const auto release = [](DockSplitHandle *handle, const QPoint &global) {
+            QTest::mouseRelease(handle, Qt::LeftButton, {}, handle->mapFromGlobal(global));
+        };
+
+        // Not unless the panel says so: the group stops at its minimum.
+        DockSplitHandle *handle = handleAfter(area, "b", Qt::Horizontal);
+        QVERIFY(handle);
+        drag(handle, QPoint(-width, 0));
+        QCOMPARE(widthOf(area, "b"), minimum);
+        QVERIFY(b->isOpen());
+        QVERIFY(f.manager.undo());
+        QCOMPARE(widthOf(area, "b"), width);
+
+        b->setCollapsible(true);
+        handle = handleAfter(area, "b", Qt::Horizontal);
+        QPoint origin = press(handle);
+        // Somewhat past its minimum: it holds.
+        moveTo(handle, origin - QPoint(width - minimum + minimum / 2 - 10, 0));
+        QVERIFY(area->groupOfPanel(p("b"))->isVisible());
+        QCOMPARE(widthOf(area, "b"), minimum);
+        // Less than half of it left: gone from view, but only from view.
+        moveTo(handle, origin - QPoint(width - minimum / 2 + 10, 0));
+        QVERIFY(!area->groupOfPanel(p("b"))->isVisible());
+        QVERIFY(b->isOpen());
+        QCOMPARE(describe(f.a), p("H(b, a, c)"));
+        QCOMPARE(area->groupOfPanel(p("a"))->x(), 0);
+        QVERIFY(qAbs(widthOf(area, "c") - other) <= 1);
+        // The handle is still held, and shown where the group went.
+        QVERIFY(handle->isVisible());
+        QVERIFY(handle->isPressed());
+        QCOMPARE(handle->barGeometry().left(), 0);
+        grab(&f.windowA, p("splitter-squeezed"));
+        // Back: there it is again, at its minimum.
+        moveTo(handle, origin - QPoint(width - minimum, 0));
+        QVERIFY(area->groupOfPanel(p("b"))->isVisible());
+        QCOMPARE(widthOf(area, "b"), minimum);
+        QCOMPARE(handle->barGeometry().left(), minimum);
+        // And out again; this time the button is let go.
+        QSignalSpy opened(b, &DockPanel::openChanged);
+        moveTo(handle, origin - QPoint(width + 40, 0));
+        release(handle, origin - QPoint(width + 40, 0));
+        QVERIFY(!b->isOpen());
+        QCOMPARE(opened.size(), 1);
+        QCOMPARE(describe(f.a), p("H(a, c)"));
+        QVERIFY(qAbs(widthOf(area, "c") - other) <= 1);
+        QVERIFY(f.a->layoutTree().validate());
+
+        // It comes back as wide as it was before the drag.
+        QVERIFY(f.manager.showPanel(p("b")));
+        QCOMPARE(describe(f.a), p("H(b, a, c)"));
+        QVERIFY(qAbs(widthOf(area, "b") - width) <= 1);
+        QVERIFY(qAbs(widthOf(area, "c") - other) <= 1);
+
+        // The whole drag is one undo step.
+        f.manager.clearUndoHistory();
+        handle = handleAfter(area, "b", Qt::Horizontal);
+        drag(handle, QPoint(-width - 40, 0));
+        QVERIFY(!b->isOpen());
+        QVERIFY(f.manager.undo());
+        QVERIFY(b->isOpen());
+        QVERIFY(qAbs(widthOf(area, "b") - width) <= 1);
+        QVERIFY(!f.manager.canUndo());
+
+        // Escape: nothing happened.
+        handle = handleAfter(area, "b", Qt::Horizontal);
+        origin = press(handle);
+        moveTo(handle, origin - QPoint(width + 40, 0));
+        QVERIFY(!area->groupOfPanel(p("b"))->isVisible());
+        QTest::keyClick(handle, Qt::Key_Escape);
+        QVERIFY(b->isOpen());
+        QVERIFY(area->groupOfPanel(p("b"))->isVisible());
+        QVERIFY(qAbs(widthOf(area, "b") - width) <= 1);
+        QVERIFY(!f.manager.canUndo());
+
+        // The group on the other side goes the other way, tabs and all,
+        // if every panel in it may.
+        QVERIFY(f.manager.movePanel(p("d"), p("c"), DockArea::Center));
+        f.manager.panel(p("c"))->setCollapsible(true);
+        handle = handleAfter(area, "a", Qt::Horizontal);
+        drag(handle, QPoint(other + 40, 0));
+        QVERIFY(f.manager.panel(p("c"))->isOpen()); // d does not allow it
+        QVERIFY(f.manager.undo());
+        f.manager.panel(p("d"))->setCollapsible(true);
+        handle = handleAfter(area, "a", Qt::Horizontal);
+        drag(handle, QPoint(other + 40, 0));
+        QVERIFY(!f.manager.panel(p("c"))->isOpen());
+        QVERIFY(!f.manager.panel(p("d"))->isOpen());
+        QCOMPARE(describe(f.a), p("H(b, a)"));
+        // Either one brings the group back, the other finds it there.
+        QVERIFY(f.manager.showPanel(p("d")));
+        QVERIFY(f.manager.showPanel(p("c")));
+        QCOMPARE(describe(f.a), p("H(b, a, c|d)"));
+        QVERIFY(qAbs(widthOf(area, "c") - other) <= 1);
+    }
+
+    // What went to an edge can be pulled out of it again.
+    void closedCollapsiblePanelsArePulledOutOfTheirEdge()
+    {
+        TwoWindows f;
+        f.widgets[p("b")]->setMinimumWidth(200);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Left, 0.35));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Right, 0.25));
+        QVERIFY(f.manager.movePanel(p("d"), p("c"), DockArea::Center));
+        QCOMPARE(describe(f.a), p("H(b, a, c|d)"));
+        DockAreaWidget *area = areaOf(f.a);
+        DockPanel *b = f.manager.panel(p("b"));
+        const int width = widthOf(area, "b");
+        const int minimum = area->groupOfPanel(p("b"))->sizeLimits().min.width();
+        const int other = widthOf(area, "c");
+        QVERIFY(area->visibleEdgeHandles().isEmpty());
+
+        // Closed panels leave an edge to pull at only if they are collapsible.
+        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(area->visibleEdgeHandles().isEmpty());
+        b->setCollapsible(true);
+        area->relayout();
+        QCOMPARE(area->visibleEdgeHandles().size(), 1);
+        DockEdgeHandle *edge = area->visibleEdgeHandles().constFirst();
+        QCOMPARE(edge->panels(), QStringList{p("b")});
+        QCOMPARE(edge->side(), DockArea::Left);
+        QCOMPARE(edge->property("edge").toString(), p("left"));
+        QCOMPARE(edge->barGeometry().left(), 0);
+        QCOMPARE(edge->barGeometry().height(), area->height());
+        QVERIFY(edge->width() >= DockEdgeHandle::GrabExtent);
+        // It is what the pointer finds there.
+        QCOMPARE(f.windowA.childAt(area->mapTo(&f.windowA, QPoint(3, area->height() / 2))), edge);
+        f.manager.clearUndoHistory();
+
+        const QPoint start = edge->rect().center();
+        const QPoint origin = edge->mapToGlobal(start);
+        const auto pull = [&](int inward) {
+            QTest::mouseMove(edge, edge->mapFromGlobal(origin + QPoint(inward, 0)));
+        };
+        const auto release = [&](int inward) {
+            QTest::mouseRelease(edge, Qt::LeftButton, {},
+                                edge->mapFromGlobal(origin + QPoint(inward, 0)));
+        };
+
+        // A press alone, or the wrong way, does nothing.
+        QTest::mousePress(edge, Qt::LeftButton, {}, start);
+        QVERIFY(edge->isPressed());
+        pull(-40);
+        QVERIFY(!b->isOpen());
+        // Inwards: out it comes, though not into view before half of its
+        // minimum fits.
+        pull(minimum / 2 - 20);
+        QVERIFY(b->isOpen());
+        QVERIFY(!area->groupOfPanel(p("b"))->isVisible());
+        QVERIFY(edge->isVisible());
+        // Then at its minimum, then as wide as the pointer is far.
+        pull(minimum / 2 + 20);
+        QVERIFY(area->groupOfPanel(p("b"))->isVisible());
+        QCOMPARE(widthOf(area, "b"), minimum);
+        pull(minimum + 60);
+        QCOMPARE(widthOf(area, "b"), minimum + 60);
+        QVERIFY(qAbs(widthOf(area, "c") - other) <= 1);
+        grab(&f.windowA, p("splitter-pulled-out"));
+        release(minimum + 60);
+        QVERIFY(b->isOpen());
+        QCOMPARE(describe(f.a), p("H(b, a, c|d)"));
+        QCOMPARE(widthOf(area, "b"), minimum + 60);
+        QVERIFY(area->visibleEdgeHandles().isEmpty());
+        // One undo step, back to before it was pulled out.
+        QVERIFY(f.manager.undo());
+        QVERIFY(!b->isOpen());
+        QVERIFY(!f.manager.canUndo());
+        QCOMPARE(area->visibleEdgeHandles().size(), 1);
+
+        // Pulled out and pushed back in: nothing happened.
+        edge = area->visibleEdgeHandles().constFirst();
+        QTest::mousePress(edge, Qt::LeftButton, {}, start);
+        pull(minimum + 30);
+        QVERIFY(area->groupOfPanel(p("b"))->isVisible());
+        pull(20);
+        QVERIFY(!area->groupOfPanel(p("b"))->isVisible());
+        release(20);
+        QVERIFY(!b->isOpen());
+        QVERIFY(!f.manager.canUndo());
+        QCOMPARE(describe(f.a), p("H(a, c|d)"));
+        QCOMPARE(area->visibleEdgeHandles().size(), 1);
+        // Nor with Escape.
+        edge = area->visibleEdgeHandles().constFirst();
+        QTest::mousePress(edge, Qt::LeftButton, {}, start);
+        pull(minimum + 30);
+        QVERIFY(b->isOpen());
+        QTest::keyClick(edge, Qt::Key_Escape);
+        QVERIFY(!b->isOpen());
+        QVERIFY(!f.manager.canUndo());
+        // Shown by the application, it is as wide as it was when it was closed.
+        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(qAbs(widthOf(area, "b") - width) <= 1);
+        QVERIFY(area->visibleEdgeHandles().isEmpty());
+
+        // Tabs that were closed together come out together, as they were.
+        f.manager.panel(p("c"))->setCollapsible(true);
+        f.manager.panel(p("d"))->setCollapsible(true);
+        QVERIFY(f.manager.activatePanel(p("c")));
+        QVERIFY(f.manager.hidePanels({p("c"), p("d")}));
+        QCOMPARE(describe(f.a), p("H(b, a)"));
+        QCOMPARE(area->visibleEdgeHandles().size(), 1);
+        edge = area->visibleEdgeHandles().constFirst();
+        QCOMPARE(edge->side(), DockArea::Right);
+        QCOMPARE(edge->barGeometry().right(), area->width() - 1);
+        QCOMPARE(QSet<QString>(edge->panels().cbegin(), edge->panels().cend()),
+                 (QSet<QString>{p("c"), p("d")}));
+        const QPoint right = edge->mapToGlobal(edge->rect().center());
+        QTest::mousePress(edge, Qt::LeftButton, {}, edge->rect().center());
+        QTest::mouseMove(edge, edge->mapFromGlobal(right - QPoint(other, 0)));
+        QTest::mouseRelease(edge, Qt::LeftButton, {}, edge->mapFromGlobal(right - QPoint(other, 0)));
+        QCOMPARE(describe(f.a), p("H(b, a, c|d)"));
+        QCOMPARE(area->groupOfPanel(p("c"))->currentPanel(), p("c"));
+        QVERIFY(qAbs(widthOf(area, "c") - other) <= 2);
+
+        // A tab that was closed on its own before the others stays closed.
+        QVERIFY(f.manager.hidePanel(p("d")));
+        QVERIFY(area->visibleEdgeHandles().isEmpty()); // its group is still there
+        QVERIFY(f.manager.hidePanel(p("c")));
+        QCOMPARE(area->visibleEdgeHandles().size(), 1);
+        QCOMPARE(area->visibleEdgeHandles().constFirst()->panels(), QStringList{p("c")});
+    }
+
+    // The point where two boundaries meet can squeeze a group out as well.
+    void cornerDragSqueezesToo()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Left, 0.3));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Bottom, -1, 0.3));
+        QCOMPARE(describe(f.a), p("H(b, V(a, c))"));
+        f.manager.panel(p("c"))->setCollapsible(true);
+        DockAreaWidget *area = areaOf(f.a);
+        QCOMPARE(area->visibleCorners().size(), 1);
+        DockSplitCorner *corner = area->visibleCorners().constFirst();
+        const int height = area->groupOfPanel(p("c"))->height();
+        const int width = widthOf(area, "b");
+
+        const QPoint start = corner->rect().center();
+        const QPoint origin = corner->mapToGlobal(start);
+        QTest::mousePress(corner, Qt::LeftButton, {}, start);
+        QTest::mouseMove(corner, corner->mapFromGlobal(origin + QPoint(30, height + 20)));
+        QVERIFY(!area->groupOfPanel(p("c"))->isVisible());
+        QVERIFY(corner->isVisible()); // it still has the mouse
+        QCOMPARE(widthOf(area, "b"), width + 30);
+        QCOMPARE(area->groupOfPanel(p("a"))->height(), area->height());
+        QTest::mouseMove(corner, corner->mapFromGlobal(origin + QPoint(30, 10)));
+        QVERIFY(area->groupOfPanel(p("c"))->isVisible());
+        QCOMPARE(area->groupOfPanel(p("c"))->height(), height - 10);
+        QTest::mouseMove(corner, corner->mapFromGlobal(origin + QPoint(30, height + 20)));
+        QTest::mouseRelease(corner, Qt::LeftButton, {},
+                            corner->mapFromGlobal(origin + QPoint(30, height + 20)));
+        QVERIFY(!f.manager.panel(p("c"))->isOpen());
+        QCOMPARE(describe(f.a), p("H(b, a)"));
+        QCOMPARE(widthOf(area, "b"), width + 30);
+        QTRY_VERIFY(area->visibleCorners().isEmpty());
+        QVERIFY(f.manager.showPanel(p("c")));
+        QCOMPARE(describe(f.a), p("H(b, V(a, c))"));
+        QVERIFY(qAbs(area->groupOfPanel(p("c"))->height() - height) <= 1);
+    }
+
+    // --- a dock area inside a panel --------------------------------------------
+    // Where a boundary of the inner area ends on one of the area around it,
+    // the two are taken hold of together, as if they were in one layout.
+    void cornersReachIntoAnAreaInsideAPanel()
+    {
+        DockManager manager;
+        QMainWindow window;
+        DockWorkspace *outer = manager.createWorkspace(p("tools"));
+        window.setCentralWidget(outer);
+        auto *holder = new QWidget;
+        auto *holderLayout = new QVBoxLayout(holder);
+        holderLayout->setContentsMargins(0, 0, 0, 0);
+        DockWorkspace *inner = manager.createWorkspace(p("documents"), holder);
+        holderLayout->addWidget(inner);
+        DockPanel *center = manager.registerPanel(p("center"), holder);
+        center->setFeatures({});
+        center->setHeaderVisible(false);
+        for (const char *id : {"side", "below", "doc1", "doc2", "doc3"})
+            manager.registerPanel(p(id), new QLabel(p(id)));
+        QVERIFY(outer->addPanel(p("center")));
+        QVERIFY(outer->addPanel(p("side"), DockArea::Left, 0.25));
+        QVERIFY(manager.movePanel(p("below"), p("center"), DockArea::Bottom, -1, 0.3));
+        QVERIFY(inner->addPanel(p("doc1")));
+        QVERIFY(manager.movePanel(p("doc2"), p("doc1"), DockArea::Right));
+        window.resize(1000, 700);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        DockAreaWidget *outerArea = areaOf(outer);
+        DockAreaWidget *innerArea = areaOf(inner);
+        QCOMPARE(describe(outer), p("H(side, V(center, below))"));
+        QCOMPARE(describe(inner), p("H(doc1, doc2)"));
+
+        // Two corners: the outer area's own (side | center / below), and the
+        // one where the bar between the documents ends on the bar above "below".
+        QTRY_COMPARE(outerArea->visibleCorners().size(), 2);
+        QVERIFY(innerArea->visibleCorners().isEmpty());
+        DockSplitHandle *between = innerArea->visibleHandles().constFirst();
+        DockSplitHandle *above = handleAfter(outerArea, "center", Qt::Vertical);
+        QVERIFY(above);
+        const int x = innerArea->mapTo(outerArea, between->barGeometry().topLeft()).x();
+        DockSplitCorner *corner = nullptr;
+        for (DockSplitCorner *c : outerArea->visibleCorners()) {
+            if (c->patchGeometry().x() == x)
+                corner = c;
+        }
+        QVERIFY(corner);
+        QCOMPARE(corner->patchGeometry().y(), above->barGeometry().y());
+        // It is on top of everything there: this is what the pointer finds.
+        QCOMPARE(window.childAt(outerArea->mapTo(&window, corner->patchGeometry().center())), corner);
+
+        // Pointing at it lights up the bars of both areas.
+        QEnterEvent enter(QPointF(2, 2), QPointF(2, 2), QPointF(2, 2));
+        QCoreApplication::sendEvent(corner, &enter);
+        QVERIFY(between->isHovered());
+        QVERIFY(above->isHovered());
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(corner, &leave);
+        QVERIFY(!between->isHovered());
+        QVERIFY(!above->isHovered());
+
+        // Dragging it moves both, each along its own axis, as one undo step.
+        manager.clearUndoHistory();
+        const int doc1 = innerArea->groupOfPanel(p("doc1"))->width();
+        const int below = outerArea->groupOfPanel(p("below"))->height();
+        const int side = outerArea->groupOfPanel(p("side"))->width();
+        const QPoint start = corner->rect().center();
+        const QPoint origin = corner->mapToGlobal(start);
+        QTest::mousePress(corner, Qt::LeftButton, {}, start);
+        QTest::mouseMove(corner, corner->mapFromGlobal(origin + QPoint(60, -40)));
+        QCOMPARE(innerArea->groupOfPanel(p("doc1"))->width(), doc1 + 60);
+        QCOMPARE(outerArea->groupOfPanel(p("below"))->height(), below + 40);
+        // The corner follows the bars it stands for.
+        QCOMPARE(corner->patchGeometry().x(), x + 60);
+        QTest::mouseRelease(corner, Qt::LeftButton, {},
+                            corner->mapFromGlobal(origin + QPoint(60, -40)));
+        QCOMPARE(innerArea->groupOfPanel(p("doc1"))->width(), doc1 + 60);
+        QCOMPARE(outerArea->groupOfPanel(p("side"))->width(), side);
+        QVERIFY(manager.undo());
+        QCOMPARE(innerArea->groupOfPanel(p("doc1"))->width(), doc1);
+        QCOMPARE(outerArea->groupOfPanel(p("below"))->height(), below);
+        QVERIFY(!manager.canUndo());
+
+        // Escape puts both back.
+        QTest::mousePress(corner, Qt::LeftButton, {}, corner->rect().center());
+        QTest::mouseMove(corner, corner->rect().center() + QPoint(-50, 30));
+        QVERIFY(innerArea->groupOfPanel(p("doc1"))->width() != doc1);
+        QTest::keyClick(corner, Qt::Key_Escape);
+        QCOMPARE(innerArea->groupOfPanel(p("doc1"))->width(), doc1);
+        QCOMPARE(outerArea->groupOfPanel(p("below"))->height(), below);
+
+        // A boundary between rows of documents ends on the bar beside "side".
+        QVERIFY(manager.movePanel(p("doc3"), p("doc1"), DockArea::Bottom));
+        QCOMPARE(describe(inner), p("H(V(doc1, doc3), doc2)"));
+        QTRY_COMPARE(outerArea->visibleCorners().size(), 3);
+        // The corners come and go with the inner layout.
+        QVERIFY(manager.hidePanel(p("doc2")));
+        QVERIFY(manager.hidePanel(p("doc3")));
+        QTRY_COMPARE(outerArea->visibleCorners().size(), 1);
+        // And there are none of them with corner resizing turned off.
+        QVERIFY(manager.showPanel(p("doc2")));
+        QTRY_COMPARE(outerArea->visibleCorners().size(), 2);
+        manager.setCornerResizeEnabled(false);
+        QTRY_VERIFY(outerArea->visibleCorners().isEmpty());
     }
 
     // --- corners -----------------------------------------------------------

@@ -13,7 +13,7 @@ QFlexDock has no theme of its own. Looks are decided in three layers, each overr
 | Tabs | A real `QTabBar` (`QStyle::CE_TabBarTab`), close buttons included |
 | Split handles | `QStyle::CE_Splitter`, as thick as `QStyle::PM_SplitterWidth` |
 | Tab group frame | `QFrame::StyledPanel` |
-| Title row buttons | `QToolButton`s with line icons in the palette's `WindowText` color |
+| Title row buttons | `QToolButton`s with line icons in the palette's `WindowText` color; a panel's own actions as `QToolButton`s with the icons they bring |
 | Drop guide | Translucent colors derived from the palette's `Highlight` |
 | Floating windows | The platform's window frame, or with `FloatingFrame::Custom` a title row and a thin border |
 
@@ -31,9 +31,12 @@ There are no sub-controls or pseudo-states beyond these.
 | `QFlexDock--DockTabGroup #dockTitleBar` | Its title row | `background`, … |
 | `#dockTitle` | The title in it (`QLabel`, with `GroupHeader::TitleBar`) | `color`, `font`, `background`, … |
 | `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton`, `QFlexDock--DockTabGroup #dockCloseButton` | Title row buttons | As `QToolButton` |
+| `#dockTitleActions` | What holds a panel's own actions (`DockPanel::setTitleActions()`) | `background`, … |
+| `#dockActionButton`, `#dockActionSeparator` | Their buttons, and the lines between them | As `QToolButton` / `background`, `margin`, `min-width` |
 | `QFlexDock--DockTabBar` | The tab bar (`QTabBar`) | `qproperty-activeIndicatorColor`; property `activeGroup` |
 | `QFlexDock--DockTabBar::tab`, `::tab:selected`, … | Tabs, above or below the content | The same as `QTabBar::tab` |
 | `QFlexDock--DockSplitHandle` | Split handles | `background`, `border`; properties `orientation` (`1`: vertical bar, `2`: horizontal bar), `hovered`, `pressed` |
+| `QFlexDock--DockEdgeHandle` | The edge closed collapsible panels are pulled out of | `background`, drawn only while it is hovered or held; properties `edge` (`left`, `right`, `top`, `bottom`), `hovered`, `pressed` |
 | `QFlexDock--DockAutoHideBar` | Auto-hide bars | `background`, …; property `edge` (`left`, `right`, `top`, `bottom`) |
 | `QFlexDock--DockAutoHidePopup` | The panel that slides out (`QFrame`) | `background`, `border`; buttons `#dockPinButton`, `#dockCloseButton` |
 | `QFlexDock--DockDropOverlay` | The drop guide | Only the `qproperty-*` below |
@@ -59,6 +62,11 @@ Notes:
   neighbouring tab groups and is never painted, so a `background` only shows in the drawn width.
 - The point where a vertical and a horizontal boundary meet has no visual of its own. Pointing at it sets
   `hovered` on every handle it would move.
+- With the theme token `splitHandleHoverWidth`, a handle is drawn wider while it is hovered or dragged: a
+  one pixel line that lights up four pixels wide, say. The layout does not change.
+- A workspace is a widget: give it an object name, and `#documents QFlexDock--DockTabBar::tab { … }` styles
+  its tabs differently from those of other workspaces. (Floating windows are not inside a workspace;
+  `QFlexDock--DockFloatingWindow QFlexDock--DockTabBar::tab` reaches theirs.)
 - `qproperty-*` is applied once, when the widget is first polished (a Qt rule), and stays after the style
   sheet is removed.
 - The 2px mark on the current tab of the active group takes its color from `qproperty-activeIndicatorColor`;
@@ -85,6 +93,7 @@ For applications without a style sheet, or to set values from code:
 ```cpp
 QFlexDock::DockTheme theme;
 theme.splitHandleWidth = 6;                              // -1: the style's PM_SplitterWidth
+theme.splitHandleHoverWidth = 8;                         // drawn this wide while hovered; -1: no wider
 theme.iconSize = 18;                                     // -1: the style's size
 theme.titleButtons = QFlexDock::DockTitleButton::Float   // buttons in a group's header;
                    | QFlexDock::DockTitleButton::Close;  // the default is Menu | Maximize

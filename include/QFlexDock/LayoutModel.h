@@ -86,8 +86,10 @@ public:
     DockResult insertPanel(const PanelId &panel, NodeId target, DockArea area, int tabIndex = -1,
                            double fraction = 0.5);
     DockResult removePanel(const PanelId &panel);
-    /// Detaches and returns the subtree rooted at `id`.
-    std::optional<LayoutNode> takeNode(NodeId id);
+    /// Detaches and returns the subtree rooted at `id`. The share it had of
+    /// its split goes to `heir` if that is one of its siblings, else to the
+    /// sibling before it (after it, for the first one).
+    std::optional<LayoutNode> takeNode(NodeId id, NodeId heir = {});
 
     DockResult setActivePanel(const PanelId &panel);
     /// Moves `panel` to `index` within its own tab group.

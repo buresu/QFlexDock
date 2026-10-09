@@ -3,9 +3,11 @@
 
 #include "core/LayoutSolver.h"
 
+#include <QtCore/QPointer>
 #include <QtWidgets/QFrame>
 
 QT_BEGIN_NAMESPACE
+class QAction;
 class QBoxLayout;
 class QLabel;
 class QToolButton;
@@ -34,7 +36,9 @@ class DockTabBar;
 /// `maximized` and `headerVisible` properties; the title row is
 /// `#dockTitleBar`, the title in it `#dockTitle`, its buttons
 /// `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton` and
-/// `#dockCloseButton`.
+/// `#dockCloseButton`. The buttons of the current panel's own actions
+/// (DockPanel::setTitleActions()) are `#dockActionButton`s inside
+/// `#dockTitleActions`, the lines between them `#dockActionSeparator`.
 class QFLEXDOCK_EXPORT DockTabGroup : public QFrame
 {
     Q_OBJECT
@@ -67,6 +71,12 @@ public:
     [[nodiscard]] QToolButton *floatButton() const { return m_floatButton; }
     [[nodiscard]] QToolButton *closeButton() const { return m_closeButton; }
     [[nodiscard]] QLabel *titleLabel() const { return m_titleLabel; }
+    /// Holds what the current panel's title actions are shown as, in order.
+    [[nodiscard]] QWidget *actionBar() const { return m_actionBar; }
+    [[nodiscard]] QWidget *widgetForAction(const QAction *action) const;
+    /// Gives the widgets of QWidgetActions back. For a group that is about
+    /// to go: the group taking over may need them before this one is deleted.
+    void releaseTitleActions() { clearTitleActions(); }
 
     /// Smallest and largest size this group can take, from its panels' content.
     [[nodiscard]] SizeLimits sizeLimits() const;
@@ -85,6 +95,8 @@ private:
     void rebuildTabs();
     void updateTab(int index);
     void updateHeader();
+    void updateTitleActions(const DockPanel *current);
+    void clearTitleActions();
     void syncContents();
     void showGroupMenu();
     void showPanelMenu(const PanelId &panel, const QPoint &globalPos);
@@ -108,15 +120,30 @@ private:
     /// GroupHeader::TitleBar is in effect.
     bool m_titleMode = false;
 
-    QWidget *m_titleBar;
-    QBoxLayout *m_titleLayout;
-    DockTabBar *m_tabBar;
-    QLabel *m_titleLabel;
-    QToolButton *m_menuButton;
-    QToolButton *m_maximizeButton;
-    QToolButton *m_floatButton;
-    QToolButton *m_closeButton;
-    QWidget *m_host;
+    // Null until the constructor gets to them: the event filter is asked
+    // about the parts created first while the later ones do not exist yet.
+    QWidget *m_titleBar = nullptr;
+    QBoxLayout *m_titleLayout = nullptr;
+    DockTabBar *m_tabBar = nullptr;
+    QLabel *m_titleLabel = nullptr;
+    QToolButton *m_menuButton = nullptr;
+    QToolButton *m_maximizeButton = nullptr;
+    QToolButton *m_floatButton = nullptr;
+    QToolButton *m_closeButton = nullptr;
+    QWidget *m_actionBar = nullptr;
+    QBoxLayout *m_actionLayout = nullptr;
+    /// What is in the action bar: each action with the widget standing for it.
+    struct ShownAction
+    {
+        QPointer<QAction> action;
+        QPointer<QWidget> widget;
+        /// The widget was asked of a QWidgetAction and goes back to it.
+        bool requested = false;
+    };
+    QList<ShownAction> m_shownActions;
+    QList<QAction *> m_shownActionList;
+    bool m_actionRetried = false;
+    QWidget *m_host = nullptr;
     QPoint m_titlePress;
     bool m_titlePressed = false;
 };

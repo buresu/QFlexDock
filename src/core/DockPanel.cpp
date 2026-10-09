@@ -184,6 +184,48 @@ void DockPanel::setHeaderVisible(bool visible)
     Q_EMIT metadataChanged();
 }
 
+bool DockPanel::isCollapsible() const
+{
+    return d->collapsible;
+}
+
+void DockPanel::setCollapsible(bool collapsible)
+{
+    d->collapsible = collapsible;
+}
+
+QList<QAction *> DockPanel::titleActions() const
+{
+    QList<QAction *> actions;
+    for (const QPointer<QAction> &action : std::as_const(d->titleActions)) {
+        if (action)
+            actions.append(action);
+    }
+    return actions;
+}
+
+void DockPanel::setTitleActions(const QList<QAction *> &actions)
+{
+    if (titleActions() == actions)
+        return;
+    for (const QPointer<QAction> &action : std::as_const(d->titleActions)) {
+        if (action)
+            disconnect(action, &QObject::destroyed, this, nullptr);
+    }
+    d->titleActions.clear();
+    for (QAction *action : actions) {
+        if (!action || d->titleActions.contains(action))
+            continue;
+        d->titleActions.append(action);
+        // Its button goes with it.
+        connect(action, &QObject::destroyed, this, [this] {
+            DockManagerPrivate::get(d->manager)->panelAppearanceChanged(this);
+        });
+    }
+    DockManagerPrivate::get(d->manager)->panelAppearanceChanged(this);
+    Q_EMIT metadataChanged();
+}
+
 void DockPanel::setHidesContentDuringDrag(bool hide)
 {
     d->hideContentDuringDrag = hide;

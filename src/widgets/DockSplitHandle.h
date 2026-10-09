@@ -40,8 +40,13 @@ public:
     /// `index` is this handle's position in the area's solved layout, `bar`
     /// the space the layout gave it (in the area's coordinates).
     void configure(int index, Qt::Orientation orientation, const QRect &bar);
+    /// Moves the handle to another bar without making it another handle.
+    void place(const QRect &bar);
     /// The drawn bar, in the area's coordinates. geometry() may be larger.
     [[nodiscard]] QRect barGeometry() const { return m_bar; }
+    /// What is drawn right now: the bar, or the wider strip it lights up as
+    /// while hovered or dragged (DockTheme::splitHandleHoverWidth).
+    [[nodiscard]] QRect drawnGeometry() const;
     [[nodiscard]] int index() const { return m_index; }
     [[nodiscard]] Qt::Orientation orientation() const { return m_orientation; }
     [[nodiscard]] bool isHovered() const { return m_hovered; }
@@ -61,6 +66,7 @@ protected:
 private:
     void finish(bool cancel);
     void restyle();
+    void updateMask();
 
     DockAreaWidget *m_area;
     int m_index = -1;
@@ -69,6 +75,64 @@ private:
     bool m_pressed = false;
     QPoint m_pressPos;
     QRect m_bar;
+    QRect m_litBar;
+};
+
+/// The edge that collapsible panels went to when they were closed (see
+/// DockPanel::setCollapsible()). Dragging inwards from it pulls them out
+/// again; from there on it is a drag of the handle beside them, which pushed
+/// far enough back puts them away once more.
+///
+/// It shows nothing until it is pointed at. Style sheets: class selector
+/// `QFlexDock--DockEdgeHandle` with the `edge` ("left", "right", "top",
+/// "bottom"), `hovered` and `pressed` properties; a `background` is drawn
+/// only while it is hovered or held, as wide as a hovered split handle.
+class QFLEXDOCK_EXPORT DockEdgeHandle : public QWidget
+{
+    Q_OBJECT
+    Q_PROPERTY(QString edge READ edgeName)
+    Q_PROPERTY(bool hovered READ isHovered)
+    Q_PROPERTY(bool pressed READ isPressed)
+
+public:
+    /// How far into the dock area it reaches for the pointer.
+    static constexpr int GrabExtent = 8;
+
+    explicit DockEdgeHandle(DockAreaWidget *area);
+
+    /// `bar` is the strip along the edge, in the area's coordinates; `side`
+    /// tells which edge of what is there it lies along.
+    void configure(const QStringList &panels, DockArea side, const QRect &bar);
+    [[nodiscard]] QStringList panels() const { return m_panels; }
+    [[nodiscard]] DockArea side() const { return m_side; }
+    [[nodiscard]] QString edgeName() const;
+    [[nodiscard]] QRect barGeometry() const { return m_bar; }
+    [[nodiscard]] bool isHovered() const { return m_hovered; }
+    [[nodiscard]] bool isPressed() const { return m_pressed; }
+
+protected:
+    void paintEvent(QPaintEvent *event) override;
+    void enterEvent(QEnterEvent *event) override;
+    void leaveEvent(QEvent *event) override;
+    void mousePressEvent(QMouseEvent *event) override;
+    void mouseMoveEvent(QMouseEvent *event) override;
+    void mouseReleaseEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+
+private:
+    void finish(bool cancel);
+    void restyle();
+    [[nodiscard]] QRect inwards(const QRect &bar, int thickness) const;
+
+    DockAreaWidget *m_area;
+    QStringList m_panels;
+    DockArea m_side = DockArea::Left;
+    QRect m_bar;
+    bool m_hovered = false;
+    bool m_pressed = false;
+    /// The panels are out, and the drag has become one of their handle.
+    bool m_pulled = false;
+    QPoint m_pressPos;
 };
 
 /// The spot where a boundary between columns meets one between rows. Taking

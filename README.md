@@ -4,12 +4,13 @@ A docking library for Qt 6 Widgets. C++20, CMake, MIT.
 Made for creative tools, IDEs, 3D editors and node editors.
 
 - **Large five-zone drop guide** — top, bottom, left, right and center zones that cover the whole target panel, plus a separate band for docking against the whole workspace.
-- **Linked splitters** — boundaries that form one line move together. Grab the point where a vertical and a horizontal boundary meet to move both at once.
+- **Linked splitters** — boundaries that form one line move together. Grab the point where a vertical and a horizontal boundary meet to move both at once. Side areas can be pushed out of the way with their boundary and pulled back out of the edge they went to, and come back at their size.
 - **Panels move between `QMainWindow`s** — one `DockManager` is shared, and the same widget instance moves to the other window.
 - **Layouts as JSON** — versioned, validated and repaired on load; unknown panels and broken data do not break the layout.
 - **QML and GPU content** — `QQuickWidget`, `QOpenGLWidget` and native `QWindow`s as panels.
 - **Follows the host application** — drawn with its `QStyle`, `QPalette`, `QFont` and style sheet, and follows changes at run time.
-- **Tabs or title bars** — groups headed by their tabs, or by a title bar with tabs only where panels are stacked; fixed content that panels dock around.
+- **Tabs or title bars** — groups headed by their tabs, or by a title bar with tabs only where panels are stacked; fixed content that panels dock around; your own buttons and widgets in the headers.
+- **Workspaces within workspaces** — a document area in the middle of the tool panels, each kind of panel staying in its own, with boundaries that are resized together across the two.
 - Floating windows, auto-hide, maximize, undo/redo, named presets, per-panel dock policies, lazily created panels.
 
 > **Status: 0.1.0, in development.** The public API may still change.
@@ -49,8 +50,9 @@ if (QFlexDock::DockResult r = manager.loadLayout("layout.json"); !r)
     qWarning() << r.message();
 ```
 
-Examples are in [examples/](examples/): `basic`, `multi-window`, `quick-panel`, `gpu-panel`, and
-`obs-style`, which rebuilds the window layout and look of OBS Studio (layout and style only).
+Examples are in [examples/](examples/): `basic`, `multi-window`, `quick-panel`, `gpu-panel`, and two that
+rebuild the window layout and look of an existing application (layout and style only): `obs-style` after
+OBS Studio, and `vscode-style` after Visual Studio Code.
 
 ## Build
 
@@ -86,7 +88,8 @@ target_link_libraries(app PRIVATE QFlexDock::QFlexDock)
 ## Status
 
 **Not implemented:** keyboard-only docking and accessibility (beyond accessible button names and Ctrl+Tab
-within a group), title bars made of the application's own widgets, animations. Replacing the dock UI itself with QML is out of scope.
+within a group), replacing a group's header by a widget of the application's own (it can add buttons and
+widgets to it), side areas that keep their pixel size when the window is resized, animations. Replacing the dock UI itself with QML is out of scope.
 
 **Tested** — all 14 test suites pass, with warnings as errors, in [CI](.github/workflows/ci.yml) and locally:
 

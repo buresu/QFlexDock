@@ -42,6 +42,21 @@ int findCommonAncestor(const LayoutNode &node, const QSet<PanelId> &wanted, Node
     return count;
 }
 
+// The node of `tree` that holds what is left of the neighbours a panel
+// remembers; null if none of them is there.
+NodeId anchorOf(const LayoutTree &tree, const PanelMemory &m)
+{
+    QSet<PanelId> present;
+    for (const PanelId &neighbor : m.neighbors) {
+        if (tree.containsPanel(neighbor))
+            present.insert(neighbor);
+    }
+    NodeId anchor;
+    if (!present.isEmpty() && tree.root())
+        findCommonAncestor(*tree.root(), present, anchor);
+    return anchor;
+}
+
 } // namespace
 
 ContainerState *LayoutState::find(const QString &containerId)
@@ -120,6 +135,7 @@ PanelMemory LayoutState::capture(const PanelId &panel) const
         return m;
 
     const LayoutNode *group = container->tree.findNode(location->node);
+    m.front = group->active == panel;
     m.tabIndex = int(group->panels.indexOf(panel));
     m.tabSiblings = group->panels;
     m.tabSiblings.removeAll(panel);
@@ -134,7 +150,7 @@ PanelMemory LayoutState::capture(const PanelId &panel) const
             m.neighborArea = first ? DockArea::Left : DockArea::Right;
         else
             m.neighborArea = first ? DockArea::Top : DockArea::Bottom;
-        m.fraction = group->weight / (group->weight + sibling.weight);
+        m.fraction = group->weight;
     }
     return m;
 }
@@ -220,23 +236,76 @@ DockResult LayoutState::reattach(const PanelId &panel, const QString &fallbackWo
                     QStringLiteral("there is no workspace to show panel '%1' in").arg(panel));
 
     // Beside the node it used to be split off from.
-    if (m.neighborArea != DockArea::None && container->tree.root()) {
-        QSet<PanelId> present;
-        for (const PanelId &neighbor : m.neighbors) {
-            if (container->tree.containsPanel(neighbor))
-                present.insert(neighbor);
-        }
-        if (!present.isEmpty()) {
-            NodeId anchor;
-            findCommonAncestor(*container->tree.root(), present, anchor);
-            if (!anchor.isNull()) {
-                return finish(container->tree.insertPanel(panel, anchor, m.neighborArea, -1,
-                                                          m.fraction));
-            }
-        }
+    const NodeId anchor = m.neighborArea != DockArea::None ? anchorOf(container->tree, m) : NodeId();
+    if (!anchor.isNull()) {
+        // The panel gets the share it had of the split it was in. Where that
+        // split is still there, its room was left to the neighbour, and is
+        // now taken out of the neighbour's share: everything else in the
+        // split keeps its size, whatever came and went in the meantime.
+        double fraction = m.fraction;
+        const LayoutNode *node = container->tree.findNode(anchor);
+        const LayoutNode *parent = container->tree.parentOf(anchor);
+        const Qt::Orientation along = splitOrientation(m.neighborArea);
+        const bool joinsAnchor = node->isSplit() && node->orientation == along;
+        if (!joinsAnchor && parent && parent->orientation == along)
+            fraction = std::min(m.fraction / node->weight, 0.9);
+        return finish(container->tree.insertPanel(panel, anchor, m.neighborArea, -1, fraction));
     }
 
     return finish(container->tree.insertPanel(panel, {}, DockArea::Center));
+}
+
+DockResult LayoutState::reattachAll(const QStringList &panels, const QString &fallbackWorkspace)
+{
+    QStringList absent;
+    QStringList fronts;
+    for (const PanelId &panel : panels) {
+        if (isPlaced(panel) || absent.contains(panel))
+            continue;
+        absent.append(panel);
+        if (memory.value(panel).front)
+            fronts.append(panel);
+    }
+    // One that remembers fewer tabs beside it left its group later and has to
+    // be back earlier, for the others to find it; among those that left
+    // together, the order of the tabs.
+    std::stable_sort(absent.begin(), absent.end(), [this](const PanelId &a, const PanelId &b) {
+        const PanelMemory ma = memory.value(a);
+        const PanelMemory mb = memory.value(b);
+        if (ma.tabSiblings.size() != mb.tabSiblings.size())
+            return ma.tabSiblings.size() < mb.tabSiblings.size();
+        return ma.tabIndex < mb.tabIndex;
+    });
+    for (const PanelId &panel : std::as_const(absent)) {
+        if (DockResult r = reattach(panel, fallbackWorkspace); !r)
+            return r;
+    }
+    for (const PanelId &panel : std::as_const(fronts)) {
+        const std::optional<PanelLocation> location = locate(panel);
+        if (location && !location->isAutoHidden())
+            (void)find(location->container)->tree.setActivePanel(panel);
+    }
+    return DockResult::success();
+}
+
+std::optional<ReturnPlace> LayoutState::returnPlace(const PanelId &panel) const
+{
+    const auto it = memory.constFind(panel);
+    if (it == memory.constEnd() || isPlaced(panel) || it->autoHideEdge != DockArea::None
+        || it->neighborArea == DockArea::None) {
+        return std::nullopt;
+    }
+    for (const PanelId &sibling : it->tabSiblings) {
+        if (isPlaced(sibling))
+            return std::nullopt;
+    }
+    const ContainerState *container = find(it->container);
+    if (!container || !container->tree.root())
+        return std::nullopt;
+    const NodeId anchor = anchorOf(container->tree, *it);
+    if (anchor.isNull())
+        return std::nullopt;
+    return ReturnPlace{container->id, anchor, it->neighborArea};
 }
 
 void LayoutState::normalize()

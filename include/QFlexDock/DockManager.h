@@ -162,6 +162,13 @@ public:
     /// Closes the panel: it leaves the layout but stays registered, and its
     /// position is remembered for showPanel().
     DockResult hidePanel(const PanelId &id);
+    /// The same for several panels as one change (and one undo step): the
+    /// way to put a whole area away and bring it back. Panels closed together
+    /// return together: in their old order, with the same tab in front, and
+    /// as one when the user pulls them back out of the edge they went to
+    /// (see DockPanel::setCollapsible()). showPanels() activates none of them.
+    DockResult showPanels(const QStringList &ids);
+    DockResult hidePanels(const QStringList &ids);
     DockResult togglePanel(const PanelId &id);
     /// Makes the panel the current tab of its group, raises its window and
     /// gives it keyboard focus.

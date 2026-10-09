@@ -125,6 +125,8 @@ QJsonObject memoryToJson(const PanelMemory &m)
         o.insert(QStringLiteral("geometry"), rectToJson(m.geometry));
     o.insert(QStringLiteral("tabSiblings"), stringsToJson(m.tabSiblings));
     o.insert(QStringLiteral("tabIndex"), m.tabIndex);
+    if (m.front)
+        o.insert(QStringLiteral("front"), true);
     o.insert(QStringLiteral("neighbors"), stringsToJson(m.neighbors));
     o.insert(QStringLiteral("neighborArea"), edgeName(m.neighborArea));
     o.insert(QStringLiteral("fraction"), m.fraction);
@@ -142,6 +144,7 @@ PanelMemory memoryFromJson(const QJsonObject &o)
     m.geometry = rectFromJson(o.value(QStringLiteral("geometry")));
     m.tabSiblings = stringsFromJson(o.value(QStringLiteral("tabSiblings")));
     m.tabIndex = pixelValue(o.value(QStringLiteral("tabIndex")), -1);
+    m.front = o.value(QStringLiteral("front")).toBool();
     m.neighbors = stringsFromJson(o.value(QStringLiteral("neighbors")));
     m.neighborArea = edgeFromName(o.value(QStringLiteral("neighborArea")).toString());
     if (!isEdgeArea(m.neighborArea))

@@ -10,6 +10,7 @@
 
 #include <QtCore/QMap>
 #include <QtCore/QPointer>
+#include <QtGui/QAction>
 
 #include <optional>
 #include <vector>
@@ -40,6 +41,8 @@ struct DockPanel::Private
     bool previewTab = false;
     bool hideContentDuringDrag = false;
     bool headerVisible = true;
+    bool collapsible = false;
+    QList<QPointer<QAction>> titleActions;
 
     // Derived from the layout state after every commit.
     std::optional<PanelLocation> location;
@@ -57,6 +60,24 @@ struct DropTarget
     int tabIndex = -1;
     /// Share of the target taken by an edge drop; negative picks the default.
     double fraction = -1.0;
+};
+
+/// A tab group that a split handle drag squeezed out, to be closed when the
+/// drag ends. Its room goes to `heir`, the node across the dragged handle.
+struct ResizeClose
+{
+    QString container;
+    NodeId node;
+    NodeId heir;
+};
+
+/// Closed panels that went together, and the edge they went to: the side
+/// `side` of node `anchor`, where they would come back.
+struct ReopenEdge
+{
+    QStringList panels;
+    NodeId anchor;
+    DockArea side = DockArea::None;
 };
 
 /// One drag in progress. The token is what travels in the QMimeData; a drop is
@@ -119,6 +140,7 @@ public:
     DockResult setAutoHide(const PanelId &panel, bool autoHide, DockArea edge);
     DockResult setMaximized(const PanelId &panel, bool maximized);
     DockResult closePanels(const QStringList &panels);
+    DockResult showPanels(const QStringList &panels);
     DockResult activate(const PanelId &panel, bool focus);
 
     /// Whether the user may do `feature` with the panel.
@@ -126,6 +148,9 @@ public:
     [[nodiscard]] QStringList groupPanels(const PanelId &panel) const;
 
     // --- Drag and drop -------------------------------------------------------
+    /// Whether what is dragged may be dropped anywhere in the container at
+    /// all, going by the policies of the dragged panels.
+    [[nodiscard]] bool containerAdmits(const DragSession &session, const QString &container) const;
     /// Areas of `node` (null: the container as a whole) the session may drop
     /// on, by policy and by what would be a no-op.
     [[nodiscard]] DockAreas allowedDropAreas(const DragSession &session, const QString &container,
@@ -142,7 +167,13 @@ public:
     void beginResize();
     void setWeights(const QString &container,
                     const std::vector<SplitterCoordinator::WeightUpdate> &updates);
-    void endResize(bool cancel);
+    void endResize(bool cancel, const std::vector<ResizeClose> &closing = {});
+    /// Collapsible panels of `container` that are closed and can be pulled
+    /// back out of the edge they went to.
+    [[nodiscard]] std::vector<ReopenEdge> reopenEdges(const QString &container) const;
+    /// Shows `panels` as the start of a drag that pulls them out of their
+    /// edge. What the drag makes of it is settled by endResize().
+    DockResult beginReopen(const QStringList &panels);
 
     // --- Floating windows ----------------------------------------------------
     void floatingGeometryChanged(const QString &container, const QRect &geometry);
@@ -214,6 +245,9 @@ public:
     std::vector<LayoutState> redoStack;
     int undoLimit = 50;
     std::optional<LayoutState> resizeStart;
+    /// The state before the panels in `reopening` were pulled out of an edge.
+    std::optional<LayoutState> reopenStart;
+    QStringList reopening;
     QMap<QString, LayoutState> presets;
     std::optional<LayoutState> defaultLayout;
 

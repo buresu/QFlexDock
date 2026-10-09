@@ -41,7 +41,8 @@ Every mutating function leaves the tree in normal form, or unchanged if it fails
 `LayoutState` adds: a panel is in **one place across all containers** (a tree or an auto-hide bar), floating
 containers are not empty, a maximized panel is in its container. It also remembers, for every panel that is
 not placed (closed, floated, auto-hidden, unregistered, or not yet registered), where it goes back to: its
-former tab neighbours, else the node it was next to, else its floating window, else a default workspace.
+former tab neighbours, else the node it was next to (at the share of the split it had), else its floating
+window, else a default workspace.
 
 ## Applying a change
 
@@ -82,9 +83,28 @@ Alt moves a single handle. One drag is one undo step.
 sits on top and drags both: the run through the corner along x and the one along y, computed separately,
 since they change different splits and neither axis limits the other.
 
+A dock area inside a panel of another one (a workspace as content) reports its layout to the area around
+it, which adds the inner bars to its own when it looks for corners. An inner bar that ends on an outer one,
+give or take the frame of the tab group in between, makes a corner of the outer area, and dragging it moves
+handles in both areas. Corners among inner bars alone stay the inner area's.
+
+**Squeezing a group out.** A handle dragged so far that a tab group of collapsible panels would be left less
+than half of its minimum size makes that group give way (`SplitterCoordinator::squeezed()`). During the drag
+this is display state, like maximizing: the area lays out a copy of its tree without the group, and the
+handle keeps its widget, since hiding it would lose the mouse. When the drag ends, the manager closes the
+group's panels in one transaction, remembering each at the size it had when the drag began.
+
+**Pulling panels out of an edge.** For closed collapsible panels the area puts a `DockEdgeHandle` along the
+edge they would return to (`LayoutState::returnPlace()`). The first move inwards shows them for real, in a
+transaction that is not recorded for undo, and from there on the drag is an ordinary drag of the handle
+beside them, set to the pointer's distance from the edge. So the squeezing above applies as it is: they
+stay out of view until half of their minimum fits, and go again if pushed back. If that is how the drag
+ends, or with Escape, the state from before is put back; otherwise that state becomes the one undo step.
+
 **Grab margins.** A handle follows the style's `PM_SplitterWidth`, which may be a single pixel — too thin to
 aim at, and not hit-tested at all by Qt 6.12. Handles are therefore at least 7px wide to the mouse, with the
-extra margin masked out of painting.
+extra margin masked out of painting. The mask is also what lets a hovered handle be drawn wider than its
+bar (`DockTheme::splitHandleHoverWidth`) without anything moving.
 
 ## Drag and drop
 
@@ -123,3 +143,11 @@ nobody took is adopted as the view of a new floating container. What happens aft
 - **The window-carrying drag relies on an undocumented Qt behaviour.** It is the one exception to "public
   Qt API only", accepted because everything falls back cleanly when it is absent.
 - **A handle does not push further neighbours** when the one next to it reaches its minimum size.
+- **A node that leaves a split gives its share to one neighbour** (the one before it; after it for the
+  first), instead of spreading it over all of them. The memory of a closed panel holds the share it had, and
+  putting it back takes that share out of the neighbour again. So areas that are closed and reopened, in any
+  order, come back at their sizes, as long as the window has not been resized in between: sizes are shares,
+  not pixels.
+- **A dock area ignores a drag it may not take anything from** (the dragged panels are not allowed in its
+  workspace). Qt then offers the drag to the widgets above it, which is what makes a workspace inside a
+  panel of another workspace work: the inner area takes its own panels, the outer one everything else.

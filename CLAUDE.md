@@ -20,7 +20,10 @@ cmake --build build-wl && tests/run-on-wayland.sh build-wl
 QT_QPA_PLATFORM=offscreen build/tests/tst_manager maximizeAndRestore
 QFLEXDOCK_TEST_GRABS=/tmp/grabs QT_QPA_PLATFORM=offscreen build/tests/tst_dragdrop
 
-# Sanitizers, shared library, install
+# An example on a private X server, where xdotool can drive it and `import -window root` can look at it
+xvfb-run -a -s "-screen 0 1600x900x24" build/examples/qflexdock-vscode-style
+
+# Sanitizers (a report ends the test), shared library, install
 CXX=clang++ cmake -S . -B build-asan -G Ninja -DQFLEXDOCK_SANITIZERS=address,undefined
 cmake -S . -B build-shared -G Ninja -DBUILD_SHARED_LIBS=ON -DQFLEXDOCK_WARNINGS_AS_ERRORS=ON
 cmake --install build --prefix /tmp/prefix
@@ -66,8 +69,8 @@ tests/                    Qt Test; shared fixtures in TestUtils.h
 - **No API newer than Qt 6.8.** The local Qt is 6.12, so check when an API was introduced.
 - **Nothing copied from other docking libraries or applications**: no code, no artwork, no theme files, no
   material of unclear origin, no Conan files. Other docking libraries are not named in the repository. An
-  example that rebuilds the layout and look of an existing application may name it (`examples/obs-style`),
-  and does so with its own code and drawings only.
+  example that rebuilds the layout and look of an existing application may name it (`examples/obs-style`,
+  `examples/vscode-style`), and does so with its own code and drawings only.
 - A public API change comes with its tests, examples and `docs/api.md`.
 - A style sheet selector or property goes into `docs/styling.md` only once `tests/tst_style.cpp` shows it works.
 - The README's "Status" lists only what was implemented and what was actually run.
@@ -77,6 +80,8 @@ tests/                    Qt Test; shared fixtures in TestUtils.h
 
 - Drags use the `Drag` helper in `tests/tst_dragdrop.cpp`, which sends `QDragEnterEvent` and friends straight
   to a dock area. Qt delivers no move after a drop or leave until the next enter; the helper handles that.
+- A drag enter that an area ignores goes on to the area around it (`QApplication` does that also for events
+  sent directly). A workspace inside a panel is tested by sending the events to the innermost area.
 - Ghost and window-carrying drags on Wayland cannot be automated. `tst_floating` calls
   `DockDragController::createGhost()` and `finish(action, ghost, windowDrag)` directly. Never start
   `requestWindowDrag()` or a real `QDrag` from a test on Wayland: without pointer input it never returns.

@@ -432,6 +432,93 @@ private Q_SLOTS:
         qApp->setStyleSheet(QString());
     }
 
+    void styleSheetsStyleTheTitleActions()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.b->addPanel(p("d")));
+        f.a->setObjectName(p("documents"));
+        QAction one(p("One"));
+        QAction line;
+        line.setSeparator(true);
+        QAction two(p("Two"));
+        f.manager.panel(p("b"))->setTitleActions({&one, &line, &two});
+
+        qApp->setStyleSheet(QStringLiteral(R"(
+            #dockTitleActions { background: #102030; }
+            #dockActionButton { background: #abcdef; border: none; margin: 2px; }
+            #dockActionSeparator { background: #ff00ff; border: none; min-width: 3px; }
+            QFlexDock--DockTabBar::tab { background: #0000ff; padding: 6px 10px; }
+            #documents QFlexDock--DockTabBar::tab { background: #00ff00; }
+            #documents QFlexDock--DockTabBar::tab:selected { background: #ff0000; }
+        )"));
+        QCoreApplication::processEvents();
+
+        DockTabGroup *group = areaOf(f.a)->groupOfPanel(p("b"));
+        QVERIFY(containsColor(group->actionBar()->grab().toImage(), QColor(0x10, 0x20, 0x30)));
+        QVERIFY(containsColor(group->widgetForAction(&one)->grab().toImage(),
+                              QColor(0xab, 0xcd, 0xef)));
+        QVERIFY(containsColor(group->widgetForAction(&line)->grab().toImage(),
+                              QColor(0xff, 0, 0xff)));
+        grab(&f.windowA, p("style-qss-title-actions"));
+
+        // A workspace's object name tells its tabs from those of the others.
+        const DockTabBar *bar = group->tabBar();
+        QCOMPARE(pixel(group->tabBar(), bar->tabRect(bar->currentIndex()).center() + QPoint(0, 9)),
+                 QColor(0xff, 0, 0));
+        QCOMPARE(pixel(group->tabBar(), bar->tabRect(0).center() + QPoint(0, 9)),
+                 QColor(0, 0xff, 0));
+        DockTabGroup *other = areaOf(f.b)->groupOfPanel(p("d"));
+        QCOMPARE(pixel(other->tabBar(), other->tabBar()->tabRect(0).center() + QPoint(0, 9)),
+                 QColor(0, 0, 0xff));
+        qApp->setStyleSheet(QString());
+    }
+
+    void styleSheetsStyleTheEdgeHandle()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.splitHandleWidth = 1;
+        theme.splitHandleHoverWidth = 4;
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Left));
+        f.manager.panel(p("b"))->setCollapsible(true);
+        QVERIFY(f.manager.hidePanel(p("b")));
+        DockAreaWidget *area = areaOf(f.a);
+        QCOMPARE(area->visibleEdgeHandles().size(), 1);
+        DockEdgeHandle *edge = area->visibleEdgeHandles().constFirst();
+
+        qApp->setStyleSheet(QStringLiteral(R"(
+            QFlexDock--DockEdgeHandle { background: #00ff00; }
+            QFlexDock--DockEdgeHandle[edge="left"][pressed="true"] { background: #ff0000; }
+        )"));
+        QCoreApplication::processEvents();
+        const auto column = [&](int x) {
+            return f.windowA.grab().toImage().pixelColor(
+                area->mapTo(&f.windowA, QPoint(x, area->height() / 2)));
+        };
+        // Nothing of it shows until it is pointed at; then as wide as a
+        // hovered split handle, and no wider.
+        QVERIFY(column(0) != QColor(0, 0xff, 0));
+        QEnterEvent enter(QPointF(2, 2), QPointF(2, 2), QPointF(2, 2));
+        QCoreApplication::sendEvent(edge, &enter);
+        QVERIFY(edge->isHovered());
+        QCOMPARE(column(0), QColor(0, 0xff, 0));
+        QCOMPARE(column(3), QColor(0, 0xff, 0));
+        QVERIFY(column(4) != QColor(0, 0xff, 0));
+        QTest::mousePress(edge, Qt::LeftButton, {}, edge->rect().center());
+        QCOMPARE(column(1), QColor(0xff, 0, 0));
+        QTest::mouseRelease(edge, Qt::LeftButton, {}, edge->rect().center());
+        QEvent leave(QEvent::Leave);
+        QCoreApplication::sendEvent(edge, &leave);
+        QVERIFY(column(0) != QColor(0, 0xff, 0));
+        qApp->setStyleSheet(QString());
+    }
+
     void themeTokensLayerBetweenPaletteAndStyleSheet()
     {
         TwoWindows f;

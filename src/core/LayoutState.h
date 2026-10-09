@@ -40,9 +40,12 @@ struct PanelMemory
     /// The other panels of its tab group, and its index among them.
     QStringList tabSiblings;
     int tabIndex = -1;
+    /// It was the tab in front.
+    bool front = false;
     /// Panels of the node it was split off from, and its side of that node.
     QStringList neighbors;
     DockArea neighborArea = DockArea::None;
+    /// Its share of the split it was a child of.
     double fraction = 0.5;
     /// Set when the panel was closed while sitting in an auto-hide bar.
     DockArea autoHideEdge = DockArea::None;
@@ -81,6 +84,14 @@ struct PanelLocation
     friend bool operator==(const PanelLocation &, const PanelLocation &) = default;
 };
 
+/// The node an absent panel would be put beside, and on which side of it.
+struct ReturnPlace
+{
+    QString container;
+    NodeId anchor;
+    DockArea side = DockArea::None;
+};
+
 /// The complete docking state of an application as one value: every
 /// container's tree plus the memory of where absent panels belong.
 ///
@@ -117,6 +128,13 @@ public:
     /// siblings, else beside its former neighbours, else in a new floating
     /// window if that is where it was, else as a tab in `fallbackWorkspace`.
     DockResult reattach(const PanelId &panel, const QString &fallbackWorkspace);
+    /// The same for several panels at once, in the order that gives tab
+    /// groups their former order, with the tab in front that was in front.
+    DockResult reattachAll(const QStringList &panels, const QString &fallbackWorkspace);
+    /// Where reattach() would put the panel, if that is beside a node of a
+    /// container that exists: not into a tab group that is still there, an
+    /// auto-hide bar or a floating window that is gone.
+    [[nodiscard]] std::optional<ReturnPlace> returnPlace(const PanelId &panel) const;
 
     /// Normalizes all trees, drops emptied floating containers and stale
     /// display state.

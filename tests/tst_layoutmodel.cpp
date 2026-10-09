@@ -144,6 +144,52 @@ private Q_SLOTS:
         QVERIFY(tree.isEmpty());
     }
 
+    // What a panel leaves behind goes to one neighbour; nobody else changes
+    // size, and putting it back beside that neighbour restores everything.
+    void removedPanelLeavesItsShareToItsNeighbour()
+    {
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Right));
+        QVERIFY(tree.setWeights(tree.root()->id, {0.2, 0.6, 0.2}));
+        const auto weights = [](const LayoutTree &t) {
+            QList<int> percent;
+            for (const auto &child : t.root()->children)
+                percent << qRound(child.weight * 100);
+            return percent;
+        };
+
+        LayoutTree first = tree;
+        QVERIFY(first.removePanel(p("a"))); // the first one: to the one after it
+        QCOMPARE(weights(first), (QList<int>{80, 20}));
+        QVERIFY(first.insertPanel(p("a"), groupOf(first, "b"), DockArea::Left, -1, 0.25));
+        QCOMPARE(weights(first), (QList<int>{20, 60, 20}));
+
+        LayoutTree middle = tree;
+        QVERIFY(middle.removePanel(p("b"))); // otherwise: to the one before it
+        QCOMPARE(weights(middle), (QList<int>{80, 20}));
+
+        LayoutTree last = tree;
+        QVERIFY(last.removePanel(p("c")));
+        QCOMPARE(weights(last), (QList<int>{20, 80}));
+
+        // The same when a whole node is taken out.
+        LayoutTree taken = tree;
+        QVERIFY(taken.takeNode(groupOf(taken, "a")).has_value());
+        QCOMPARE(weights(taken), (QList<int>{80, 20}));
+        QVERIFY(taken.validate());
+
+        // Unless a sibling is named to have it.
+        LayoutTree named = tree;
+        QVERIFY(named.takeNode(groupOf(named, "b"), groupOf(named, "c")).has_value());
+        QCOMPARE(weights(named), (QList<int>{20, 80}));
+        // Someone who is no sibling gets nothing; the usual neighbour does.
+        LayoutTree stranger = tree;
+        QVERIFY(stranger.takeNode(groupOf(stranger, "b"), NodeId::create()).has_value());
+        QCOMPARE(weights(stranger), (QList<int>{80, 20}));
+    }
+
     void removingTheMiddleFlattensSameOrientation()
     {
         // V(H(a, b), c) with c removed and d added below a: stays in normal form.

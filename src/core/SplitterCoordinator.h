@@ -4,6 +4,7 @@
 #include "core/LayoutSolver.h"
 
 #include <utility>
+#include <functional>
 #include <vector>
 
 namespace QFlexDock {
@@ -50,6 +51,34 @@ public:
     /// Every corner of `layout`. Bars that meet at (nearly) the same place,
     /// like the two halves of a cross, are reported as one corner.
     [[nodiscard]] static std::vector<Corner> corners(const SolvedLayout &layout);
+
+    /// A split handle as far as corners are concerned.
+    struct Bar
+    {
+        QRect rect;
+        /// Of its split: Qt::Horizontal is an upright bar moving along x.
+        Qt::Orientation orientation = Qt::Horizontal;
+        /// How far its ends may be from a bar they meet. More than nothing
+        /// for the bars of a dock area that lies within another one: there
+        /// is the frame of a tab group between them and the bars around.
+        int reach = 0;
+    };
+    /// The same for any set of bars; the indices are into `bars`.
+    [[nodiscard]] static std::vector<Corner> corners(const std::vector<Bar> &bars);
+
+    /// A child of a split that a drag would leave less than half of its
+    /// minimum size, and the sibling across the dragged handle.
+    struct Squeezed
+    {
+        NodeId node;
+        NodeId heir;
+        friend bool operator==(const Squeezed &, const Squeezed &) = default;
+    };
+    /// The tab groups that moving `group` by `delta` pixels (not clamped,
+    /// relative to `layout`) squeezes that far, among those `mayGo` allows.
+    [[nodiscard]] static std::vector<Squeezed>
+    squeezed(const LayoutTree &tree, const SolvedLayout &layout, const std::vector<int> &group,
+             int delta, const std::function<bool(const LayoutNode &)> &mayGo);
 
     /// Indices (into `layout.handles`) of the handles linked with
     /// `handleIndex`, itself included and listed first.

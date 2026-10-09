@@ -18,6 +18,7 @@
 #include <QtWidgets/QMenu>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QToolButton>
+#include <QtWidgets/QWidgetAction>
 
 namespace QFlexDock {
 
@@ -96,12 +97,19 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     m_closeButton = makeTitleButton(m_titleBar, "dockCloseButton", tr("Close"));
     m_floatButton->hide();
     m_closeButton->hide();
+    m_actionBar = new QWidget(m_titleBar);
+    m_actionBar->setObjectName(QStringLiteral("dockTitleActions"));
+    m_actionBar->hide();
+    m_actionLayout = new QHBoxLayout(m_actionBar);
+    m_actionLayout->setContentsMargins(0, 0, 0, 0);
+    m_actionLayout->setSpacing(0);
 
     m_titleLayout = new QHBoxLayout(m_titleBar);
     m_titleLayout->setContentsMargins(0, 0, 2, 0);
     m_titleLayout->setSpacing(0);
     m_titleLayout->addWidget(m_tabBar, 1);
     m_titleLayout->addWidget(m_titleLabel, 1);
+    m_titleLayout->addWidget(m_actionBar, 0, Qt::AlignVCenter);
     for (QToolButton *button : {m_menuButton, m_maximizeButton, m_floatButton, m_closeButton})
         m_titleLayout->addWidget(button, 0, Qt::AlignVCenter);
 
@@ -157,6 +165,7 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
 
 DockTabGroup::~DockTabGroup()
 {
+    clearTitleActions(); // widgets of QWidgetActions go back to their actions
     // Children of the host die with it. Content widgets belong to the manager,
     // so whatever is still parked here has to leave first.
     if (!m_manager)
@@ -363,6 +372,8 @@ void DockTabGroup::updateHeader()
     m_floatButton->setToolTip(floatTip);
     m_floatButton->setAccessibleName(floatTip);
 
+    updateTitleActions(current);
+
     // A panel may ask for no header at all while it has the group to itself.
     const bool headerVisible = !(m_panels.size() == 1 && current && !current->isHeaderVisible());
     setShown(m_titleBar, headerVisible);
@@ -370,6 +381,105 @@ void DockTabGroup::updateHeader()
         m_headerVisible = headerVisible;
         restyle();
     }
+}
+
+// The current panel's own actions, each as a button, a line or the widget
+// the action brings along. Rebuilt only when the list changes.
+void DockTabGroup::updateTitleActions(const DockPanel *current)
+{
+    const QList<QAction *> actions = current ? current->titleActions() : QList<QAction *>();
+    if (actions == m_shownActionList)
+        return;
+    clearTitleActions();
+    m_shownActionList = actions;
+    bool widgetBusy = false;
+
+    const int themed = m_manager->theme.iconSize;
+    const int iconSize = themed > 0 ? themed
+                                    : style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
+    for (QAction *action : actions) {
+        ShownAction shown;
+        shown.action = action;
+        if (auto *widgetAction = qobject_cast<QWidgetAction *>(action)) {
+            shown.widget = widgetAction->requestWidget(m_actionBar);
+            shown.requested = shown.widget != nullptr;
+            widgetBusy = widgetBusy || (!shown.widget && widgetAction->defaultWidget());
+        }
+        if (!shown.widget && action->isSeparator()) {
+            auto *line = new QFrame(m_actionBar);
+            line->setObjectName(QStringLiteral("dockActionSeparator"));
+            line->setFrameShape(QFrame::VLine);
+            line->setFrameShadow(QFrame::Plain);
+            shown.widget = line;
+        }
+        if (!shown.widget) {
+            auto *button = new QToolButton(m_actionBar);
+            button->setObjectName(QStringLiteral("dockActionButton"));
+            button->setAutoRaise(true);
+            button->setFocusPolicy(Qt::NoFocus);
+            button->setIconSize(QSize(iconSize, iconSize));
+            button->setDefaultAction(action);
+            if (action->menu())
+                button->setPopupMode(QToolButton::InstantPopup);
+            shown.widget = button;
+        }
+        QWidget *widget = shown.widget;
+        // A separator is as high as the buttons beside it.
+        m_actionLayout->addWidget(widget, 0,
+                                  action->isSeparator() && !shown.requested ? Qt::Alignment()
+                                                                            : Qt::AlignVCenter);
+        widget->setVisible(action->isVisible());
+        connect(action, &QAction::changed, widget, [action, widget] {
+            setShown(widget, action->isVisible());
+        });
+        m_shownActions.append(shown);
+    }
+    setShown(m_actionBar, !m_shownActions.isEmpty());
+
+    // An action's one widget may still be with the group the panel just left
+    // (which group hears of a change first is not defined). Ask again once
+    // that group has let go of it.
+    if (widgetBusy && !m_actionRetried) {
+        m_actionRetried = true;
+        QMetaObject::invokeMethod(this, [this] {
+            m_shownActionList.clear();
+            updateHeader();
+            m_area->contentLimitsChanged();
+        }, Qt::QueuedConnection);
+    } else if (!widgetBusy) {
+        m_actionRetried = false;
+    }
+}
+
+void DockTabGroup::clearTitleActions()
+{
+    for (const ShownAction &shown : std::as_const(m_shownActions)) {
+        if (!shown.widget)
+            continue;
+        if (shown.action)
+            disconnect(shown.action, nullptr, shown.widget, nullptr);
+        m_actionLayout->removeWidget(shown.widget);
+        auto *widgetAction = shown.requested ? qobject_cast<QWidgetAction *>(shown.action.data())
+                                             : nullptr;
+        if (widgetAction) {
+            shown.widget->hide();
+            widgetAction->releaseWidget(shown.widget);
+        } else {
+            shown.widget->hide();
+            shown.widget->deleteLater();
+        }
+    }
+    m_shownActions.clear();
+    m_shownActionList.clear();
+}
+
+QWidget *DockTabGroup::widgetForAction(const QAction *action) const
+{
+    for (const ShownAction &shown : m_shownActions) {
+        if (shown.action == action)
+            return shown.widget;
+    }
+    return nullptr;
 }
 
 void DockTabGroup::setActive(bool active)
@@ -469,6 +579,12 @@ void DockTabGroup::refreshAppearance()
                                  : style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
     for (QToolButton *button : {m_menuButton, m_maximizeButton, m_floatButton, m_closeButton})
         button->setIconSize(QSize(small, small));
+    for (const ShownAction &shown : std::as_const(m_shownActions)) {
+        if (auto *button = qobject_cast<QToolButton *>(shown.widget.data());
+            button && !shown.requested) {
+            button->setIconSize(QSize(small, small));
+        }
+    }
     m_closeButton->setIcon(m_manager->icon(DockIcon::Close, this));
     if (themed > 0)
         m_tabBar->setIconSize(QSize(themed, themed));

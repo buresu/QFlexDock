@@ -10,6 +10,7 @@
 #include <memory>
 
 QT_BEGIN_NAMESPACE
+class QAction;
 class QWidget;
 QT_END_NAMESPACE
 
@@ -93,6 +94,29 @@ public:
     /// central view other panels are docked around.
     [[nodiscard]] bool isHeaderVisible() const;
     void setHeaderVisible(bool visible);
+
+    /// Whether dragging a split handle far enough against the panel's tab
+    /// group closes it (default false): once the group would be left less
+    /// than half of its minimum size, it gives way, and comes back if the
+    /// drag returns. Released there, its panels are closed; showPanel()
+    /// brings each back at the size the group had before the drag. Every
+    /// panel of a group has to allow this for the group to go.
+    ///
+    /// Collapsible panels that are closed, in whatever way, can also be
+    /// pulled back out: dragging inwards from the edge they went to shows
+    /// them again (those that were closed together, see
+    /// DockManager::hidePanels()).
+    [[nodiscard]] bool isCollapsible() const;
+    void setCollapsible(bool collapsible);
+
+    /// Actions of the application's own in the header of the panel's tab
+    /// group, shown while the panel is the current one there, before the
+    /// built-in buttons. An ordinary action becomes a button (one with a menu
+    /// opens it), a separator a thin line, and a QWidgetAction puts its
+    /// widget there. The actions stay the caller's; one that is destroyed
+    /// drops out.
+    [[nodiscard]] QList<QAction *> titleActions() const;
+    void setTitleActions(const QList<QAction *> &actions);
 
     /// Whether the content is hidden while a dock drag is in progress
     /// (default false). Meant for content that is a native window (see

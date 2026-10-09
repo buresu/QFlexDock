@@ -234,6 +234,126 @@ private Q_SLOTS:
         QVERIFY(f.a->panels().contains(p("e")));
     }
 
+    // Side areas that are put away and brought back: everything has its old
+    // size again, and while one is away the others keep theirs.
+    void hiddenPanelsComeBackAtTheirSize()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Left, 0.3));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Right, 0.25));
+        QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Bottom, -1, 0.3));
+        QVERIFY(f.manager.movePanel(p("e"), p("c"), DockArea::Center));
+        QCOMPARE(describe(f.a), p("H(b, V(a, d), c|e)"));
+        DockAreaWidget *area = areaOf(f.a);
+        const auto sizes = [&] {
+            QHash<QString, QSize> all;
+            for (const QString &id : f.a->panels())
+                all.insert(id, area->groupOfPanel(id)->size());
+            return all;
+        };
+        const QHash<QString, QSize> before = sizes();
+        // (Give or take a pixel: sizes are whole pixels of shares, and a
+        // split handle comes and goes with the panel.)
+        const auto same = [](const QSize &a, const QSize &b) {
+            return qAbs(a.width() - b.width()) <= 1 && qAbs(a.height() - b.height()) <= 1;
+        };
+
+        // The left side goes: its room goes to the middle, the right stays.
+        QVERIFY(f.manager.hidePanel(p("b")));
+        QCOMPARE(describe(f.a), p("H(V(a, d), c|e)"));
+        QVERIFY(same(sizes().value(p("c")), before.value(p("c"))));
+        QVERIFY(sizes().value(p("a")).width()
+                >= before.value(p("a")).width() + before.value(p("b")).width());
+        // Then the right side, tab by tab, and the bottom.
+        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.hidePanel(p("e")));
+        QVERIFY(f.manager.hidePanel(p("d")));
+        QCOMPARE(describe(f.a), p("a"));
+
+        // Back in another order.
+        QVERIFY(f.manager.showPanel(p("d")));
+        QVERIFY(f.manager.showPanel(p("e")));
+        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.showPanel(p("b")));
+        QCOMPARE(describe(f.a), p("H(b, V(a, d), c|e)"));
+        const auto unchanged = [&] {
+            const QHash<QString, QSize> now = sizes();
+            for (auto it = before.cbegin(); it != before.cend(); ++it) {
+                if (!same(now.value(it.key()), it.value())) {
+                    qWarning() << it.key() << now.value(it.key()) << "was" << it.value();
+                    return false;
+                }
+            }
+            return true;
+        };
+        QVERIFY(unchanged());
+
+        // One side comes back while the other is away: it has its own size,
+        // not a share of whatever its neighbour has grown to.
+        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.hidePanel(p("e")));
+        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(same(sizes().value(p("b")), before.value(p("b"))));
+        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.showPanel(p("e")));
+        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(same(sizes().value(p("c")), before.value(p("c"))));
+        QVERIFY(f.manager.showPanel(p("b")));
+        QCOMPARE(describe(f.a), p("H(b, V(a, d), c|e)"));
+        QVERIFY(unchanged());
+    }
+
+    // An area's panels put away and brought back as one change each.
+    void panelsHiddenTogetherReturnTogether()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right, 0.3));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Center));
+        QVERIFY(f.manager.activatePanel(p("c")));
+        QCOMPARE(describe(f.a), p("H(a, b|c|d)"));
+        DockAreaWidget *area = areaOf(f.a);
+        const int width = area->groupOfPanel(p("b"))->width();
+        f.manager.clearUndoHistory();
+        QSignalSpy changed(&f.manager, &DockManager::layoutChanged);
+
+        QVERIFY(f.manager.hidePanels({p("b"), p("c"), p("d")}));
+        QCOMPARE(describe(f.a), p("a"));
+        QCOMPARE(changed.size(), 1);
+        // In any order they are asked for: the tabs in their old order, the
+        // same one in front, the group as wide as it was.
+        QVERIFY(f.manager.showPanels({p("d"), p("b"), p("c")}));
+        QCOMPARE(changed.size(), 2);
+        QCOMPARE(describe(f.a), p("H(a, b|c|d)"));
+        QCOMPARE(area->groupOfPanel(p("b"))->currentPanel(), p("c"));
+        QVERIFY(qAbs(area->groupOfPanel(p("b"))->width() - width) <= 1);
+        // One undo step each.
+        QVERIFY(f.manager.undo());
+        QCOMPARE(describe(f.a), p("a"));
+        QVERIFY(f.manager.undo());
+        QCOMPARE(describe(f.a), p("H(a, b|c|d)"));
+        QVERIFY(!f.manager.canUndo());
+
+        // Closed one after the other, they still find their order.
+        for (const char *id : {"b", "c", "d"})
+            QVERIFY(f.manager.hidePanel(p(id)));
+        QVERIFY(f.manager.showPanels({p("b"), p("c"), p("d")}));
+        QCOMPARE(describe(f.a), p("H(a, b|c|d)"));
+
+        // Open ones are left alone, unknown ones refused with nothing done.
+        QVERIFY(f.manager.showPanels({p("b")}));
+        QVERIFY(f.manager.hidePanels({p("b")}));
+        QVERIFY(!f.manager.showPanels({p("b"), p("nope")}));
+        QVERIFY(!f.manager.panel(p("b"))->isOpen());
+        QVERIFY(!f.manager.hidePanels({p("c"), p("nope")}));
+        QVERIFY(f.manager.panel(p("c"))->isOpen());
+    }
+
     void floatAndDockBack()
     {
         TwoWindows f;

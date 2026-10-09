@@ -11,8 +11,11 @@
 
 #include <QtTest/QSignalSpy>
 #include <QtWidgets/QLayout>
+#include <QtWidgets/QLineEdit>
+#include <QtWidgets/QMenu>
 #include <QtWidgets/QStyle>
 #include <QtWidgets/QToolButton>
+#include <QtWidgets/QWidgetAction>
 
 using namespace QFlexDock;
 using namespace TestUtils;
@@ -172,6 +175,109 @@ private Q_SLOTS:
         QVERIFY(a->menuButton()->isVisible());
         QVERIFY(a->maximizeButton()->isVisible());
         QVERIFY(!a->floatButton()->isVisible());
+    }
+
+    // The application's own actions in the header, per panel.
+    void titleActionsFollowTheCurrentPanel()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.activatePanel(p("a")));
+        DockAreaWidget *area = areaOf(f.a);
+        DockTabGroup *group = area->groupOfPanel(p("a"));
+        QVERIFY(!group->actionBar()->isVisible());
+
+        QAction split(p("Split"));
+        int triggered = 0;
+        connect(&split, &QAction::triggered, this, [&triggered] { ++triggered; });
+        QAction separator;
+        separator.setSeparator(true);
+        QMenu menu;
+        menu.addAction(p("Close All"));
+        QAction more(p("More"));
+        more.setMenu(&menu);
+        QWidgetAction filter(nullptr);
+        auto *edit = new QLineEdit;
+        filter.setDefaultWidget(edit);
+
+        DockPanel *a = f.manager.panel(p("a"));
+        DockPanel *b = f.manager.panel(p("b"));
+        QSignalSpy metadata(a, &DockPanel::metadataChanged);
+        a->setTitleActions({&filter, &split, &separator, &more});
+        QCOMPARE(metadata.size(), 1);
+        QCOMPARE(a->titleActions(), (QList<QAction *>{&filter, &split, &separator, &more}));
+        auto *otherAction = new QAction(p("Other"), this);
+        b->setTitleActions({otherAction});
+
+        // In order, between the tabs and the built-in buttons.
+        QVERIFY(group->actionBar()->isVisible());
+        auto *splitButton = qobject_cast<QToolButton *>(group->widgetForAction(&split));
+        QVERIFY(splitButton);
+        QCOMPARE(splitButton->objectName(), p("dockActionButton"));
+        QCOMPARE(splitButton->defaultAction(), &split);
+        QCOMPARE(group->widgetForAction(&filter), edit);
+        QVERIFY(edit->isVisible());
+        QCOMPARE(group->widgetForAction(&separator)->objectName(), p("dockActionSeparator"));
+        auto *moreButton = qobject_cast<QToolButton *>(group->widgetForAction(&more));
+        QVERIFY(moreButton);
+        QCOMPARE(moreButton->popupMode(), QToolButton::InstantPopup);
+        QVERIFY(!group->widgetForAction(otherAction));
+        QCoreApplication::processEvents();
+        const QRect tabs = inGroup(group, group->tabBar());
+        const QRect actions = inGroup(group, group->actionBar());
+        const QRect builtIn = inGroup(group, group->menuButton());
+        QVERIFY(tabs.right() < actions.left());
+        QVERIFY(actions.right() < builtIn.left());
+        QVERIFY(inGroup(group, edit).right() < inGroup(group, splitButton).left());
+        QVERIFY(inGroup(group, splitButton).right() < inGroup(group, moreButton).left());
+        grab(&f.windowA, p("header-title-actions"));
+
+        QTest::mouseClick(splitButton, Qt::LeftButton);
+        QCOMPARE(triggered, 1);
+        // Hiding an action hides its button; the group cannot get narrower
+        // than what its header holds.
+        const int minimum = group->sizeLimits().min.width();
+        QVERIFY(minimum >= actions.width());
+        split.setVisible(false);
+        QVERIFY(!splitButton->isVisible());
+        split.setVisible(true);
+        QVERIFY(splitButton->isVisible());
+
+        // The other tab brings its own.
+        QVERIFY(f.manager.activatePanel(p("b")));
+        QVERIFY(!group->widgetForAction(&split));
+        QVERIFY(group->widgetForAction(otherAction));
+        QVERIFY(!edit->isVisible());
+        QVERIFY(edit->parentWidget() != group->actionBar()); // back with its action
+        QVERIFY(f.manager.activatePanel(p("a")));
+        QCOMPARE(group->widgetForAction(&filter), edit);
+
+        // The widget goes along when the panel moves to another group.
+        QVERIFY(f.manager.movePanel(p("a"), p("b"), DockArea::Right));
+        DockTabGroup *moved = area->groupOfPanel(p("a"));
+        QVERIFY(moved != group);
+        QTRY_COMPARE(moved->widgetForAction(&filter), edit);
+        QTRY_VERIFY(edit->isVisible());
+        QVERIFY(moved->widgetForAction(&split));
+        QVERIFY(!group->widgetForAction(&split));
+        // With a title bar instead of tabs they are there just the same.
+        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        QVERIFY(moved->widgetForAction(&split)->isVisible());
+        f.manager.setGroupHeader(DockManager::GroupHeader::Tabs);
+
+        // A destroyed action drops out; so does everything on request.
+        delete otherAction;
+        QVERIFY(b->titleActions().isEmpty());
+        QVERIFY(!group->actionBar()->isVisible());
+        a->setTitleActions({});
+        QVERIFY(!moved->actionBar()->isVisible());
+        QVERIFY(!edit->isVisible());
+        // The widget of a QWidgetAction survives the group it was shown in.
+        QVERIFY(f.manager.hidePanel(p("a")));
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
+        QCOMPARE(filter.defaultWidget(), edit);
     }
 
     void floatButtonAndDoubleClickToggleFloating()

@@ -5,11 +5,13 @@
 #include "core/LayoutSolver.h"
 
 #include <QtCore/QHash>
+#include <QtCore/QPointer>
 #include <QtWidgets/QWidget>
 
 namespace QFlexDock {
 
 class DockDropOverlay;
+class DockEdgeHandle;
 class DockSplitCorner;
 class DockSplitHandle;
 class DockTabGroup;
@@ -63,13 +65,17 @@ public:
     [[nodiscard]] QList<DockTabGroup *> groups() const { return m_groups.values(); }
     [[nodiscard]] QList<DockSplitHandle *> visibleHandles() const;
     [[nodiscard]] QList<DockSplitCorner *> visibleCorners() const;
+    [[nodiscard]] QList<DockEdgeHandle *> visibleEdgeHandles() const;
     [[nodiscard]] DockDropOverlay *overlay() const { return m_overlay; }
 
     void relayout();
+    /// A dock area inside one of this area's panels laid itself out anew.
+    void nestedLayoutChanged();
     /// A tab group's size limits changed.
     void contentLimitsChanged();
     void refreshAppearance();
     [[nodiscard]] int handleWidth() const;
+    [[nodiscard]] int handleHoverWidth() const;
     [[nodiscard]] QSize layoutMinimumSize() const;
 
     // --- Drag and drop -------------------------------------------------------
@@ -89,6 +95,11 @@ public:
     /// `linked` false moves only the handles that meet in the corner.
     void beginCornerDrag(int cornerIndex, bool linked);
     void moveCornerDrag(const QPoint &delta);
+    // Closed panels pulled back out of the edge they went to: they are shown,
+    // and the drag goes on as one of the handle beside them, `inward` pixels
+    // from the edge. Ended like any handle drag.
+    bool beginEdgeReopen(const QStringList &panels, DockArea side);
+    void moveEdgeReopen(int inward);
 
 protected:
     void dragEnterEvent(QDragEnterEvent *event) override;
@@ -99,6 +110,21 @@ protected:
 
 private:
     class Layout;
+    /// The bars of one dock area that meet in a corner.
+    struct CornerPart
+    {
+        QPointer<DockAreaWidget> area;
+        std::vector<int> columns;
+        std::vector<int> rows;
+    };
+    /// A place where bars meet: this area's own (the first part), and those
+    /// of dock areas that lie within it and end on them.
+    struct Corner
+    {
+        QRect rect;
+        std::vector<CornerPart> parts;
+    };
+
     void handleDrag(QDragMoveEvent *event);
     [[nodiscard]] std::vector<int> linkedGroup(int handleIndex, bool linked) const;
     [[nodiscard]] std::vector<int> linkedGroup(const std::vector<int> &handles, bool linked) const;
@@ -106,6 +132,14 @@ private:
     [[nodiscard]] LimitsProvider limitsProvider() const;
     [[nodiscard]] const LayoutNode *maximizedNode() const;
     void placeWidgets();
+    void updateCorners();
+    void updateEdgeHandles();
+    [[nodiscard]] QList<DockAreaWidget *> areasWithin() const;
+    [[nodiscard]] QRect heldHandleBar(const DockSplitHandle *held, const LayoutTree &shown) const;
+    // One area's share of a drag: its handles along x and along y.
+    void beginPartDrag(const std::vector<int> &columns, const std::vector<int> &rows, bool linked);
+    void movePartDrag(const QPoint &delta);
+    [[nodiscard]] std::vector<SplitterCoordinator::Squeezed> endPartDrag();
 
     DockManagerPrivate *m_manager;
     QString m_containerId;
@@ -114,8 +148,10 @@ private:
     SolvedLayout m_solved;
     QHash<NodeId, DockTabGroup *> m_groups;
     QList<DockSplitHandle *> m_handles;
-    std::vector<SplitterCoordinator::Corner> m_corners;
+    std::vector<Corner> m_corners;
     QList<DockSplitCorner *> m_cornerWidgets;
+    QList<DockEdgeHandle *> m_edgeHandles;
+    int m_edgeCount = 0;
     DockDropOverlay *m_overlay;
     Layout *m_layout;
 
@@ -127,6 +163,19 @@ private:
     SolvedLayout m_dragStart;
     std::vector<int> m_dragGroup;
     std::vector<int> m_dragCrossGroup;
+    /// Other areas with bars in the corner that is dragged (or hovered).
+    QList<QPointer<DockAreaWidget>> m_dragOthers;
+    QList<QPointer<DockAreaWidget>> m_hoverOthers;
+    /// Tab groups the drag has squeezed out for now. They are shown as gone;
+    /// the tree changes only when the drag ends.
+    std::vector<SplitterCoordinator::Squeezed> m_squeezed;
+    std::vector<int> m_highlighted;
+    bool m_wasSqueezing = false;
+    // A drag that began at an edge handle: the size the panels came back
+    // with, and whether they lie before the handle that is now dragged.
+    bool m_reopening = false;
+    bool m_reopenBefore = false;
+    int m_reopenExtent = 0;
 };
 
 } // namespace QFlexDock

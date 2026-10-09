@@ -249,7 +249,92 @@ private Q_SLOTS:
         QCOMPARE(SplitterCoordinator::linkedHandles(layout, top).size(), size_t(3));
     }
 
+    // --- squeezing a group out -----------------------------------------------
+    void aGroupLeftLessThanHalfItsMinimumIsSqueezed()
+    {
+        // H(a, b, c) of 300 each, every group at least 100 wide.
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("b"), tree.findPanel(p("a"))->id, DockArea::Right));
+        QVERIFY(tree.insertPanel(p("c"), tree.findPanel(p("b"))->id, DockArea::Right));
+        QVERIFY(tree.setWeights(tree.root()->id, {1, 1, 1}));
+        const auto limits = [](const LayoutNode &) {
+            SizeLimits l;
+            l.min = QSize(100, 50);
+            return l;
+        };
+        const SolvedLayout layout = LayoutSolver::solve(tree, QRect(0, 0, 908, 400), 4, limits);
+        const NodeId a = tree.findPanel(p("a"))->id;
+        const NodeId b = tree.findPanel(p("b"))->id;
+        const NodeId c = tree.findPanel(p("c"))->id;
+        QCOMPARE(layout.rects.value(a).width(), 300);
+        const int first = handleIndex(tree, layout, "a", Qt::Horizontal);
+        const int second = handleIndex(tree, layout, "b", Qt::Horizontal);
+        const auto anyone = [](const LayoutNode &) { return true; };
+        using Squeezed = SplitterCoordinator::Squeezed;
+        const auto squeezed = [&](int handle, int delta, const auto &mayGo) {
+            return SplitterCoordinator::squeezed(tree, layout, {handle}, delta, mayGo);
+        };
+
+        // Down to its minimum and somewhat beyond: still there.
+        QVERIFY(squeezed(first, -200, anyone).empty());
+        QVERIFY(squeezed(first, -250, anyone).empty());
+        // Less than half the minimum left: gone, its room to the other side
+        // of the handle.
+        QCOMPARE(squeezed(first, -251, anyone), std::vector<Squeezed>({{a, b}}));
+        QCOMPARE(squeezed(first, -900, anyone), std::vector<Squeezed>({{a, b}}));
+        // The other way the group after the handle is the one that shrinks.
+        QVERIFY(squeezed(first, 250, anyone).empty());
+        QCOMPARE(squeezed(first, 251, anyone), std::vector<Squeezed>({{b, a}}));
+        QCOMPARE(squeezed(second, -251, anyone), std::vector<Squeezed>({{b, c}}));
+        QCOMPARE(squeezed(second, 251, anyone), std::vector<Squeezed>({{c, b}}));
+        // Only groups that may go.
+        const auto notB = [b](const LayoutNode &node) { return node.id != b; };
+        QVERIFY(squeezed(first, 400, notB).empty());
+        QCOMPARE(squeezed(first, -400, notB), std::vector<Squeezed>({{a, b}}));
+        QVERIFY(squeezed(first, 0, anyone).empty());
+    }
+
+    void onlyTabGroupsAreSqueezedOut()
+    {
+        // H(a, V(b, c)): the column of b and c is no tab group.
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("b"), tree.findPanel(p("a"))->id, DockArea::Right));
+        QVERIFY(tree.insertPanel(p("c"), tree.findPanel(p("b"))->id, DockArea::Bottom));
+        const SolvedLayout layout = LayoutSolver::solve(tree, QRect(0, 0, 804, 404), 4, {});
+        const int upright = handleIndex(tree, layout, "a", Qt::Horizontal);
+        const auto anyone = [](const LayoutNode &) { return true; };
+        QVERIFY(SplitterCoordinator::squeezed(tree, layout, {upright}, 700, anyone).empty());
+        QCOMPARE(SplitterCoordinator::squeezed(tree, layout, {upright}, -700, anyone).size(),
+                 size_t(1));
+    }
+
     // --- corners -----------------------------------------------------------
+    // Bars of a dock area inside a panel end a little short of the bars
+    // around that panel. Given some reach, they meet them all the same.
+    void barsWithReachMeetAcrossAGap()
+    {
+        using Bar = SplitterCoordinator::Bar;
+        const Bar level{QRect(0, 300, 800, 4), Qt::Vertical, 0};
+        // An upright bar from above that stops 3 pixels short of it.
+        const QRect upright(400, 0, 4, 297);
+        QVERIFY(SplitterCoordinator::corners({level, Bar{upright, Qt::Horizontal, 0}}).empty());
+        const auto corners = SplitterCoordinator::corners({level, Bar{upright, Qt::Horizontal, 8}});
+        QCOMPARE(corners.size(), size_t(1));
+        QCOMPARE(corners[0].rect, QRect(400, 300, 4, 4));
+        QCOMPARE(corners[0].columns, std::vector<int>({1}));
+        QCOMPARE(corners[0].rows, std::vector<int>({0}));
+        // Too far is too far.
+        const QRect farAway(400, 0, 4, 280);
+        QVERIFY(SplitterCoordinator::corners({level, Bar{farAway, Qt::Horizontal, 8}}).empty());
+        // A bar from below at the same place joins the same corner.
+        const Bar below{QRect(400, 304, 4, 200), Qt::Horizontal, 0};
+        const auto cross = SplitterCoordinator::corners({level, Bar{upright, Qt::Horizontal, 8}, below});
+        QCOMPARE(cross.size(), size_t(1));
+        QCOMPARE(cross[0].columns, std::vector<int>({1, 2}));
+    }
+
     void aCrossIsOneCorner()
     {
         const LayoutTree tree = makeGrid();
