@@ -41,6 +41,14 @@ void DockTabBar::setTabSizing(int tabWidth, DockTabOverflow overflow)
     updateTabButtons();
 }
 
+void DockTabBar::setHugsTabs(bool hugs)
+{
+    if (m_hugsTabs == hugs)
+        return;
+    m_hugsTabs = hugs;
+    updateGeometry();
+}
+
 QSize DockTabBar::tabSizeHint(int index) const
 {
     QSize size = QTabBar::tabSizeHint(index);
@@ -90,9 +98,16 @@ QSize DockTabBar::minimumTabSizeHint(int index) const
 
 QSize DockTabBar::minimumSizeHint() const
 {
-    // QTabBar asks for room to scroll in even when its tabs take less.
     const QSize size = QTabBar::minimumSizeHint();
-    return QSize(qMin(size.width(), m_shrink ? 24 : sizeHint().width()), size.height());
+    if (m_shrink)
+        return QSize(qMin(size.width(), 24), size.height());
+    // QTabBar asks for room to scroll in even when its tabs take less, which
+    // a bar that ends with its last tab does not have. Any other bar keeps
+    // that minimum: it is the same whatever the titles are, so that groups
+    // side by side and one above the other can be as narrow as each other.
+    if (m_hugsTabs)
+        return QSize(qMin(size.width(), sizeHint().width()), size.height());
+    return size;
 }
 
 void DockTabBar::tabLayoutChange()

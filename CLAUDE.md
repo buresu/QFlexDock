@@ -93,6 +93,11 @@ tests/                    Qt Test; shared fixtures in TestUtils.h
 - A real `QDrag` can only be automated on X11 (`tst_realdrag`). The whole drag happens inside one
   `processEvents()`, so intermediate state is recorded in steps scheduled by timers. `QTest` does not move
   the real pointer while a button is down; where the code under test reads `QCursor::pos()`, the test sets it.
+- Text is not the same size everywhere: the Linux machines of the CI have other fonts, and `offscreen` on
+  Windows has none (every glyph is a box of one size). A test must not rely on how wide a title or a line
+  edit comes out. `FONTCONFIG_FILE= ctest --test-dir build` runs the suites without fonts; a
+  `FONTCONFIG_FILE` whose configuration prefers another family runs them with other ones.
+- The real-drag tests need a screen of 2000x1200: the pointer does not leave the screen.
 - Wayland gives no top-level window positions; tests that look at them branch on `windowPositionsWork()`.
 - A lambda connected to a signal that captures locals must be declared before the fixture (`TwoWindows`) or
   disconnected before leaving scope: destroying the fixture emits layout signals too.

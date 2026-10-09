@@ -437,6 +437,7 @@ void DockTabGroup::updateTitleActions(const DockPanel *current)
     // tabs, and the rest of the header is the title bar's.
     const bool tabsFit = !m_titleMode
         && !m_actionBars[size_t(DockTitlePlace::AfterTabs)].shown.isEmpty();
+    m_tabBar->setHugsTabs(tabsFit);
     m_titleLayout->setStretchFactor(m_tabBar, tabsFit ? 0 : 1);
     setShown(m_filler, tabsFit);
 

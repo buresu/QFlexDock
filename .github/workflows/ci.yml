@@ -65,7 +65,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           cmake -S . -B build -DQFLEXDOCK_TEST_PLATFORM=xcb
-          xvfb-run -a ctest --test-dir build -C Release --output-on-failure
+          xvfb-run -a -s "-screen 0 2000x1200x24" ctest --test-dir build -C Release --output-on-failure
 
       # Real Wayland platform plugin inside a private headless compositor.
       - name: Test (Wayland, headless)

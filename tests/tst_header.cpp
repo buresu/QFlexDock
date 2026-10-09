@@ -236,10 +236,14 @@ private Q_SLOTS:
 
         QTest::mouseClick(splitButton, Qt::LeftButton);
         QCOMPARE(triggered, 1);
-        // Hiding an action hides its button; the group cannot get narrower
-        // than what its header holds.
+        // The group cannot get narrower than what its header holds at its
+        // narrowest (the line edit is as wide as there is room for, so its
+        // present width says nothing). Hiding an action hides its button.
         const int minimum = group->sizeLimits().min.width();
-        QVERIFY(minimum >= actions.width());
+        QVERIFY(minimum >= group->tabBar()->minimumSizeHint().width()
+                               + group->actionBar()->minimumSizeHint().width());
+        QVERIFY(group->actionBar()->minimumSizeHint().width()
+                >= splitButton->minimumSizeHint().width() + moreButton->minimumSizeHint().width());
         split.setVisible(false);
         QVERIFY(!splitButton->isVisible());
         split.setVisible(true);
@@ -376,6 +380,22 @@ private Q_SLOTS:
         QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
         QVERIFY(group->isHeaderVisible());
         QTRY_VERIFY(group->titleBar()->isVisible());
+    }
+
+    // Boundaries in one line stay in one line down to the smallest window
+    // only if the groups along them can get equally narrow.
+    void titlesDoNotDecideHowNarrowAGroupGets()
+    {
+        TwoWindows f;
+        f.show();
+        f.manager.panel(p("a"))->setTitle(p("i"));
+        f.manager.panel(p("b"))->setTitle(p("A title that takes far more room"));
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Bottom));
+        DockAreaWidget *area = areaOf(f.a);
+        QCoreApplication::processEvents();
+        QCOMPARE(area->groupOfPanel(p("a"))->sizeLimits().min.width(),
+                 area->groupOfPanel(p("b"))->sizeLimits().min.width());
     }
 
     // Actions before the tabs and right behind them, besides those at the end.

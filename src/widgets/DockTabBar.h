@@ -52,6 +52,10 @@ public:
     {
         return m_shrink ? DockTabOverflow::Shrink : DockTabOverflow::Scroll;
     }
+    /// Whether the bar ends with its last tab, for something else to stand
+    /// right behind the tabs. Otherwise it takes the whole header.
+    [[nodiscard]] bool hugsTabs() const { return m_hugsTabs; }
+    void setHugsTabs(bool hugs);
 
     /// The part of the bar where a drop inserts between tabs: the tabs
     /// themselves plus a little room behind the last one for appending
@@ -97,6 +101,7 @@ private:
     int m_tabWidth = -1;
     int m_gapWidth = 0;
     bool m_shrink = false;
+    bool m_hugsTabs = false;
     /// Tab buttons were hidden for want of room, and may have to come back.
     bool m_buttonsHidden = false;
     mutable bool m_measuringMinimum = false;
