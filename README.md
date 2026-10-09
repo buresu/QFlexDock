@@ -4,7 +4,7 @@ A docking library for Qt 6 Widgets. C++20, CMake, MIT.
 Made for creative tools, IDEs, 3D editors and node editors.
 
 - **Large five-zone drop guide** — top, bottom, left, right and center zones that cover the whole target panel, plus a separate band for docking against the whole workspace.
-- **Linked splitters** — boundaries that form one line move together. Grab the point where a vertical and a horizontal boundary meet to move both at once. Side areas can be pushed out of the way with their boundary and pulled back out of the edge they went to, and come back at their size.
+- **Linked splitters** — boundaries that form one line move together, and stay one line when a panel beside one of them cannot get any smaller. Grab the point where a vertical and a horizontal boundary meet to move both at once. Side areas can be pushed out of the way with their boundary and pulled back out of the edge they went to, and come back at their size.
 - **Panels move between `QMainWindow`s** — one `DockManager` is shared, and the same widget instance moves to the other window.
 - **Layouts as JSON** — versioned, validated and repaired on load; unknown panels and broken data do not break the layout.
 - **QML and GPU content** — `QQuickWidget`, `QOpenGLWidget` and native `QWindow`s as panels.

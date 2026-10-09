@@ -246,6 +246,8 @@ void DockAreaWidget::placeWidgets()
     // What a drag has squeezed out is shown as gone already, its room with
     // the node across the handle. The tree itself changes when the drag ends.
     const bool squeezing = !maximized && !m_squeezed.empty();
+    // Bars that move together also stay together.
+    const bool linesKept = m_manager && m_manager->linkedSplitters;
     LayoutTree shown;
     if (maximized) {
         // Display state only: one group fills the area, the tree is untouched.
@@ -257,9 +259,9 @@ void DockAreaWidget::placeWidgets()
         shown = m_tree;
         for (const SplitterCoordinator::Squeezed &gone : m_squeezed)
             (void)shown.takeNode(gone.node, gone.heir);
-        m_solved = LayoutSolver::solve(shown, bounds, handleWidth(), limitsProvider());
+        m_solved = LayoutSolver::solve(shown, bounds, handleWidth(), limitsProvider(), linesKept);
     } else {
-        m_solved = LayoutSolver::solve(m_tree, bounds, handleWidth(), limitsProvider());
+        m_solved = LayoutSolver::solve(m_tree, bounds, handleWidth(), limitsProvider(), linesKept);
     }
 
     for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it) {

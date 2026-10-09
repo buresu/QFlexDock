@@ -100,6 +100,10 @@ floating window are none.
 `setDragGhostEnabled()`, `setTheme()`, `setOverlayPainter()`. See [styling.md](styling.md) and
 [platform-notes.md](platform-notes.md).
 
+Linked splitters are boundaries in one line: they are dragged as one, and they stay in one line when the
+minimum or maximum size of a panel holds one of them back (the others go where it can go). Turned off,
+every boundary is on its own in both respects.
+
 **Windows of tabs.** Floating windows need no workspace, so an application can consist of them alone.
 With `setCenterDropEnabled(false)` the middle of a tab group takes no drop: a panel becomes a tab by the
 header only, and let go of anywhere else it floats. Panels that allow `DockArea::Center` only never split a

@@ -1014,6 +1014,89 @@ private Q_SLOTS:
         QCOMPARE(widthOf(area, "a"), a + 100);
     }
 
+    // Content that cannot get as narrow as its neighbours holds its own row's
+    // bar back. The bar of the other row comes along: a line stays a line.
+    void linesSurviveContentThatCannotShrink()
+    {
+        TwoWindows f;
+        f.widgets.value(p("a"))->setMinimumWidth(200);
+        f.widgets.value(p("d"))->setMinimumWidth(400);
+        // A workspace that is resized as a widget: a window is as wide as
+        // the compositor lets it be, and not on every platform for good.
+        QWidget host;
+        host.resize(1200, 440);
+        DockWorkspace *workspace = f.manager.createWorkspace(p("C"));
+        workspace->setParent(&host);
+        workspace->setGeometry(0, 0, 900, 400);
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        QVERIFY(workspace->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Bottom));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("d"), p("c"), DockArea::Right));
+        f.manager.clearUndoHistory();
+        DockAreaWidget *area = areaOf(workspace);
+
+        const auto minimumOf = [&](const char *panel) {
+            return area->groupOfPanel(p(panel))->sizeLimits().min.width();
+        };
+        const auto inLine = [&] {
+            const DockSplitHandle *top = handleAfter(area, "a", Qt::Horizontal);
+            return top
+                && top->barGeometry().x() == area->groupOfPanel(p("c"))->geometry().right() + 1;
+        };
+        // The narrowest the area can be with the two bars in one line.
+        const int narrowest = qMax(minimumOf("a"), minimumOf("c")) + area->handleWidth()
+            + qMax(minimumOf("b"), minimumOf("d"));
+        const int around = workspace->width() - area->width();
+        const auto setWidth = [&](int width) {
+            workspace->resize(width + around, 400);
+            QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+            QCOMPARE(area->width(), width);
+        };
+        QTRY_VERIFY(inLine());
+
+        for (int width : {narrowest + 20, narrowest, narrowest + 300}) {
+            setWidth(width);
+            QVERIFY(inLine());
+            QVERIFY(widthOf(area, "a") >= minimumOf("a"));
+            QVERIFY(widthOf(area, "d") >= minimumOf("d"));
+            QCOMPARE(widthOf(area, "a") + area->handleWidth() + widthOf(area, "b"), width);
+        }
+
+        // It is the wide content below that has pushed the line to the left.
+        setWidth(narrowest + 20);
+        QVERIFY(inLine());
+        QVERIFY(widthOf(area, "a") < widthOf(area, "b"));
+        // Bars that do not move together are not kept together either.
+        f.manager.setLinkedSplittersEnabled(false);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+        QVERIFY(!inLine());
+        QCOMPARE(widthOf(area, "a"), widthOf(area, "b"));
+        f.manager.setLinkedSplittersEnabled(true);
+        QCoreApplication::sendPostedEvents(nullptr, QEvent::LayoutRequest);
+        QVERIFY(inLine());
+
+        // Wide again, every bar is back where its weights have it.
+        setWidth(narrowest + 400);
+        QVERIFY(inLine());
+        QVERIFY(qAbs(widthOf(area, "a") - widthOf(area, "b")) <= 1);
+
+        // The line is dragged as one, from where it is held: not to the
+        // right, where the wide content is at its minimum, but to the left.
+        setWidth(narrowest + 20);
+        const int held = widthOf(area, "a");
+        drag(handleAfter(area, "a", Qt::Horizontal), QPoint(60, 0));
+        QCOMPARE(widthOf(area, "a"), held);
+        QVERIFY(inLine());
+        drag(handleAfter(area, "a", Qt::Horizontal), QPoint(-10, 0));
+        QCOMPARE(widthOf(area, "a"), held - 10);
+        QCOMPARE(widthOf(area, "c"), held - 10);
+        QVERIFY(f.manager.undo());
+        QCOMPARE(widthOf(area, "a"), held);
+        QVERIFY(inLine());
+    }
+
     void ratiosSurviveWindowResizes()
     {
         TwoWindows f;

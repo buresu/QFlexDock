@@ -500,6 +500,225 @@ private Q_SLOTS:
         QCOMPARE(rectOf(tree, moved, "d").width(), 560);
     }
 
+    // --- lines under limits ------------------------------------------------
+    // Two rows are two splits, each solved for itself. A minimum in one of
+    // them must not take its bar out of the line it shares with the other.
+    void barsOfOneLineStayInLineWhereALimitHoldsOneBack()
+    {
+        const LayoutTree tree = makeGrid();
+        QHash<QString, SizeLimits> table;
+        table[p("a")] = {QSize(180, 0), QSize(UnboundedSize, UnboundedSize)};
+        table[p("d")] = {QSize(200, 0), QSize(UnboundedSize, UnboundedSize)};
+        for (int width : {1004, 424, 396, 388, 384}) {
+            const SolvedLayout layout = LayoutSolver::solve(tree, QRect(0, 0, width, 304), 4,
+                                                            limitsBy(table));
+            const int a = rectOf(tree, layout, "a").width();
+            QCOMPARE(rectOf(tree, layout, "c").width(), a);
+            QCOMPARE(rectOf(tree, layout, "b").width(), width - 4 - a);
+            QCOMPARE(rectOf(tree, layout, "d").width(), width - 4 - a);
+            // As near to the halves the weights ask for as both limits allow.
+            QCOMPARE(a, qBound(180, (width - 4) / 2, width - 4 - 200));
+            const int top = handleIndex(tree, layout, "a", Qt::Horizontal);
+            QCOMPARE(SplitterCoordinator::linkedHandles(layout, top).size(), size_t(2));
+        }
+
+        // Without it, each row has its bar where its own limits put it.
+        const SolvedLayout apart = LayoutSolver::solve(tree, QRect(0, 0, 388, 304), 4,
+                                                       limitsBy(table), false);
+        QCOMPARE(rectOf(tree, apart, "a").width(), 192);
+        QCOMPARE(rectOf(tree, apart, "c").width(), 184);
+    }
+
+    void aLineNoPlaceSuitsIsSolvedRowByRow()
+    {
+        const LayoutTree tree = makeGrid();
+        QHash<QString, SizeLimits> table;
+        table[p("a")] = {QSize(180, 0), QSize(UnboundedSize, UnboundedSize)};
+        table[p("d")] = {QSize(200, 0), QSize(UnboundedSize, UnboundedSize)};
+        // Each row fits (184 and 204), the two minimums side by side do not.
+        QCOMPARE(LayoutSolver::limits(*tree.root(), 4, limitsBy(table)).min.width(), 204);
+        const SolvedLayout layout = LayoutSolver::solve(tree, QRect(0, 0, 304, 304), 4,
+                                                        limitsBy(table));
+        QCOMPARE(rectOf(tree, layout, "a").width(), 180);
+        QCOMPARE(rectOf(tree, layout, "b").width(), 120);
+        QCOMPARE(rectOf(tree, layout, "c").width(), 100);
+        QCOMPARE(rectOf(tree, layout, "d").width(), 200);
+    }
+
+    void barsThatAreNotInLineAreLeftAlone()
+    {
+        LayoutTree tree = makeGrid();
+        QVERIFY(tree.setWeights(tree.parentOf(groupOf(tree, "c"))->id, {1, 3}));
+        QHash<QString, SizeLimits> table;
+        table[p("c")] = {QSize(400, 0), QSize(UnboundedSize, UnboundedSize)};
+        const SolvedLayout layout = LayoutSolver::solve(tree, QRect(0, 0, 1004, 604), 4,
+                                                        limitsBy(table));
+        QCOMPARE(rectOf(tree, layout, "a").width(), 500);
+        QCOMPARE(rectOf(tree, layout, "c").width(), 400);
+    }
+
+    // Three columns, two lines: holding the first one moves what the second
+    // has to go by.
+    void everyLineOfAGridIsKept()
+    {
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("d"), groupOf(tree, "a"), DockArea::Bottom));
+        QVERIFY(tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("e"), groupOf(tree, "d"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("f"), groupOf(tree, "e"), DockArea::Right));
+        QVERIFY(tree.setWeights(tree.parentOf(groupOf(tree, "a"))->id, {1, 1, 1}));
+        QVERIFY(tree.setWeights(tree.parentOf(groupOf(tree, "d"))->id, {1, 1, 1}));
+        QHash<QString, SizeLimits> table;
+        table[p("a")] = {QSize(200, 0), QSize(UnboundedSize, UnboundedSize)};
+        table[p("f")] = {QSize(200, 0), QSize(UnboundedSize, UnboundedSize)};
+
+        const SolvedLayout layout = LayoutSolver::solve(tree, QRect(0, 0, 508, 304), 4,
+                                                        limitsBy(table));
+        for (const char *panel : {"a", "d", "c", "f"})
+            QCOMPARE(rectOf(tree, layout, panel).width(), 200);
+        for (const char *panel : {"b", "e"})
+            QCOMPARE(rectOf(tree, layout, panel).width(), 100);
+        QCOMPARE(rectOf(tree, layout, "b").x(), 204);
+        QCOMPARE(rectOf(tree, layout, "e").x(), 204);
+    }
+
+    // A column of a fixed width beside one of the bars: its row hands out
+    // the rest differently from the row below, at every size.
+    void aFixedColumnDoesNotBreakTheLine()
+    {
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("c"), groupOf(tree, "a"), DockArea::Bottom));
+        QVERIFY(tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("s"), groupOf(tree, "a"), DockArea::Left));
+        QVERIFY(tree.insertPanel(p("d"), groupOf(tree, "c"), DockArea::Right));
+        QVERIFY(tree.setWeights(tree.parentOf(groupOf(tree, "a"))->id, {200, 300, 500}));
+        QVERIFY(tree.setWeights(tree.parentOf(groupOf(tree, "c"))->id, {504, 500}));
+        QHash<QString, SizeLimits> table;
+        table[p("s")] = {QSize(200, 0), QSize(200, UnboundedSize)};
+
+        for (int width : {1008, 1408, 2008, 708}) {
+            const QRect bounds(0, 0, width, 304);
+            const SolvedLayout layout = LayoutSolver::solve(tree, bounds, 4, limitsBy(table));
+            QCOMPARE(rectOf(tree, layout, "s").width(), 200);
+            const int top = handleIndex(tree, layout, "a", Qt::Horizontal);
+            QCOMPARE(SplitterCoordinator::linkedHandles(layout, top).size(), size_t(2));
+            // The row below is where its weights have it; the row above came to it.
+            QCOMPARE(rectOf(tree, layout, "c"),
+                     rectOf(tree, LayoutSolver::solve(tree, bounds, 4, {}), "c"));
+            if (width != 1008) {
+                const SolvedLayout apart = LayoutSolver::solve(tree, bounds, 4, limitsBy(table),
+                                                               false);
+                QCOMPARE(SplitterCoordinator::linkedHandles(apart, top).size(), size_t(1));
+            }
+        }
+    }
+
+    // A bar deep inside one row in line with the bar of the next row.
+    void aLineThroughSplitsOfDifferentDepth()
+    {
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("e"), groupOf(tree, "a"), DockArea::Bottom));
+        QVERIFY(tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("f"), groupOf(tree, "e"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Bottom));
+        QVERIFY(tree.insertPanel(p("d"), groupOf(tree, "c"), DockArea::Right));
+        // V(H(a, V(b, H(c, d))), H(e, f)), with c|d above e|f.
+        QVERIFY(tree.setWeights(tree.parentOf(groupOf(tree, "a"))->id, {300, 700}));
+        QVERIFY(tree.setWeights(tree.parentOf(groupOf(tree, "c"))->id, {348, 348}));
+        QVERIFY(tree.setWeights(tree.parentOf(groupOf(tree, "e"))->id, {652, 348}));
+        const QRect bounds(0, 0, 1004, 604);
+        const SolvedLayout unlimited = LayoutSolver::solve(tree, bounds, 4, {});
+        QCOMPARE(rectOf(tree, unlimited, "d").x(), 656);
+        QCOMPARE(rectOf(tree, unlimited, "f").x(), 656);
+
+        QHash<QString, SizeLimits> table;
+        table[p("c")] = {QSize(400, 0), QSize(UnboundedSize, UnboundedSize)};
+        const SolvedLayout layout = LayoutSolver::solve(tree, bounds, 4, limitsBy(table));
+        QCOMPARE(rectOf(tree, layout, "c").width(), 400);
+        QCOMPARE(rectOf(tree, layout, "d").x(), 708);
+        QCOMPARE(rectOf(tree, layout, "f").x(), 708);
+        QCOMPARE(rectOf(tree, layout, "a").width(), 300);
+    }
+
+    // Whatever the tree and the limits: the pieces tile the bounds, and in
+    // bounds that have room for every minimum no group gets less than its own.
+    void keepingLinesBreaksNoLimit()
+    {
+        QRandomGenerator rng(7);
+        const DockArea areas[] = {DockArea::Left, DockArea::Right, DockArea::Top, DockArea::Bottom};
+        int moved = 0;
+        for (int round = 0; round < 300; ++round) {
+            LayoutTree tree;
+            QHash<QString, SizeLimits> table;
+            const int panels = 3 + rng.bounded(12);
+            bool withMaximum = false;
+            for (int i = 0; i < panels; ++i) {
+                const auto groups = tree.tabNodes();
+                const NodeId target = groups.empty()
+                    ? NodeId{} : groups[size_t(rng.bounded(int(groups.size())))]->id;
+                const QString id = QStringLiteral("p%1").arg(i);
+                // Halves, so that many bars come to lie in one line.
+                QVERIFY(tree.insertPanel(id, target, areas[rng.bounded(4)], -1, 0.5));
+                SizeLimits limits;
+                if (rng.bounded(3) == 0)
+                    limits.min = QSize(rng.bounded(260), rng.bounded(200));
+                if (rng.bounded(8) == 0) {
+                    limits.max = QSize(limits.min.width() + rng.bounded(300), UnboundedSize);
+                    withMaximum = true;
+                }
+                table.insert(id, limits);
+            }
+            const LimitsProvider provider = limitsBy(table);
+            const QSize minimum = LayoutSolver::limits(*tree.root(), 4, provider).min;
+            const QRect bounds(5, 7, minimum.width() + rng.bounded(500),
+                               minimum.height() + rng.bounded(400));
+            const SolvedLayout layout = LayoutSolver::solve(tree, bounds, 4, provider);
+            const SolvedLayout apart = LayoutSolver::solve(tree, bounds, 4, provider, false);
+
+            qint64 area = 0;
+            QList<QRect> pieces;
+            for (const LayoutNode *group : tree.tabNodes()) {
+                const QRect rect = layout.rects.value(group->id);
+                const SizeLimits limits = table.value(group->panels.value(0));
+                QVERIFY(rect.width() >= limits.min.width());
+                QVERIFY(rect.height() >= limits.min.height());
+                // (A maximum gives way where a split has more room than its
+                // children may take; not more often than without the lines.)
+                if (apart.rects.value(group->id).width() <= limits.max.width())
+                    QVERIFY(rect.width() <= limits.max.width());
+                pieces << rect;
+                moved += rect != apart.rects.value(group->id) ? 1 : 0;
+            }
+            for (const SolvedHandle &h : layout.handles)
+                pieces << h.rect;
+            QCOMPARE(layout.handles.size(), apart.handles.size());
+            for (int i = 0; i < pieces.size(); ++i) {
+                QVERIFY(bounds.contains(pieces[i]) || pieces[i].isEmpty());
+                area += qint64(pieces[i].width()) * pieces[i].height();
+                for (int k = i + 1; k < pieces.size(); ++k)
+                    QVERIFY(!pieces[i].intersects(pieces[k]));
+            }
+            // (Maximums can leave room unused; the lines leave no more of it.)
+            qint64 areaApart = 0;
+            for (const LayoutNode *group : tree.tabNodes()) {
+                const QRect rect = apart.rects.value(group->id);
+                areaApart += qint64(rect.width()) * rect.height();
+            }
+            for (const SolvedHandle &h : apart.handles)
+                areaApart += qint64(h.rect.width()) * h.rect.height();
+            QCOMPARE(area, areaApart);
+            if (!withMaximum)
+                QCOMPARE(area, qint64(bounds.width()) * bounds.height());
+            // The same again: nothing depends on what was solved before.
+            QCOMPARE(LayoutSolver::solve(tree, bounds, 4, provider).rects, layout.rects);
+        }
+        QVERIFY(moved > 100); // the lines were at work
+    }
+
     void repeatedDraggingDoesNotDrift()
     {
         LayoutTree tree = makeGrid();

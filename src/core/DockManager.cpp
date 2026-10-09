@@ -2016,6 +2016,8 @@ void DockManager::setLinkedSplittersEnabled(bool enabled)
     if (d->linkedSplitters == enabled)
         return;
     d->linkedSplitters = enabled;
+    // Lines are also kept, or not, where the handles are laid out.
+    d->refreshAllAppearance();
     Q_EMIT linkedSplittersEnabledChanged(enabled);
 }
 

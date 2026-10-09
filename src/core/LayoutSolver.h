@@ -53,8 +53,14 @@ public:
     [[nodiscard]] static SizeLimits limits(const LayoutNode &node, int handleWidth,
                                            const LimitsProvider &provider);
 
+    /// With `linesKept`, handles that the weights put in one line (the ones
+    /// SplitterCoordinator links) stay in one line where a minimum or a
+    /// maximum holds one of them back: all of them go to the place nearest
+    /// to their weights that every split can live with. If there is no such
+    /// place, each split is solved on its own.
     [[nodiscard]] static SolvedLayout solve(const LayoutTree &tree, const QRect &bounds,
-                                            int handleWidth, const LimitsProvider &provider);
+                                            int handleWidth, const LimitsProvider &provider,
+                                            bool linesKept = true);
 
     /// Splits `total` pixels by `weights`, clamped to [mins, maxs]. The result
     /// sums to `total` unless the limits make that impossible: below the sum

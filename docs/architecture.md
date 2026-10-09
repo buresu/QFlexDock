@@ -79,6 +79,16 @@ with a panel between them are not linked. A drag is always computed from the lay
 rounding does not accumulate, and the range is the intersection of what every handle in the run allows.
 Alt moves a single handle. One drag is one undo step.
 
+**Keeping lines.** Every split is solved for itself, so a minimum or maximum in one row would take its bar
+out of the line it shares with the row below. `LayoutSolver::solve()` therefore looks at the layout a
+second time, without any limits, to see which handles the weights put in one line (the same rule as
+above), and where such a line has parted it holds all of its bars at one place: the one nearest to their
+weights that every split involved has room for. Splits with a held handle are placed again, and the lines
+are gone through until nothing moves. Where no place suits them all (two minimums that fit side by side
+in no row, though each row fits), each split stays as it was solved. A drag starts from where a line is
+held and turns that into weights. None of this happens with `setLinkedSplittersEnabled(false)`, in a
+layout no limit has touched, or in less room than the layout's minimum size.
+
 **Corners.** Where a vertical and a horizontal boundary meet (always a T or a cross), a `DockSplitCorner`
 sits on top and drags both: the run through the corner along x and the one along y, computed separately,
 since they change different splits and neither axis limits the other.
