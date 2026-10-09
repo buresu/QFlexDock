@@ -6,7 +6,7 @@ work from Qt's documentation, but nobody has checked.
 | | Automated tests | Real `QDrag` |
 |---|---|---|
 | Linux X11 (Xvfb, Qt 6.12) | All suites pass | **Automated** (`tst_realdrag`) |
-| Linux Wayland (headless KWin, Qt 6.12) | All suites pass | Tab drags tried by hand on KWin; cannot be automated |
+| Linux Wayland (headless KWin and Weston, Qt 6.12) | All suites pass | Tab drags tried by hand on KWin; cannot be automated |
 | `offscreen` | All suites pass (no `QOpenGLWidget`) | — |
 | Windows, macOS | **Never run** | Not verified |
 
@@ -72,8 +72,9 @@ QFlexDock's format lets the drop through to the dock area.
   is up to the compositor, and only the size of a saved geometry is restored.
 - Floating windows are transient for the window of the workspace that owns them, and stay above it.
 - To run the tests, configure with `-DQFLEXDOCK_TEST_PLATFORM=` (empty) and use
-  `tests/run-on-wayland.sh <build-dir>`. It starts a headless compositor (`kwin_wayland --virtual`, or
-  `weston --backend=headless`, which is not verified) with its own D-Bus session, so nothing shows up on your desktop.
+  `tests/run-on-wayland.sh <build-dir>`. It starts a headless compositor (`kwin_wayland --virtual` or
+  `weston --backend=headless`; `QFLEXDOCK_WAYLAND_COMPOSITOR` picks one when both are installed) with its
+  own D-Bus session, so nothing shows up on your desktop.
 
 ## QML (`QQuickWidget`)
 

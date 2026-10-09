@@ -6,7 +6,8 @@
 #
 # Needs dbus-run-session and one of: kwin_wayland (--virtual) or weston
 # (--backend=headless). The compositor gets its own D-Bus session and its own
-# XDG_RUNTIME_DIR; both are gone when the script ends.
+# XDG_RUNTIME_DIR; both are gone when the script ends. With both installed,
+# QFLEXDOCK_WAYLAND_COMPOSITOR=weston (or kwin_wayland) picks one.
 set -euo pipefail
 
 build_dir=${1:?usage: run-on-wayland.sh <build-dir> [ctest arguments...]}
@@ -21,9 +22,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
-if command -v kwin_wayland >/dev/null; then
+wanted=${QFLEXDOCK_WAYLAND_COMPOSITOR:-}
+if [ "$wanted" != weston ] && command -v kwin_wayland >/dev/null; then
     compositor="kwin_wayland --virtual --no-lockscreen --width 2000 --height 1200 --socket qfd-wl"
-elif command -v weston >/dev/null; then
+elif [ "$wanted" != kwin_wayland ] && command -v weston >/dev/null; then
     compositor="weston --backend=headless --width=2000 --height=1200 --socket=qfd-wl"
 else
     echo "No headless-capable Wayland compositor found (kwin_wayland or weston)." >&2

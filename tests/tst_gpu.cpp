@@ -258,12 +258,15 @@ private Q_SLOTS:
 
         // Another top-level window means another GL context for the widget
         // (unless contexts are shared application-wide). Same widget, though.
+        // (Paints are counted from before the move: a QOpenGLWidget may paint
+        // while it is being shown, and then has no reason to paint again. A
+        // compositor that asks for another frame anyway is the exception.)
+        const int paintedBefore = gl->painted;
         QVERIFY(f.manager.movePanel(p("gl"), f.b, DockArea::Center));
         QCOMPARE(panel->widget(), gl);
         QCOMPARE(gl->window(), &f.windowB);
         QCOMPARE(topLevelChanged.size(), 1);
         QCOMPARE(releasedWhenTold, 0);
-        const int paintedBefore = gl->painted;
         QTRY_VERIFY(gl->painted > paintedBefore);
         QVERIFY(gl->isValid());
         QVERIFY(gl->hasResources);
@@ -285,10 +288,14 @@ private Q_SLOTS:
         QTRY_VERIFY(gl->isValid() && gl->hasResources);
         QVERIFY(f.manager.dockPanel(p("gl")));
         QVERIFY(f.manager.hidePanel(p("gl")));
+        const int paintedWhileHidden = gl->painted;
         QVERIFY(f.manager.showPanel(p("gl")));
-        const int paintedAfter = gl->painted;
-        QTRY_VERIFY(gl->painted > paintedAfter);
+        QTRY_VERIFY(gl->painted > paintedWhileHidden);
+        QVERIFY(gl->isValid());
+        QVERIFY(gl->hasResources);
         QCOMPARE(gl->initialized, gl->released + 1);
+        const QImage last = gl->grabFramebuffer();
+        QCOMPARE(last.pixelColor(last.width() / 2, last.height() / 2), QColor(51, 102, 153));
 
         const QPointer<GlPanel> guard(gl);
         QVERIFY(f.manager.unregisterPanel(p("gl")));

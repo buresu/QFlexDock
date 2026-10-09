@@ -68,8 +68,6 @@ jobs:
           xvfb-run -a ctest --test-dir build -C Release --output-on-failure
 
       # Real Wayland platform plugin inside a private headless compositor.
-      # (This step has only ever been run locally with kwin_wayland; the
-      # weston path used here is untested.)
       - name: Test (Wayland, headless)
         if: runner.os == 'Linux' && !matrix.shared
         run: |
