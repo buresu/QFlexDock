@@ -8,7 +8,8 @@ work from Qt's documentation, but nobody has checked.
 | Linux X11 (Xvfb) | All suites pass | **Automated** (`tst_realdrag`) |
 | Linux Wayland (headless KWin and Weston) | All suites pass | Tab drags tried by hand on KWin; cannot be automated |
 | `offscreen` | All suites pass (no `QOpenGLWidget`) | — |
-| Windows, macOS | All suites pass on `offscreen`; **never run with the native platform** | Not verified |
+| Windows | All suites pass on `offscreen` and with the native platform (on a hidden desktop, see below) | Tried by hand; cannot be automated |
+| macOS | All suites pass on `offscreen`; **never run with the native platform** | Not verified |
 
 ## Drag and drop
 
@@ -67,8 +68,9 @@ for as long as the drag lasts:
 - Outside a dock area the pointer shows the system's "no drop" cursor, although letting go there floats.
 - `DockManager::setDragGhostEnabled(false)` goes back to a picture of the tab.
 
-Observed by hand: the ghost, floating by dropping outside, and docking a window moved along. That such a
-window stays opaque and in front over other applications, and Esc, are **not verified** on screen.
+All of this was tried by hand on Windows 11 at 200% scaling, Esc included. **Not verified:** a maximized
+`Minimal` window taken by its header, drags by touch or pen (a drop is told from Esc by the mouse button),
+and monitors of different scaling.
 
 ### Dropping outside = floating
 
@@ -77,9 +79,8 @@ With `DockManager::setFloatsOnOutsideDrop(true)` a drag that no dock area took f
 on Wayland by the drop action Qt reports for a window-carrying drag, on X11 by whether Esc was pressed
 and whether the mouse button is still down when the drag ends (covered by `tst_realdrag`). On Windows
 the drag loop is the system's: Qt sees neither the key nor, until the drag is over, the release, so the
-system is asked whether the button is still down (floating was tried by hand; that Esc does not float
-follows Qt's source and is **not verified**). On macOS nothing is verified; if you turn it on, check that
-Esc does not float the panel.
+system is asked whether the button is still down (tried by hand). On macOS nothing is verified; if you
+turn it on, check that Esc does not float the panel.
 
 Content is never offered a dock drag: it goes to the dock area the content is in, also over a widget that
 accepts whatever is dragged onto it (`QQuickWidget` does). Other drags reach the content as usual.
@@ -115,6 +116,17 @@ draws no shadow around such a window.
   `tests/run-on-wayland.sh <build-dir>`. It starts a headless compositor (`kwin_wayland --virtual` or
   `weston --backend=headless`; `QFLEXDOCK_WAYLAND_COMPOSITOR` picks one when both are installed) with its
   own D-Bus session, so nothing shows up on your desktop.
+
+## Windows
+
+- To run the tests with the native platform plugin, configure with `-DQFLEXDOCK_TEST_PLATFORM=` (empty)
+  and use `tests\run-on-hidden-desktop.ps1 <build-dir>`. It runs `ctest` on a desktop of its own that is
+  never shown: real windows, the Windows 11 style, the screen's scaling and the GPU, and nothing on the
+  desktop you work on. `QFLEXDOCK_TEST_RHI=1` makes `tst_quick` render with Direct3D.
+- A real drag cannot be driven there (it needs the pointer of the desktop that has the input), so the
+  drags themselves are checked by hand: see "Manual checks".
+- A window with the native frame is never narrower than Windows allows; a narrow panel that is torn off
+  gets a window a little wider than it was.
 
 ## QML (`QQuickWidget`)
 

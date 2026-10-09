@@ -57,7 +57,7 @@ public:
 
 QColor pixel(QWidget *widget, const QPoint &pos)
 {
-    return widget->grab().toImage().pixelColor(pos);
+    return picture(widget).pixelColor(pos);
 }
 
 /// The colour a widget's pixels are mostly drawn in, ignoring transparency.
@@ -586,7 +586,7 @@ private Q_SLOTS:
         )"));
         QCoreApplication::processEvents();
         const auto column = [&](int x) {
-            return f.windowA.grab().toImage().pixelColor(
+            return picture(&f.windowA).pixelColor(
                 area->mapTo(&f.windowA, QPoint(x, area->height() / 2)));
         };
         // Nothing of it shows until it is pointed at; then as wide as a

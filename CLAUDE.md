@@ -16,6 +16,10 @@ QT_QPA_PLATFORM=xcb xvfb-run -a -s "-screen 0 2000x1200x24" build/tests/tst_real
 cmake -S . -B build-wl -G Ninja -DQFLEXDOCK_TEST_PLATFORM=
 cmake --build build-wl && tests/run-on-wayland.sh build-wl
 
+# Windows: the native platform plugin on a desktop of its own that is never shown (PowerShell)
+cmake -S . -B build-win -DQFLEXDOCK_TEST_PLATFORM=
+cmake --build build-win; tests\run-on-hidden-desktop.ps1 build-win
+
 # One test / saving screenshots along the way
 QT_QPA_PLATFORM=offscreen build/tests/tst_manager maximizeAndRestore
 QFLEXDOCK_TEST_GRABS=/tmp/grabs QT_QPA_PLATFORM=offscreen build/tests/tst_dragdrop
@@ -30,8 +34,8 @@ cmake --install build --prefix /tmp/prefix
 cmake -S tests/consumer -B /tmp/consumer -DCMAKE_PREFIX_PATH=/tmp/prefix && cmake --build /tmp/consumer
 ```
 
-Never run GUI tests on the user's real desktop (a bare `QT_QPA_PLATFORM=wayland`): windows pop up one
-after another. Use the script above or Xvfb.
+Never run GUI tests on the user's real desktop (a bare `QT_QPA_PLATFORM=wayland` or `windows`): windows pop
+up one after another. Use the scripts above or Xvfb.
 
 ## Layout
 
@@ -97,6 +101,8 @@ tests/                    Qt Test; shared fixtures in TestUtils.h
   Windows has none (every glyph is a box of one size). A test must not rely on how wide a title or a line
   edit comes out. `FONTCONFIG_FILE= ctest --test-dir build` runs the suites without fonts; a
   `FONTCONFIG_FILE` whose configuration prefers another family runs them with other ones.
+- A screen may be scaled (200% on Windows): `QWidget::grab()` then has twice the pixels each way. Checks of
+  a pixel at a position in a widget use `picture()` from `TestUtils.h`, which has one pixel per unit.
 - The real-drag tests need a screen of 2000x1200: the pointer does not leave the screen.
 - Wayland gives no top-level window positions; tests that look at them branch on `windowPositionsWork()`.
 - A lambda connected to a signal that captures locals must be declared before the fixture (`TwoWindows`) or

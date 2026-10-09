@@ -98,6 +98,7 @@ widgets to it), side areas that keep their pixel size when the window is resized
 |---|---|
 | Linux, Qt 6.8, 6.10 and 6.12 | Static and shared; also with ASan + UBSan |
 | Windows, Qt 6.8 and 6.10 | Build and tests on the `offscreen` platform only |
+| Windows 11, Qt 6.12, native platform | Locally, on a desktop that is not shown (`tests/run-on-hidden-desktop.ps1`), at 200% scaling; `tst_quick` also rendering with Direct3D. Real-drag tests are skipped |
 | macOS, Qt 6.8 and 6.10 | Build and tests on the `offscreen` platform only |
 | `offscreen` | `QOpenGLWidget` and real-drag tests are skipped |
 | X11 (Xvfb) | Includes real `QDrag` between windows, Esc, outside drops, tabs torn off and joined between floating windows, moving a `QOpenGLWidget` |
@@ -105,8 +106,11 @@ widgets to it), side areas that keep their pixel size when the window is resized
 
 **Not verified:**
 
-- **Windows and macOS on screen** — the library builds and its tests pass there, but nothing was run with the
-  native platform plugin: no real windows, no real drags.
+- **macOS on screen** — the library builds and its tests pass there, but nothing was run with the native
+  platform plugin: no real windows, no real drags.
+- **Windows** — the examples were tried by hand on Windows 11 (drags, floating, the windows that follow a
+  drag, QML panels). Not tried: touch and pen, monitors of different scaling, Direct3D content in a native
+  window.
 - **Automated pointer drags on Wayland**, high-DPI and mixed-DPI multi-monitor setups.
 - **Vulkan / Direct3D / Metal** content. Only OpenGL and a plain `QWindow` were tried.
 

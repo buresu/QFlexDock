@@ -667,7 +667,7 @@ private Q_SLOTS:
         QVERIFY(QTest::qWaitForWindowExposed(ghost));
         QCoreApplication::processEvents();
         grab(ghost, p("floating-ghost-tab-actions"));
-        const QImage image = ghost->grab().toImage();
+        const QImage image = picture(ghost);
         const QColor red(0xff, 0, 0);
         // Behind the one tab, and no longer where it stood behind two.
         QCOMPARE(image.pixelColor(barAt.x() + tabWidth + 2, was.y()), red);
@@ -693,7 +693,7 @@ private Q_SLOTS:
         QVERIFY(QTest::qWaitForWindowExposed(other));
         QCoreApplication::processEvents();
         grab(other, p("floating-ghost-tab-in-place"));
-        const QImage held = other->grab().toImage();
+        const QImage held = picture(other);
         QCOMPARE(held.pixelColor(second.left() + 3, second.center().y()), QColor(0, 0xff, 0));
         QVERIFY(held.pixelColor(first.left() + 3, first.center().y()) != QColor(0, 0, 0xff));
         QCOMPARE(held.pixelColor(plusLeft + 2, was.y()), red);
@@ -958,6 +958,8 @@ private Q_SLOTS:
         buildLayout(f);
         f.manager.setFloatsOnOutsideDrop(true);
         DockDragController *controller = priv(f.manager)->drag;
+        if (controller->movesCarriedWindows())
+            QSKIP("Windows are moved by QFlexDock here: there is no compositor to find out about");
         QVERIFY(controller->begin(p("b"), false));
         const QPointer<DockFloatingWindow> ghost = controller->createGhost();
         QVERIFY(ghost && ghost->isVisible());

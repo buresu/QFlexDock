@@ -171,7 +171,7 @@ private Q_SLOTS:
         QVERIFY(handle);
         QVERIFY(handle->width() > 1);
 
-        const QImage image = f.windowA.grab().toImage();
+        const QImage image = picture(&f.windowA);
         const QPoint bar = area->mapTo(&f.windowA, handle->barGeometry().center());
         const QRgb red = QColor(0xff, 0, 0).rgb();
         QCOMPARE(image.pixelColor(bar).rgb(), red);
@@ -201,7 +201,7 @@ private Q_SLOTS:
         const QRect grabArea = handle->geometry();
 
         const auto redColumns = [&] {
-            const QImage image = f.windowA.grab().toImage();
+            const QImage image = picture(&f.windowA);
             const QPoint bar = area->mapTo(&f.windowA, handle->barGeometry().center());
             QList<int> offsets;
             for (int offset = -4; offset <= 4; ++offset) {

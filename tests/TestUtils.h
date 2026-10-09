@@ -67,6 +67,18 @@ inline void grab(QWidget *widget, const QString &name)
     widget->grab().save(dir + QLatin1Char('/') + name + QStringLiteral(".png"));
 }
 
+/// What `widget` shows, with one pixel to each of its own units whatever the
+/// scale of the screen it is on: a position in the widget is that position
+/// in the picture. (QWidget::grab() has as many pixels as the screen gives the
+/// widget, twice as many each way at 200%.)
+inline QImage picture(QWidget *widget)
+{
+    QPixmap pixmap(widget->size());
+    pixmap.fill(Qt::transparent);
+    widget->render(&pixmap);
+    return pixmap.toImage();
+}
+
 /// Whether a client can place its windows and learn where they are. Wayland
 /// leaves both to the compositor: geometry().topLeft() is not meaningful there
 /// and positions are neither saved usefully nor restored.
