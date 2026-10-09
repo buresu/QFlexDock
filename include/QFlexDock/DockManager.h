@@ -266,7 +266,7 @@ public:
     [[nodiscard]] bool floatsOnOutsideDrop() const;
     /// Whether dropping a dragged panel outside every dock area floats it.
     /// Defaults to true where that can be told apart from a cancelled drag
-    /// (X11, Windows, and Wayland with the drag ghost); see
+    /// (X11, Windows, macOS, and Wayland with the drag ghost); see
     /// docs/platform-notes.md.
     void setFloatsOnOutsideDrop(bool enabled);
 
@@ -282,9 +282,9 @@ public:
     /// and, dropped outside every dock area, becomes the floating window right
     /// there (default true). Only platforms where a window can come along
     /// with a drag do this: Wayland compositors with xdg-toplevel-drag,
-    /// which carry it, and Windows, where QFlexDock moves it. Everywhere
-    /// else the drag shows a picture of the tab, as it does with this
-    /// turned off.
+    /// which carry it, and Windows and macOS, where QFlexDock moves it.
+    /// Everywhere else the drag shows a picture of the tab, as it does with
+    /// this turned off.
     void setDragGhostEnabled(bool enabled);
 
     [[nodiscard]] DockTheme theme() const;

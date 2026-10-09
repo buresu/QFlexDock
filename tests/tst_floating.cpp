@@ -397,20 +397,21 @@ private Q_SLOTS:
         const QString platform = QGuiApplication::platformName();
         QCOMPARE(manager.floatsOnOutsideDrop(),
                  platform == QLatin1String("xcb") || platform == QLatin1String("windows")
-                     || onWayland());
+                     || platform == QLatin1String("cocoa") || onWayland());
         QVERIFY(manager.isDragGhostEnabled());
         // Windows are carried along with a drag on Wayland, by the
-        // compositor, and on Windows, where they are moved from here.
-        const bool onWindows = platform == QLatin1String("windows");
+        // compositor, and on Windows and macOS, where they are moved from here.
+        const bool moved = platform == QLatin1String("windows")
+            || platform == QLatin1String("cocoa");
         DockDragController *controller = DockManagerPrivate::get(&manager)->drag;
-        QCOMPARE(controller->carriesWindows(), onWayland() || onWindows);
-        QCOMPARE(controller->movesCarriedWindows(), onWindows);
+        QCOMPARE(controller->carriesWindows(), onWayland() || moved);
+        QCOMPARE(controller->movesCarriedWindows(), moved);
         manager.setDragGhostEnabled(false);
         QVERIFY(!controller->carriesWindows());
         QVERIFY(!controller->movesCarriedWindows());
     }
 
-    // A ghost that QFlexDock itself keeps at the pointer (Windows) lets the
+    // A ghost that QFlexDock itself keeps at the pointer (Windows, macOS) lets the
     // pointer through, and so cannot be the window. Dropped outside, a
     // window proper takes its place; what Qt reports of the drag says no
     // more than it does without a ghost.
@@ -445,9 +446,12 @@ private Q_SLOTS:
         QTRY_VERIFY(!ghost);
 
         // Cancelled from the keyboard, the button is still down: nothing
-        // floats. (Windows asks the system for the button, which no test holds.)
-        if (QGuiApplication::platformName() == QLatin1String("windows"))
+        // floats. (Windows and macOS ask the system for the button, which no
+        // test holds.)
+        if (QGuiApplication::platformName() == QLatin1String("windows")
+            || QGuiApplication::platformName() == QLatin1String("cocoa")) {
             return;
+        }
         QVERIFY(f.manager.undo());
         QCOMPARE(describe(f.a), p("H(a, b|c)"));
         QWidget *content = f.widgets[p("a")];

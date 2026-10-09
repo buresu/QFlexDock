@@ -55,6 +55,10 @@ target_sources(QFlexDock
 
 target_include_directories(QFlexDock PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(QFlexDock PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets)
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    # The mouse button and the Escape key during a drag (DockDragController).
+    target_link_libraries(QFlexDock PRIVATE "-framework CoreGraphics")
+endif()
 target_compile_definitions(QFlexDock PRIVATE QFLEXDOCK_BUILD)
 qflexdock_configure_target(QFlexDock)
 

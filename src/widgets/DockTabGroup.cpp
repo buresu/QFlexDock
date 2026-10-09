@@ -241,7 +241,7 @@ void DockTabGroup::toggleFloating()
 // Elsewhere a drag of everything in the window just moves the window.
 //
 // Where the window would have to be moved from here to follow the drag
-// (Windows), only a tab is worth that: it can be put among the tabs of
+// (Windows, macOS), only a tab is worth that: it can be put among the tabs of
 // another window. The header beside the tabs (`byHeader`) is the title bar
 // such a window does not have, and the window system moves a window better.
 bool DockTabGroup::moveWindowInstead(qsizetype draggedPanels, bool byHeader)

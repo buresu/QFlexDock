@@ -107,7 +107,7 @@ widgets to it), side areas that keep their pixel size when the window is resized
 **Not verified:**
 
 - **macOS on screen** — the library builds and its tests pass there, but nothing was run with the native
-  platform plugin: no real windows, no real drags.
+  platform plugin: no real windows, no real drags. That includes the windows that follow a drag there.
 - **Windows** — the examples were tried by hand on Windows 11 (drags, floating, the windows that follow a
   drag, QML panels). Not tried: touch and pen, monitors of different scaling, Direct3D content in a native
   window.

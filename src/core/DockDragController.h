@@ -43,10 +43,10 @@ class DockTabGroup;
 /// With such a drag Qt reports a drop that nobody took as accepted, and only a
 /// cancelled drag as ignored, which is what tells the two apart on Wayland.
 ///
-/// On Windows nothing carries a window, but a client can move one to the
-/// pointer, and does (movesCarriedWindows()): the ghost of a tab drag, or the
-/// floating window whose whole content is dragged, is kept at the pointer
-/// from here for as long as the drag lasts. The pointer goes through it, so
+/// On Windows and macOS nothing carries a window, but a client can move one
+/// to the pointer, and does (movesCarriedWindows()): the ghost of a tab drag,
+/// or the floating window whose whole content is dragged, is kept at the
+/// pointer from here for as long as the drag lasts. The pointer goes through it, so
 /// the drag still finds the dock area underneath: through a ghost always,
 /// through a window that is itself moved only while another window with a
 /// dock area is at the pointer. Over anything else that window is in the
@@ -85,7 +85,7 @@ public:
     /// Whether drags carry a window along (see the class description).
     [[nodiscard]] bool carriesWindows() const;
     /// Whether the window a drag carries is moved from here, the window
-    /// system not doing it (Windows).
+    /// system not doing it (Windows, macOS).
     [[nodiscard]] bool movesCarriedWindows() const;
     /// Whether a window with a dock area of this manager's, other than
     /// `except`, is at `globalPos`: a window of a workspace or a floating
@@ -150,6 +150,9 @@ private:
     void run(const QPixmap &pixmap, DockFloatingWindow *carriedWindow = nullptr,
              const QPoint &grip = {});
     [[nodiscard]] static QPixmap pictureOf(DockTabGroup *group, const DragSession &session);
+    /// Whether the button the drag was held by is still down now that the
+    /// drag is over, or was when it ended, where that was seen.
+    [[nodiscard]] bool buttonStillDown() const;
 
     DockManagerPrivate *m_manager;
     std::optional<DragSession> m_session;
@@ -159,6 +162,9 @@ private:
     bool m_carryingUnsupported = false;
     /// Where the pointer was when the drag was asked for.
     std::optional<QPoint> m_dragStart;
+    /// Where the pointer was when the button was let go of, where the drag
+    /// is watched for that because it returns only later (macOS).
+    std::optional<QPoint> m_letGoAt;
     QPointer<QWidget> m_carried;
     std::optional<QPoint> m_carriedPointer;
     QPoint m_ghostGrip;

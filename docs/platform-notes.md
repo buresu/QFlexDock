@@ -21,7 +21,7 @@ Dock drags use `QDrag`. The layout never changes during a drag; the drop is comm
 | Wayland, other compositors | A picture of the tab | Nothing |
 | Windows | A ghost, moved by QFlexDock and three quarters opaque | A floating window where the ghost is |
 | X11 | A picture of the tab | The panel floats at the pointer |
-| macOS | A picture of the tab | Nothing (by default) |
+| macOS | A ghost, as on Windows (**not verified**, see below) | A floating window where the ghost is |
 
 ### Windows carried by a drag (Wayland)
 
@@ -48,10 +48,10 @@ Things to know:
 - `DockManager::setDragGhostEnabled(false)` turns all of this off. Outside drops then do nothing on
   Wayland, because they cannot be told apart from a cancelled drag.
 
-### Windows moved along with a drag (Windows)
+### Windows moved along with a drag (Windows, macOS)
 
-Nothing carries a window on Windows, but a client may move one to the pointer. QFlexDock does, on a timer,
-for as long as the drag lasts:
+Nothing carries a window on Windows or macOS, but a client may move one to the pointer. QFlexDock does, on
+a timer, for as long as the drag lasts:
 
 - **Dragging a tab** shows the same ghost as on Wayland. The pointer goes through it, so the drag reaches
   the dock area underneath, and it is translucent, so the drop guide shows. Dropped outside every dock area,
@@ -72,15 +72,27 @@ All of this was tried by hand on Windows 11 at 200% scaling, Esc included. **Not
 `Minimal` window taken by its header, drags by touch or pen (a drop is told from Esc by the mouse button),
 and monitors of different scaling.
 
+**On macOS none of it was tried on screen yet**: it is the same code, and what differs is this.
+
+- A drag that nobody took returns to Qt only after the system has slid its picture back to where the drag
+  began, a moment after the button was let go of. QFlexDock therefore asks the system for the mouse button
+  and the Escape key while the drag lasts (`CGEventSourceButtonState`, `CGEventSourceKeyState`): the window
+  stops following when the button goes up and floats where it was then; on Esc a ghost disappears and a
+  window that was itself moved goes back at once. The floating window appears when the drag has returned.
+- The picture that slides back is an empty one: Qt gives a drag without a picture one of its own.
+- To check by hand, besides "Manual checks": that the drag reaches the dock area under a ghost, that Esc
+  floats nothing (also when the button is let go of right after it), and that the pointer can be moved
+  away after a drop outside without the ghost coming along.
+
 ### Dropping outside = floating
 
 With `DockManager::setFloatsOnOutsideDrop(true)` a drag that no dock area took floats the panel.
-**It is on by default on X11, Wayland and Windows**, the platforms where a drop outside can be told from Esc:
+**It is on by default on X11, Wayland, Windows and macOS**, the platforms where a drop outside can be told from Esc:
 on Wayland by the drop action Qt reports for a window-carrying drag, on X11 by whether Esc was pressed
 and whether the mouse button is still down when the drag ends (covered by `tst_realdrag`). On Windows
 the drag loop is the system's: Qt sees neither the key nor, until the drag is over, the release, so the
-system is asked whether the button is still down (tried by hand). On macOS nothing is verified; if you
-turn it on, check that Esc does not float the panel.
+system is asked whether the button is still down (tried by hand). On macOS the system is asked for both
+the button and the key, during the drag (**not verified**: check that Esc does not float the panel).
 
 Content is never offered a dock drag: it goes to the dock area the content is in, also over a widget that
 accepts whatever is dragged onto it (`QQuickWidget` does). Other drags reach the content as usual.
@@ -94,12 +106,13 @@ accepts whatever is dragged onto it (`QQuickWidget` does). Other drags reach the
 | Title bar and border | The window system's | A title row and border drawn by QFlexDock | Only a border; the headers of the groups inside serve as the title |
 | Move and resize | The window system | Requested with `QWindow::startSystemMove()` / `startSystemResize()` | Resize as `Custom`; moved by dragging a header (below) |
 | Snapping, tiling, window menu | Yes | Up to the window system | Up to the window system |
-| Re-dock by dragging the title | No (drag a tab instead) | On Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag (on Windows: a tab only) |
+| Re-dock by dragging the title | No (drag a tab instead) | On Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag (on Windows and macOS: a tab only) |
 
-A `Minimal` window is moved by a dock drag of what it contains: on Wayland and Windows the window follows
-the pointer, on X11 a picture does and the window then moves by as much as the pointer did. (On Windows
-that is so for its only tab; the header beside the tabs moves the window and nothing else.) Where outside
-drops do not float (macOS by default), the drag just moves the window and docking is left to the float button.
+A `Minimal` window is moved by a dock drag of what it contains: on Wayland, Windows and macOS the window
+follows the pointer, on X11 a picture does and the window then moves by as much as the pointer did. (On
+Windows and macOS that is so for its only tab; the header beside the tabs moves the window and nothing
+else.) Where outside drops do not float (they were turned off, and nothing carries a window), the drag
+just moves the window and docking is left to the float button.
 A double click on the header of its one tab group, beside the tabs, maximizes such a window.
 
 Frames drawn by QFlexDock can have round corners (`DockTheme::floatingCornerRadius`). The window is then
@@ -191,7 +204,7 @@ What the tests cannot drive, to be tried with the examples:
   frame, the title row moves the window and re-docks it, and the border resizes it.
 - **Drags (Windows, macOS)**, `qflexdock-multi-window` — the five zones and the outer band appear and
   highlight; every zone docks as shown; dropping on a tab inserts there; drops work across windows; Esc
-  changes nothing; the empty part of a tab bar drags the whole group. On Windows also: a dragged tab comes
+  changes nothing; the empty part of a tab bar drags the whole group. On both also: a dragged tab comes
   off as a translucent ghost of the same size that stays at the pointer; the guide shows through it and the
   zones underneath still take the drop; let go of outside every dock area (over the desktop, another
   application, a title bar) a floating window appears exactly where the ghost was; Esc while it is held
@@ -213,7 +226,7 @@ What the tests cannot drive, to be tried with the examples:
   the row of another window (its tabs, or the row beside them) it becomes a tab there; let go of anywhere
   else, over a page or the desktop, it becomes a window of the same size; the last tab takes its window with
   it, in either direction; the only tab of a window drags the window, and can still be dropped into another
-  row; the row beside the tabs moves the window (on Windows nothing more: it stays opaque, snaps to the
+  row; the row beside the tabs moves the window (on Windows and macOS nothing more: it stays opaque, snaps to the
   screen edges and goes into no other row) and a double click there maximizes it, as does the button,
   whose icon follows; the edges resize the window although the page reaches them; the corners at the top
   are round, and square when maximized; with many tabs they all get narrower and the + stays behind the
