@@ -133,6 +133,7 @@ int main(int argc, char *argv[])
 
     auto *log = new QPlainTextEdit;
     log->setReadOnly(true);
+    log->setFrameShape(QFrame::NoFrame);
     manager.registerPanel(QStringLiteral("log"), log, QStringLiteral("Lifecycle Log"));
 
     DockPanel *glPanel = manager.registerPanel(QStringLiteral("gl"), new GlWidget(log),

@@ -42,6 +42,9 @@ inline QWidget *makeLog()
 {
     auto *log = new QPlainTextEdit;
     log->setReadOnly(true);
+    // The panel around it is frame enough. (The Windows 11 style would draw
+    // the frame of a text box: a line along the bottom that lights up.)
+    log->setFrameShape(QFrame::NoFrame);
     log->setPlainText(QStringLiteral("Ready.\nDrag a tab to rearrange the layout."));
     log->setMinimumHeight(60);
     return log;
