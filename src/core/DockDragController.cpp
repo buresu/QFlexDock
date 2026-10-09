@@ -19,6 +19,10 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLayout>
 
+#ifdef Q_OS_WIN
+#  include <QtCore/qt_windows.h>
+#endif
+
 namespace QFlexDock {
 
 namespace {
@@ -37,9 +41,32 @@ constexpr QPoint GhostGrip(18, 12);
 // before that window is taken not to be carried at all.
 constexpr int CarriedPointerDrift = 48;
 
+// How often a window that is moved along with a drag from here is put where
+// the pointer is, in milliseconds.
+constexpr int FollowInterval = 8;
+
 bool onWayland()
 {
     return QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+}
+
+bool onWindows()
+{
+    return QGuiApplication::platformName() == QLatin1String("windows");
+}
+
+// Whether the button a drag was held by is still down now that the drag is
+// over: it is after a drag cancelled from the keyboard, not after a drop.
+bool dragButtonStillDown()
+{
+#ifdef Q_OS_WIN
+    // The drag loop of Windows keeps the mouse to itself, and Qt hears of the
+    // release only once QDrag::exec() has returned: what Qt knows is the
+    // button as it was before the drag. The system knows better.
+    if (onWindows())
+        return GetAsyncKeyState(GetSystemMetrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON) < 0;
+#endif
+    return QGuiApplication::mouseButtons().testFlag(Qt::LeftButton);
 }
 
 } // namespace
@@ -108,7 +135,9 @@ const DragSession *DockDragController::begin(const PanelId &panel, bool wholeGro
 bool DockDragController::requestWindowDrag(const QString &containerId, const QPoint &grip)
 {
     DockFloatingWindow *window = m_manager->floatingWindows.value(containerId);
-    if (!carriesWindows() || !window || m_session)
+    // (A window that would be moved from here is better moved by the window
+    // system, which also snaps it to the edges of the screen.)
+    if (!carriesWindows() || movesCarriedWindows() || !window || m_session)
         return false;
     const QPointer<DockFloatingWindow> guard(window);
     QMetaObject::invokeMethod(this, [this, containerId, guard, grip] {
@@ -159,7 +188,13 @@ QMimeData *DockDragController::createMimeData(QWindow *carried, const QPoint &gr
 
 bool DockDragController::carriesWindows() const
 {
-    return m_manager->dragGhostEnabled && !m_carryingUnsupported && onWayland();
+    return m_manager->dragGhostEnabled
+        && ((!m_carryingUnsupported && onWayland()) || onWindows());
+}
+
+bool DockDragController::movesCarriedWindows() const
+{
+    return m_manager->dragGhostEnabled && onWindows();
 }
 
 DockFloatingWindow *DockDragController::windowDraggedWhole() const
@@ -212,7 +247,13 @@ DockFloatingWindow *DockDragController::createGhost()
     const int titleHeight = ghost->titleBar() ? ghost->titleBar()->sizeHint().height() : 0;
     size += QSize(frame.left() + frame.right(), frame.top() + frame.bottom() + titleHeight);
     m_ghostGrip += QPoint(frame.left(), frame.top() + titleHeight);
-    ghost->present(QRect(QPoint(0, 0), size), owner);
+    // Where to is the compositor's business, or else known here.
+    QPoint position(0, 0);
+    if (movesCarriedWindows()) {
+        ghost->setCarriedAlong(true);
+        position = QCursor::pos() - m_ghostGrip;
+    }
+    ghost->present(QRect(position, size), owner);
     return ghost;
 }
 
@@ -274,6 +315,9 @@ bool DockDragController::noteDragOver(QWidget *receiver, const QPoint &pos)
 {
     if (!m_carried || !receiver || receiver->window() != m_carried)
         return false;
+    // A window moved from here is known to follow, if a moment behind.
+    if (movesCarriedWindows())
+        return true;
     const QPoint onWindow = receiver->mapTo(m_carried.data(), pos);
     if (!m_carriedPointer) {
         m_carriedPointer = onWindow;
@@ -354,8 +398,13 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     // (wherever windows cannot be carried) a picture of the tab.
     QPointer<DockFloatingWindow> ghost;
     QPoint hold = grip;
+    const bool moved = movesCarriedWindows();
     if (!carriedWindow && carriesWindows()) {
-        if (DockFloatingWindow *whole = windowDraggedWhole()) {
+        DockFloatingWindow *whole = windowDraggedWhole();
+        // Moved from here, it has to be a window that can be moved.
+        if (whole && moved && (whole->isMaximized() || whole->isFullScreen()))
+            whole = nullptr;
+        if (whole) {
             // Everything in a floating window is dragged by its tab: there is
             // nothing to picture, the window itself comes along.
             carriedWindow = whole;
@@ -371,11 +420,31 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     setCarriedWindow(carried);
     showSourcePreview();
 
+    // Where nobody carries the window, it is kept at the pointer from here:
+    // the platform's drag loop lets timers through.
+    const QPointer<DockFloatingWindow> followed(moved ? carried : nullptr);
+    QPoint origin;
+    QTimer follow;
+    const auto keepAtPointer = [followed, hold] {
+        if (followed) {
+            const QPoint frame = followed->geometry().topLeft() - followed->pos();
+            followed->move(QCursor::pos() - hold - frame);
+        }
+    };
+    if (followed) {
+        origin = followed->pos();
+        if (carriedWindow)
+            carriedWindow->setCarriedAlong(true); // a ghost is made that way
+        follow.setTimerType(Qt::PreciseTimer);
+        connect(&follow, &QTimer::timeout, this, keepAtPointer);
+        follow.start(FollowInterval);
+    }
+
     // The drag belongs to the manager, not to the tab bar it started on: that
     // widget may be gone by the time the drag ends.
     QPointer<DockDragController> self(this);
     auto *drag = new QDrag(m_manager->q);
-    drag->setMimeData(createMimeData(carried ? carried->windowHandle() : nullptr, hold));
+    drag->setMimeData(createMimeData(carried && !moved ? carried->windowHandle() : nullptr, hold));
     if (!carried && !pixmap.isNull()) {
         drag->setPixmap(pixmap);
         drag->setHotSpot(QPoint(qMin(pixmap.width() / 2, 40), qMin(pixmap.height() / 2, 12)));
@@ -387,11 +456,22 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     qApp->removeEventFilter(this);
     m_running = false;
     setCarriedWindow(nullptr);
-    finish(action, ghost, carriedWindow != nullptr);
+    if (followed) {
+        follow.stop();
+        keepAtPointer(); // where it was let go of, to the pixel
+        if (carriedWindow) {
+            carriedWindow->setCarriedAlong(false);
+            // Put down, it stays there; a cancelled drag takes it back.
+            if (!m_pendingDrop && (m_escapePressed || dragButtonStillDown()))
+                carriedWindow->move(origin);
+        }
+    }
+    finish(action, ghost, carriedWindow != nullptr, moved && ghost);
     m_dragStart.reset();
 }
 
-void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost, bool windowDrag)
+void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost, bool windowDrag,
+                                bool ghostMoved)
 {
     const auto discardGhost = [&ghost] {
         if (ghost) {
@@ -420,14 +500,15 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
     //  - with a carried ghost, Qt reports the unclaimed drop as accepted and
     //    only a cancelled drag as ignored;
     //  - on Wayland without one, the two cannot be told apart;
-    //  - elsewhere: nobody took it, no Escape, and the mouse button is up (a
-    //    drag cancelled from the keyboard ends with the button still down).
+    //  - elsewhere, also with a ghost that was moved from here: nobody took
+    //    it, no Escape, and the mouse button is up (a drag cancelled from the
+    //    keyboard ends with the button still down).
     bool droppedOutside = false;
-    if (ghost) {
+    if (ghost && !ghostMoved) {
         droppedOutside = action != Qt::IgnoreAction;
     } else if (!onWayland()) {
         droppedOutside = action == Qt::IgnoreAction && !m_escapePressed
-            && !QGuiApplication::mouseButtons().testFlag(Qt::LeftButton);
+            && !dragButtonStillDown();
     }
 
     const DragSession session = *m_session;
@@ -470,11 +551,15 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
         frameToAdd = true;
     }
     cancel();
-    const DockResult result = m_manager->floatPanels(session.primary, session.wholeGroup, geometry, ghost);
-    if (!result) {
+    // A ghost that was moved from here is not a window to keep: the pointer
+    // goes through it. The window proper comes to be where it is, first.
+    DockFloatingWindow *adopted = ghostMoved ? nullptr : ghost;
+    const DockResult result =
+        m_manager->floatPanels(session.primary, session.wholeGroup, geometry, adopted);
+    if (!result || ghostMoved)
         discardGhost();
+    if (!result)
         return;
-    }
     if (frameToAdd) {
         const std::optional<PanelLocation> location = m_manager->state.locate(session.primary);
         DockFloatingWindow *window =
@@ -490,8 +575,9 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
 }
 
 // Notes an Escape key press during the drag, on platforms whose drag loop runs
-// on Qt's event queue. Together with the mouse button state this tells a
-// cancelled drag from a drop outside every window.
+// on Qt's event queue (on Windows the key never gets here). Together with the
+// mouse button state this tells a cancelled drag from a drop outside every
+// window.
 bool DockDragController::eventFilter(QObject *, QEvent *event)
 {
     if (m_running

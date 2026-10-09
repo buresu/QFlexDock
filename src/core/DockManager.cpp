@@ -60,10 +60,11 @@ DockManagerPrivate::DockManagerPrivate(DockManager *manager)
 {
     drag = new DockDragController(this);
     // Where a drop outside every dock area can be told apart from a cancelled
-    // drag (see docs/platform-notes.md): X11, and Wayland when a window is
-    // carried along with the drag.
+    // drag (see docs/platform-notes.md): X11, Windows, and Wayland when a
+    // window is carried along with the drag.
     const QString platform = QGuiApplication::platformName();
     floatOnOutsideDrop = platform == QLatin1String("xcb")
+        || platform == QLatin1String("windows")
         || platform.startsWith(QLatin1String("wayland"));
 }
 

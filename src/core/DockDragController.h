@@ -42,6 +42,12 @@ class DockTabGroup;
 ///    itself, and can thereby be dropped onto a dock area.
 /// With such a drag Qt reports a drop that nobody took as accepted, and only a
 /// cancelled drag as ignored, which is what tells the two apart on Wayland.
+///
+/// On Windows nothing carries a window, but a client can move one to the
+/// pointer, and does (movesCarriedWindows()): the ghost of a tab drag, or the
+/// floating window whose whole content is dragged, is kept at the pointer
+/// from here for as long as the drag lasts. The pointer goes through it, so
+/// the drag still finds the dock area underneath.
 class QFLEXDOCK_EXPORT DockDragController : public QObject
 {
     Q_OBJECT
@@ -58,7 +64,8 @@ public:
     void requestGroupDrag(const PanelId &anyPanelOfGroup, const QPixmap &pixmap);
     /// A floating window dragged by its (custom) title row, held at `grip`
     /// (window coordinates). False if the platform cannot carry a window with
-    /// a drag; the caller then lets the window system move the window.
+    /// a drag, or would have to move the window itself where the window
+    /// system does that better; the caller then lets it.
     bool requestWindowDrag(const QString &containerId, const QPoint &grip);
 
     // --- Session lifecycle (driven directly by tests) ------------------------
@@ -74,6 +81,9 @@ public:
                                             const QPoint &grip = {}) const;
     /// Whether drags carry a window along (see the class description).
     [[nodiscard]] bool carriesWindows() const;
+    /// Whether the window a drag carries is moved from here, the window
+    /// system not doing it (Windows).
+    [[nodiscard]] bool movesCarriedWindows() const;
     /// The floating window whose whole content the active session drags, if
     /// that is what it does (the only tab of a floating window, or its only
     /// tab group). Such a drag needs no ghost: the window is what moves.
@@ -86,8 +96,13 @@ public:
     /// What happens once QDrag::exec() has returned `action`: commit the drop,
     /// float what was dropped outside (into `ghost`, if there is one), or
     /// leave everything as it was. `windowDrag`: an existing floating window
-    /// was carried. Separate from the drag itself so tests can drive it.
-    void finish(Qt::DropAction action, DockFloatingWindow *ghost, bool windowDrag);
+    /// was carried. `ghostMoved`: the ghost was kept at the pointer from here
+    /// (movesCarriedWindows()); the action then says no more than it does
+    /// without a ghost, and the ghost, which the pointer goes through, makes
+    /// way for a window proper where it is. Separate from the drag itself so
+    /// tests can drive it.
+    void finish(Qt::DropAction action, DockFloatingWindow *ghost, bool windowDrag,
+                bool ghostMoved = false);
     /// Has the dragged tab shown as gone from its group, where tab drags are
     /// previewed (done by the drag itself, once it has its pictures of the
     /// group; tests may).

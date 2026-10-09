@@ -395,13 +395,104 @@ private Q_SLOTS:
     {
         DockManager manager;
         const QString platform = QGuiApplication::platformName();
-        QCOMPARE(manager.floatsOnOutsideDrop(), platform == QLatin1String("xcb") || onWayland());
+        QCOMPARE(manager.floatsOnOutsideDrop(),
+                 platform == QLatin1String("xcb") || platform == QLatin1String("windows")
+                     || onWayland());
         QVERIFY(manager.isDragGhostEnabled());
-        // Windows are carried along with a drag on Wayland only.
+        // Windows are carried along with a drag on Wayland, by the
+        // compositor, and on Windows, where they are moved from here.
+        const bool onWindows = platform == QLatin1String("windows");
         DockDragController *controller = DockManagerPrivate::get(&manager)->drag;
-        QCOMPARE(controller->carriesWindows(), onWayland());
+        QCOMPARE(controller->carriesWindows(), onWayland() || onWindows);
+        QCOMPARE(controller->movesCarriedWindows(), onWindows);
         manager.setDragGhostEnabled(false);
         QVERIFY(!controller->carriesWindows());
+        QVERIFY(!controller->movesCarriedWindows());
+    }
+
+    // A ghost that QFlexDock itself keeps at the pointer (Windows) lets the
+    // pointer through, and so cannot be the window. Dropped outside, a
+    // window proper takes its place; what Qt reports of the drag says no
+    // more than it does without a ghost.
+    void ghostMovedFromHereMakesWayForTheWindow()
+    {
+        if (onWayland())
+            QSKIP("On Wayland a drop outside is known by a ghost the compositor carries");
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        f.manager.setFloatsOnOutsideDrop(true);
+        DockDragController *controller = priv(f.manager)->drag;
+
+        QVERIFY(controller->begin(p("b"), false));
+        QPointer<DockFloatingWindow> ghost = controller->createGhost();
+        QVERIFY(ghost);
+        QVERIFY(QTest::qWaitForWindowExposed(ghost));
+        ghost->move(300, 200);
+        const QRect put = ghost->geometry();
+        // Nobody took the drop and the button is up: dropped outside.
+        controller->finish(Qt::IgnoreAction, ghost, false, true);
+        QVERIFY(!controller->isActive());
+        QVERIFY(f.manager.panel(p("b"))->isFloating());
+        QCOMPARE(describe(f.a), p("H(a, c)"));
+        QCOMPARE(priv(f.manager)->floatingWindows.size(), 1);
+        const DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(window && window != ghost.data() && !window->isGhost());
+        QVERIFY(!window->windowFlags().testFlag(Qt::WindowTransparentForInput));
+        QCOMPARE(priv(f.manager)->state.find(window->containerId())->geometry, put);
+        QTRY_COMPARE(window->size(), put.size());
+        QVERIFY(!ghost || !ghost->isVisible());
+        QTRY_VERIFY(!ghost);
+
+        // Cancelled from the keyboard, the button is still down: nothing
+        // floats. (Windows asks the system for the button, which no test holds.)
+        if (QGuiApplication::platformName() == QLatin1String("windows"))
+            return;
+        QVERIFY(f.manager.undo());
+        QCOMPARE(describe(f.a), p("H(a, b|c)"));
+        QWidget *content = f.widgets[p("a")];
+        const QPoint held = content->mapTo(&f.windowA, content->rect().center());
+        QTest::mousePress(f.windowA.windowHandle(), Qt::LeftButton, {}, held);
+        QVERIFY(controller->begin(p("b"), false));
+        ghost = controller->createGhost();
+        QVERIFY(ghost);
+        controller->finish(Qt::IgnoreAction, ghost, false, true);
+        QTest::mouseRelease(f.windowA.windowHandle(), Qt::LeftButton, {}, held);
+        QVERIFY(!controller->isActive());
+        QCOMPARE(describe(f.a), p("H(a, b|c)"));
+        QCOMPARE(priv(f.manager)->floatingWindows.size(), 0);
+        QTRY_VERIFY(!ghost);
+    }
+
+    void windowMovedAlongLetsThePointerThrough()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        // A floating window whose whole content is dragged: for the time of
+        // the drag, and without becoming another window.
+        QVERIFY(f.manager.floatPanel(p("a"), QRect(60, 60, 320, 240)));
+        DockFloatingWindow *window = floatingWindowOf(f, "a");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const QPointer<QWindow> handle(window->windowHandle());
+        window->setCarriedAlong(true);
+        QCOMPARE(window->windowHandle(), handle.data());
+        QVERIFY(handle->flags().testFlag(Qt::WindowTransparentForInput));
+        QVERIFY(window->windowOpacity() < 1.0);
+        QVERIFY(window->isVisible());
+        window->setCarriedAlong(false);
+        QCOMPARE(window->windowHandle(), handle.data());
+        QVERIFY(!handle->flags().testFlag(Qt::WindowTransparentForInput));
+        QCOMPARE(window->windowOpacity(), 1.0);
+        QVERIFY(window->isVisible());
+
+        // A ghost is made that way before it is shown, and stays on top.
+        DockFloatingWindow ghost(priv(f.manager), QString(), DockManager::FloatingFrame::Native);
+        ghost.setCarriedAlong(true);
+        QVERIFY(ghost.windowFlags().testFlag(Qt::WindowTransparentForInput));
+        QVERIFY(ghost.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
+        QVERIFY(ghost.testAttribute(Qt::WA_ShowWithoutActivating));
+        QVERIFY(ghost.windowOpacity() < 1.0);
     }
 
     void carriedWindowIsNamedInTheMimeData()

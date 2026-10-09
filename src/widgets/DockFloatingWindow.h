@@ -83,6 +83,13 @@ public:
     [[nodiscard]] bool isGhost() const { return m_ghost; }
     /// The ghost becomes the real window of container `containerId`.
     void adoptAs(const QString &containerId);
+    /// For a window that is kept at the pointer during a drag by moving it
+    /// (DockDragController::movesCarriedWindows()): the pointer goes through
+    /// it, so that the drag finds what is underneath, and so does a little
+    /// of the drop guide there. A window not shown yet stays that way, and
+    /// above other windows, for good (a ghost); one that is shown can be
+    /// turned back.
+    void setCarriedAlong(bool carried);
 
 protected:
     void paintEvent(QPaintEvent *event) override;

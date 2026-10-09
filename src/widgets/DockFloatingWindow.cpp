@@ -26,6 +26,8 @@ constexpr qint64 StateChangeTime = 250;
 constexpr int DefaultBorderWidth = 4;
 // How far in from its edge such a window can be taken hold of to resize it.
 constexpr int GripReach = 4;
+// How much of a window shows while it is moved along with a drag.
+constexpr qreal CarriedOpacity = 0.75;
 
 // A strip along one edge of a window whose border is too thin to be grabbed.
 // It lies over the content there and paints nothing.
@@ -227,6 +229,20 @@ void DockFloatingWindow::adoptAs(const QString &containerId)
     updateFrameMargins();
     m_clock.start();
     m_reported = {Reported{0, this->geometry()}};
+}
+
+void DockFloatingWindow::setCarriedAlong(bool carried)
+{
+    if (QWindow *handle = windowHandle()) {
+        // On the window as it is: new flags for the widget would have it
+        // make another one, in the middle of a drag.
+        handle->setFlag(Qt::WindowTransparentForInput, carried);
+    } else if (carried) {
+        setWindowFlags(windowFlags() | Qt::WindowTransparentForInput | Qt::WindowStaysOnTopHint
+                       | Qt::WindowDoesNotAcceptFocus);
+        setAttribute(Qt::WA_ShowWithoutActivating);
+    }
+    setWindowOpacity(carried ? CarriedOpacity : 1.0);
 }
 
 void DockFloatingWindow::dragEnterEvent(QDragEnterEvent *event)

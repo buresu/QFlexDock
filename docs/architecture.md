@@ -148,7 +148,10 @@ Only the coordinates of Qt's drag events are used, never global positions or `QA
 
 On Wayland a drag can carry a window ([platform-notes.md](platform-notes.md)). A tab drag carries a ghost
 rather than really detaching the panel, which keeps "nothing changes during a drag" true; a ghost that
-nobody took is adopted as the view of a new floating container. What happens after a drag is all in
+nobody took is adopted as the view of a new floating container. On Windows nothing carries a window, so
+the controller moves it to the pointer on a timer for as long as the drag lasts; such a window lets the
+pointer through (`Qt::WindowTransparentForInput`), or the drag would find nothing but it. A ghost made that
+way is replaced by a window proper where it was dropped. What happens after a drag is all in
 `DockDragController::finish()`, which tests drive without a real drag.
 
 ## Choices worth knowing
@@ -177,7 +180,7 @@ nobody took is adopted as the view of a new floating container. What happens aft
   three places (`DockTitlePlace`). What looks like a window's buttons in `examples/chrome-style` are the
   actions of whichever tab is in front.
 - **A torn-off panel keeps its size.** A window with a frame of its own is made larger by that frame, and a
-  floating window dragged by all it holds (where no compositor carries it) moves by as much as the pointer
+  floating window dragged by all it holds (where nothing carries it: X11) moves by as much as the pointer
   did, not to the pointer.
 - **A dock area ignores a drag it may not take anything from** (the dragged panels are not allowed in its
   workspace). Qt then offers the drag to the widgets above it, which is what makes a workspace inside a
