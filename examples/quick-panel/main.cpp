@@ -21,10 +21,12 @@ int main(int argc, char *argv[])
     QApplication app(argc, argv);
 
     // The engine outlives the manager, which owns the QQuickWidgets using it.
+    // The controller is the engine's: it has to be there for as long as any
+    // scene reads `dock`, or the bindings find it gone when the program ends.
     QQmlEngine engine;
     DockManager manager;
-    QmlDockController controller(&manager);
-    controller.installInto(&engine); // QML sees it as `dock`
+    auto *controller = new QmlDockController(&manager, &engine);
+    controller->installInto(&engine); // QML sees it as `dock`
 
     QMainWindow window;
     DockWorkspace *workspace = manager.createWorkspace(QStringLiteral("main"));

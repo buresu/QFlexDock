@@ -223,10 +223,14 @@ Signals about the content's lifecycle, mainly for GPU and native-window content:
 ```cpp
 QQmlEngine engine;
 QFlexDock::DockManager manager;
-QFlexDock::QmlDockController controller(&manager);
-controller.installInto(&engine);          // `dock` in QML; enums via `import QFlexDock`, e.g. `Dock.Left`
+auto *controller = new QFlexDock::QmlDockController(&manager, &engine);
+controller->installInto(&engine);         // `dock` in QML; enums via `import QFlexDock`, e.g. `Dock.Left`
 QFlexDock::QmlPanelAdapter::registerPanel(&manager, "qml", &engine, QUrl("qrc:/Panel.qml"), "QML");
 ```
+
+The controller has to outlive the QML that reads `dock`, and the manager owns the panels' scenes: as a child
+of the engine it goes last. One that is destroyed before the manager leaves the scenes with a `dock` that is
+null, and every binding on it reports a `TypeError`.
 
 `QmlDockController` mirrors `DockManager` and has no state of its own. From QML: `dock.showPanel(id)`,
 `hidePanel`, `showPanels(ids)`, `hidePanels(ids)`, `togglePanel`, `activatePanel`, `tabGroupPanels(id)`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,

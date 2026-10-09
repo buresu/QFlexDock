@@ -8,6 +8,7 @@
 #include "widgets/DockDropOverlay.h"
 
 #include <QtCore/QMimeData>
+#include <QtCore/QRegularExpression>
 #include <QtCore/QTemporaryDir>
 #include <QtGui/QDragEnterEvent>
 #include <QtQml/QQmlEngine>
@@ -282,6 +283,30 @@ private Q_SLOTS:
         QVERIFY(!second.manager());
         QVERIFY(!second.showPanel(p("q"))); // a controller without manager fails politely
         QVERIFY(second.panels().isEmpty());
+    }
+
+    // The controller has to be there for as long as a scene reads `dock`. As
+    // a child of the engine it goes after the manager and its scenes, and no
+    // binding is evaluated against a controller that is gone.
+    void controllerOwnedByTheEngineOutlivesTheScenes()
+    {
+        QTest::failOnWarning(QRegularExpression(p("TypeError")));
+        QPointer<QmlDockController> controller;
+        {
+            QQmlEngine engine;
+            TwoWindows f;
+            controller = new QmlDockController(&f.manager, &engine);
+            controller->installInto(&engine);
+            f.show();
+            DockPanel *panel = QmlPanelAdapter::registerPanel(&f.manager, p("q"), &engine, m_source);
+            QVERIFY(panel);
+            QVERIFY(f.a->addPanel(p("q")));
+            QVERIFY(f.a->addPanel(p("a"), DockArea::Right));
+            const QObject *root = QmlPanelAdapter::quickWidget(panel)->rootObject();
+            QVERIFY(root);
+            QCOMPARE(root->property("titleOfA").toString(), p("a"));
+        }
+        QVERIFY(!controller);
     }
 
     // A QQuickWidget takes every drag that enters it, whatever its items make

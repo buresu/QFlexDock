@@ -49,7 +49,10 @@ public:
 
     /// Exposes this controller to all QML run by `engine` as the context
     /// property `name`, and registers the `QFlexDock` import (for `Dock.Left`
-    /// and friends). The controller must outlive the engine's QML.
+    /// and friends). The controller must outlive the engine's QML, the
+    /// scenes of the manager's panels included: make it a child of the
+    /// engine, or destroy the manager first. Bindings on a controller that
+    /// went before them are evaluated once more, against null.
     void installInto(QQmlEngine *engine, const QString &name = QStringLiteral("dock"));
 
     [[nodiscard]] QString activePanel() const;
