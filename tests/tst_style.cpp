@@ -380,6 +380,58 @@ private Q_SLOTS:
         QCOMPARE(area->overlay()->effectiveStyle().borderWidth, 4.0); // qproperty values persist
     }
 
+    // The parts that come with GroupHeader::TitleBar, with the title buttons
+    // and with a panel that has no header.
+    void styleSheetsStyleTheTitleBarHeader()
+    {
+        TwoWindows f;
+        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        DockTheme theme;
+        theme.titleButtons = DockTitleButton::Float | DockTitleButton::Close;
+        f.manager.setTheme(theme);
+        f.manager.panel(p("c"))->setFeatures({});
+        f.manager.panel(p("c"))->setHeaderVisible(false);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Right));
+        DockAreaWidget *area = areaOf(f.a);
+
+        qApp->setStyleSheet(QStringLiteral(R"(
+            QFlexDock--DockTabGroup { background: #101010; border: 2px solid #808080; }
+            QFlexDock--DockTabGroup[headerVisible="false"] { border: 2px solid #00ff00; }
+            QFlexDock--DockTabGroup #dockTitleBar { background: #303030; }
+            #dockTitle { background: #0000ff; color: #ffffff; }
+            #dockFloatButton { background: #abcdef; border: none; }
+            QFlexDock--DockTabGroup #dockCloseButton { background: #fedcba; border: none; }
+            QFlexDock--DockTabBar::tab { background: #505050; padding: 6px 10px; }
+            QFlexDock--DockTabBar::tab:selected { background: #ff0000; }
+        )"));
+        QCoreApplication::processEvents();
+
+        DockTabGroup *group = area->groupOfPanel(p("a"));
+        QVERIFY(containsColor(group->titleLabel()->grab().toImage(), QColor(0, 0, 0xff)));
+        QVERIFY(containsColor(group->floatButton()->grab().toImage(), QColor(0xab, 0xcd, 0xef)));
+        QVERIFY(containsColor(group->closeButton()->grab().toImage(), QColor(0xfe, 0xdc, 0xba)));
+        QCOMPARE(pixel(group, QPoint(0, group->height() / 2)), QColor(0x80, 0x80, 0x80));
+        // The tabs below the content are QTabBar tabs like the ones on top.
+        QTRY_VERIFY(group->tabBar()->isVisible());
+        const DockTabBar *bar = group->tabBar();
+        QCOMPARE(pixel(group->tabBar(), bar->tabRect(bar->currentIndex()).center() + QPoint(0, 9)),
+                 QColor(0xff, 0, 0));
+
+        DockTabGroup *bare = area->groupOfPanel(p("c"));
+        QVERIFY(!bare->isHeaderVisible());
+        QCOMPARE(pixel(bare, QPoint(0, bare->height() / 2)), QColor(0, 0xff, 0));
+        grab(&f.windowA, p("style-qss-titlebar"));
+
+        // The property follows the panel.
+        f.manager.panel(p("c"))->setHeaderVisible(true);
+        QCoreApplication::processEvents();
+        QCOMPARE(pixel(bare, QPoint(0, bare->height() / 2)), QColor(0x80, 0x80, 0x80));
+        qApp->setStyleSheet(QString());
+    }
+
     void themeTokensLayerBetweenPaletteAndStyleSheet()
     {
         TwoWindows f;

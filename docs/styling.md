@@ -27,11 +27,12 @@ There are no sub-controls or pseudo-states beyond these.
 
 | Selector | Target | What works |
 |---|---|---|
-| `QFlexDock--DockTabGroup` | A tab group (`QFrame`) | `border`, `background`, …; properties `active`, `maximized` |
+| `QFlexDock--DockTabGroup` | A tab group (`QFrame`) | `border`, `background`, …; properties `active`, `maximized`, `headerVisible` |
 | `QFlexDock--DockTabGroup #dockTitleBar` | Its title row | `background`, … |
-| `#dockMenuButton`, `#dockMaximizeButton` | Title row buttons | As `QToolButton` |
+| `#dockTitle` | The title in it (`QLabel`, with `GroupHeader::TitleBar`) | `color`, `font`, `background`, … |
+| `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton`, `QFlexDock--DockTabGroup #dockCloseButton` | Title row buttons | As `QToolButton` |
 | `QFlexDock--DockTabBar` | The tab bar (`QTabBar`) | `qproperty-activeIndicatorColor`; property `activeGroup` |
-| `QFlexDock--DockTabBar::tab`, `::tab:selected`, … | Tabs | The same as `QTabBar::tab` |
+| `QFlexDock--DockTabBar::tab`, `::tab:selected`, … | Tabs, above or below the content | The same as `QTabBar::tab` |
 | `QFlexDock--DockSplitHandle` | Split handles | `background`, `border`; properties `orientation` (`1`: vertical bar, `2`: horizontal bar), `hovered`, `pressed` |
 | `QFlexDock--DockAutoHideBar` | Auto-hide bars | `background`, …; property `edge` (`left`, `right`, `top`, `bottom`) |
 | `QFlexDock--DockAutoHidePopup` | The panel that slides out (`QFrame`) | `background`, `border`; buttons `#dockPinButton`, `#dockCloseButton` |
@@ -85,6 +86,8 @@ For applications without a style sheet, or to set values from code:
 QFlexDock::DockTheme theme;
 theme.splitHandleWidth = 6;                              // -1: the style's PM_SplitterWidth
 theme.iconSize = 18;                                     // -1: the style's size
+theme.titleButtons = QFlexDock::DockTitleButton::Float   // buttons in a group's header;
+                   | QFlexDock::DockTitleButton::Close;  // the default is Menu | Maximize
 theme.overlay.hoverColor = QColor(255, 128, 0, 120);     // an invalid color is derived from the palette
 theme.overlay.edgeFraction = 0.25;                       // depth of the edge zones, relative to the target
 theme.overlay.outerBandWidth = 32;                       // band along the workspace border; 0 disables it

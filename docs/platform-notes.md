@@ -59,12 +59,16 @@ QFlexDock's format lets the drop through to the dock area.
 
 `DockManager::setFloatingWindowFrame()` chooses the frame of floating windows created from then on.
 
-| | `FloatingFrame::Native` (default) | `FloatingFrame::Custom` |
-|---|---|---|
-| Title bar and border | The window system's | Drawn by QFlexDock, styleable with a style sheet |
-| Move and resize | The window system | Requested with `QWindow::startSystemMove()` / `startSystemResize()` |
-| Snapping, tiling, window menu | Yes | Up to the window system |
-| Re-dock by dragging the title | No (drag a tab instead) | On Wayland with `xdg-toplevel-drag` |
+| | `Native` (default) | `Custom` | `Minimal` |
+|---|---|---|---|
+| Title bar and border | The window system's | A title row and border drawn by QFlexDock | Only a border; the headers of the groups inside serve as the title |
+| Move and resize | The window system | Requested with `QWindow::startSystemMove()` / `startSystemResize()` | Resize as `Custom`; moved by dragging a header (below) |
+| Snapping, tiling, window menu | Yes | Up to the window system | Up to the window system |
+| Re-dock by dragging the title | No (drag a tab instead) | On Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag |
+
+A `Minimal` window is moved by a dock drag of what it contains: on Wayland the window follows the pointer,
+on X11 a picture does and the window lands where it is dropped. Where outside drops do not float
+(Windows and macOS by default), the drag just moves the window and docking is left to the float button.
 
 ## Wayland
 

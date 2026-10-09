@@ -4,10 +4,15 @@
 #include "core/DockDragController.h"
 #include "core/DockManager_p.h"
 #include "widgets/DockAreaWidget.h"
+#include "widgets/DockFloatingWindow.h"
 #include "widgets/DockTabBar.h"
 
 #include <QtCore/QEvent>
+#include <QtGui/QContextMenuEvent>
+#include <QtGui/QMouseEvent>
 #include <QtGui/QShortcut>
+#include <QtGui/QWindow>
+#include <QtWidgets/QApplication>
 #include <QtWidgets/QBoxLayout>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QMenu>
@@ -38,6 +43,15 @@ QSize effectiveMinimum(const QWidget *widget)
     return QSize(w, h).boundedTo(widget->maximumSize());
 }
 
+// Shows or hides only on a change. (An explicit show of a widget that was
+// never hidden is not a no-op to Qt: it activates the parent's layout there
+// and then, before the group has its tabs.)
+void setShown(QWidget *widget, bool shown)
+{
+    if (widget->isHidden() == shown)
+        widget->setVisible(shown);
+}
+
 QToolButton *makeTitleButton(QWidget *parent, const char *objectName, const QString &toolTip)
 {
     auto *button = new QToolButton(parent);
@@ -64,17 +78,32 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     m_titleBar = new QWidget(this);
     m_titleBar->setObjectName(QStringLiteral("dockTitleBar"));
     m_titleBar->setAttribute(Qt::WA_StyledBackground);
+    m_titleBar->installEventFilter(this);
 
     m_tabBar = new DockTabBar(m_titleBar);
+    m_titleLabel = new QLabel(m_titleBar);
+    m_titleLabel->setObjectName(QStringLiteral("dockTitle"));
+    // The title is part of the title bar as far as the mouse is concerned,
+    // and gives way (is cut off) when the group gets narrow.
+    m_titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_titleLabel->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Preferred);
+    // Some room before the text (a style sheet's padding comes on top of it).
+    m_titleLabel->setContentsMargins(6, 0, 0, 0);
+    m_titleLabel->hide();
     m_menuButton = makeTitleButton(m_titleBar, "dockMenuButton", tr("Panel menu"));
     m_maximizeButton = makeTitleButton(m_titleBar, "dockMaximizeButton", tr("Maximize"));
+    m_floatButton = makeTitleButton(m_titleBar, "dockFloatButton", tr("Float"));
+    m_closeButton = makeTitleButton(m_titleBar, "dockCloseButton", tr("Close"));
+    m_floatButton->hide();
+    m_closeButton->hide();
 
-    auto *titleLayout = new QHBoxLayout(m_titleBar);
-    titleLayout->setContentsMargins(0, 0, 2, 0);
-    titleLayout->setSpacing(0);
-    titleLayout->addWidget(m_tabBar, 1);
-    titleLayout->addWidget(m_menuButton, 0, Qt::AlignVCenter);
-    titleLayout->addWidget(m_maximizeButton, 0, Qt::AlignVCenter);
+    m_titleLayout = new QHBoxLayout(m_titleBar);
+    m_titleLayout->setContentsMargins(0, 0, 2, 0);
+    m_titleLayout->setSpacing(0);
+    m_titleLayout->addWidget(m_tabBar, 1);
+    m_titleLayout->addWidget(m_titleLabel, 1);
+    for (QToolButton *button : {m_menuButton, m_maximizeButton, m_floatButton, m_closeButton})
+        m_titleLayout->addWidget(button, 0, Qt::AlignVCenter);
 
     // The content area has no layout of its own: only the current panel's
     // widget is shown, sized to fill it.
@@ -96,45 +125,19 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
         const QSignalBlocker blocker(m_tabBar);
         m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(m_current));
     });
-    const auto closeByUser = [this](const PanelId &panel) {
-        if (m_manager && m_manager->userMay(panel, DockFeature::Closable))
-            (void)m_manager->closePanels({panel});
-    };
     connect(m_tabBar, &QTabBar::tabCloseRequested, this,
-            [this, closeByUser](int index) { closeByUser(m_tabBar->panelAt(index)); });
-    connect(m_tabBar, &DockTabBar::panelCloseRequested, this, closeByUser);
+            [this](int index) { closeByUser(m_tabBar->panelAt(index)); });
+    connect(m_tabBar, &DockTabBar::panelCloseRequested, this, &DockTabGroup::closeByUser);
     connect(m_tabBar, &DockTabBar::panelDragStarted, this, [this](const PanelId &panel) {
-        if (!m_manager || !m_manager->userMay(panel, DockFeature::Movable))
-            return;
-        const int index = m_tabBar->indexOfPanel(panel);
-        m_manager->drag->requestPanelDrag(panel, m_tabBar->grab(m_tabBar->tabRect(index)));
+        startPanelDrag(panel, m_tabBar->grab(m_tabBar->tabRect(m_tabBar->indexOfPanel(panel))));
     });
-    connect(m_tabBar, &DockTabBar::groupDragStarted, this, [this] {
-        if (!m_manager)
-            return;
-        for (const PanelId &panel : std::as_const(m_panels)) {
-            if (!m_manager->userMay(panel, DockFeature::Movable))
-                return;
-        }
-        m_manager->drag->requestGroupDrag(m_current, m_titleBar->grab());
-    });
-    connect(m_tabBar, &DockTabBar::panelMenuRequested, this,
-            [this](const PanelId &panel, const QPoint &globalPos) {
-                if (!m_manager)
-                    return;
-                if (DockPanel *p = m_manager->panels.value(panel)) {
-                    QMenu *menu = m_manager->createPanelMenu(p, window());
-                    menu->setAttribute(Qt::WA_DeleteOnClose);
-                    menu->popup(globalPos);
-                }
-            });
-    const auto toggleMaximized = [this] {
-        if (m_manager && m_manager->userMay(m_current, DockFeature::Maximizable))
-            (void)m_manager->setMaximized(m_current, !m_maximized);
-    };
-    connect(m_tabBar, &DockTabBar::barDoubleClicked, this, toggleMaximized);
-    connect(m_maximizeButton, &QToolButton::clicked, this, toggleMaximized);
+    connect(m_tabBar, &DockTabBar::groupDragStarted, this, &DockTabGroup::startGroupDrag);
+    connect(m_tabBar, &DockTabBar::panelMenuRequested, this, &DockTabGroup::showPanelMenu);
+    connect(m_tabBar, &DockTabBar::barDoubleClicked, this, &DockTabGroup::toggleMaximized);
+    connect(m_maximizeButton, &QToolButton::clicked, this, &DockTabGroup::toggleMaximized);
     connect(m_menuButton, &QToolButton::clicked, this, &DockTabGroup::showGroupMenu);
+    connect(m_floatButton, &QToolButton::clicked, this, &DockTabGroup::toggleFloating);
+    connect(m_closeButton, &QToolButton::clicked, this, [this] { closeByUser(m_current); });
 
     // Standard "next/previous tab" keys while focus is inside the group.
     const auto cycle = [this](int step) {
@@ -172,6 +175,123 @@ void DockTabGroup::detachFromManager()
     m_manager = nullptr;
 }
 
+// --- User actions --------------------------------------------------------------
+
+void DockTabGroup::closeByUser(const PanelId &panel)
+{
+    if (m_manager && m_manager->userMay(panel, DockFeature::Closable))
+        (void)m_manager->closePanels({panel});
+}
+
+void DockTabGroup::toggleMaximized()
+{
+    if (m_manager && m_manager->userMay(m_current, DockFeature::Maximizable))
+        (void)m_manager->setMaximized(m_current, !m_maximized);
+}
+
+void DockTabGroup::toggleFloating()
+{
+    if (!m_manager || !m_manager->userMay(m_current, DockFeature::Floatable))
+        return;
+    const DockPanel *panel = m_manager->panels.value(m_current);
+    if (panel && panel->isFloating())
+        (void)m_manager->dockBack(m_current);
+    else
+        (void)m_manager->floatPanels(m_current, false, QRect());
+}
+
+// A floating window without a title row is moved by the headers of its
+// groups. Where a dock drag moves the window anyway (the platform carries it
+// along, or leaves it where it is dropped), that is all there is to it.
+// Elsewhere a drag of everything in the window just moves the window.
+bool DockTabGroup::moveWindowInstead(qsizetype draggedPanels)
+{
+    const auto *floating = qobject_cast<const DockFloatingWindow *>(window());
+    if (!floating || !floating->hasMinimalFrame() || !floating->windowHandle()
+        || m_area->tree().panels().size() != draggedPanels
+        || m_manager->drag->carriesWindows() || m_manager->floatOnOutsideDrop) {
+        return false;
+    }
+    return floating->windowHandle()->startSystemMove();
+}
+
+void DockTabGroup::startPanelDrag(const PanelId &panel, const QPixmap &pixmap)
+{
+    if (!m_manager || !m_manager->userMay(panel, DockFeature::Movable) || moveWindowInstead(1))
+        return;
+    m_manager->drag->requestPanelDrag(panel, pixmap);
+}
+
+void DockTabGroup::startGroupDrag()
+{
+    if (!m_manager)
+        return;
+    for (const PanelId &panel : std::as_const(m_panels)) {
+        if (!m_manager->userMay(panel, DockFeature::Movable))
+            return;
+    }
+    if (!moveWindowInstead(m_panels.size()))
+        m_manager->drag->requestGroupDrag(m_current, m_titleBar->grab());
+}
+
+void DockTabGroup::showPanelMenu(const PanelId &panel, const QPoint &globalPos)
+{
+    if (!m_manager)
+        return;
+    if (DockPanel *p = m_manager->panels.value(panel)) {
+        QMenu *menu = m_manager->createPanelMenu(p, window());
+        menu->setAttribute(Qt::WA_DeleteOnClose);
+        menu->popup(globalPos);
+    }
+}
+
+// The title bar of GroupHeader::TitleBar stands for the current panel: drag
+// it to move that panel, double click to float it or dock it again.
+bool DockTabGroup::titleBarEvent(QEvent *event)
+{
+    if (!m_titleMode || !m_manager)
+        return false;
+    switch (event->type()) {
+    case QEvent::MouseButtonPress: {
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        if (mouse->button() == Qt::LeftButton) {
+            m_titlePressed = true;
+            m_titlePress = mouse->position().toPoint();
+            (void)m_manager->activate(m_current, true);
+        }
+        break;
+    }
+    case QEvent::MouseMove: {
+        const auto *mouse = static_cast<QMouseEvent *>(event);
+        if (m_titlePressed && mouse->buttons().testFlag(Qt::LeftButton)
+            && (mouse->position().toPoint() - m_titlePress).manhattanLength()
+                   >= QApplication::startDragDistance()) {
+            m_titlePressed = false; // one drag per press
+            startPanelDrag(m_current, m_titleBar->grab());
+        }
+        break;
+    }
+    case QEvent::MouseButtonRelease:
+        m_titlePressed = false;
+        break;
+    case QEvent::MouseButtonDblClick:
+        if (static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
+            m_titlePressed = false;
+            toggleFloating();
+            return true;
+        }
+        break;
+    case QEvent::ContextMenu:
+        showPanelMenu(m_current, static_cast<QContextMenuEvent *>(event)->globalPos());
+        return true;
+    default:
+        break;
+    }
+    return false;
+}
+
+// --- State ---------------------------------------------------------------------
+
 void DockTabGroup::setNode(const LayoutNode &node, bool maximized)
 {
     m_nodeId = node.id;
@@ -189,7 +309,67 @@ void DockTabGroup::setNode(const LayoutNode &node, bool maximized)
         refreshAppearance();
         restyle();
     }
+    updateHeader();
     syncContents();
+}
+
+// Which parts of the header there are, and what they say. Depends on the
+// manager's header setting, on the panels in the group and on the theme.
+void DockTabGroup::updateHeader()
+{
+    if (!m_manager)
+        return;
+    const bool titleMode = m_manager->groupHeader == DockManager::GroupHeader::TitleBar;
+    if (titleMode != m_titleMode) {
+        m_titleMode = titleMode;
+        auto *groupLayout = static_cast<QVBoxLayout *>(layout());
+        if (titleMode) {
+            // The tabs move below the content, as plain tabs: closing and
+            // the like is done from the title bar.
+            m_titleLayout->removeWidget(m_tabBar);
+            groupLayout->addWidget(m_tabBar);
+            m_tabBar->setShape(QTabBar::RoundedSouth);
+            m_tabBar->setTabsClosable(false);
+        } else {
+            groupLayout->removeWidget(m_tabBar);
+            m_titleLayout->insertWidget(0, m_tabBar, 1);
+            m_tabBar->setShape(QTabBar::RoundedNorth);
+            m_tabBar->setTabsClosable(true);
+        }
+        setShown(m_titleLabel, titleMode);
+        for (int i = 0; i < m_tabBar->count(); ++i)
+            updateTab(i);
+    }
+    setShown(m_tabBar, !titleMode || m_panels.size() > 1);
+
+    const DockPanel *current = m_manager->panels.value(m_current);
+    QString title = current ? current->title() : QString();
+    if (current && current->isDirty())
+        title += QStringLiteral(" ●");
+    m_titleLabel->setText(title);
+    m_titleBar->setToolTip(titleMode && current ? current->toolTip() : QString());
+
+    const DockTitleButtons buttons = m_manager->theme.titleButtons;
+    const DockFeatures features = current ? current->features() : DockFeatures();
+    setShown(m_menuButton, buttons.testFlag(DockTitleButton::Menu));
+    setShown(m_maximizeButton, buttons.testFlag(DockTitleButton::Maximize));
+    setShown(m_floatButton, buttons.testFlag(DockTitleButton::Float)
+                                && features.testFlag(DockFeature::Floatable));
+    setShown(m_closeButton, buttons.testFlag(DockTitleButton::Close)
+                                && features.testFlag(DockFeature::Closable));
+    const bool floating = current && current->isFloating();
+    m_floatButton->setIcon(m_manager->icon(floating ? DockIcon::Dock : DockIcon::Float, this));
+    const QString floatTip = floating ? tr("Dock") : tr("Float");
+    m_floatButton->setToolTip(floatTip);
+    m_floatButton->setAccessibleName(floatTip);
+
+    // A panel may ask for no header at all while it has the group to itself.
+    const bool headerVisible = !(m_panels.size() == 1 && current && !current->isHeaderVisible());
+    setShown(m_titleBar, headerVisible);
+    if (headerVisible != m_headerVisible) {
+        m_headerVisible = headerVisible;
+        restyle();
+    }
 }
 
 void DockTabGroup::setActive(bool active)
@@ -242,8 +422,10 @@ void DockTabGroup::updateTab(int index)
     const auto side = QTabBar::ButtonPosition(
         style()->styleHint(QStyle::SH_TabBar_CloseButtonPosition, nullptr, m_tabBar));
     QWidget *button = m_tabBar->tabButton(index, side);
-    const bool wantsPin = panel->isPinnedTab();
-    const bool wantsClose = !wantsPin && panel->features().testFlag(DockFeature::Closable);
+    // (Tabs below the content are plain: see updateHeader().)
+    const bool wantsPin = !m_titleMode && panel->isPinnedTab();
+    const bool wantsClose = !m_titleMode && !wantsPin
+        && panel->features().testFlag(DockFeature::Closable);
     const bool hasPin = button && button->objectName() == QLatin1String("dockTabPin");
     if (wantsPin) {
         if (!hasPin) {
@@ -274,6 +456,8 @@ void DockTabGroup::updateTab(int index)
 void DockTabGroup::refreshPanel(const PanelId &panel)
 {
     updateTab(m_tabBar->indexOfPanel(panel));
+    updateHeader();
+    m_area->contentLimitsChanged(); // the header may have come or gone
 }
 
 void DockTabGroup::refreshAppearance()
@@ -283,8 +467,9 @@ void DockTabGroup::refreshAppearance()
     const int themed = m_manager->theme.iconSize;
     const int small = themed > 0 ? themed
                                  : style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    for (QToolButton *button : {m_menuButton, m_maximizeButton})
+    for (QToolButton *button : {m_menuButton, m_maximizeButton, m_floatButton, m_closeButton})
         button->setIconSize(QSize(small, small));
+    m_closeButton->setIcon(m_manager->icon(DockIcon::Close, this));
     if (themed > 0)
         m_tabBar->setIconSize(QSize(themed, themed));
     m_menuButton->setIcon(m_manager->icon(DockIcon::Menu, this));
@@ -295,6 +480,7 @@ void DockTabGroup::refreshAppearance()
     m_maximizeButton->setAccessibleName(tip);
     for (int i = 0; i < m_tabBar->count(); ++i)
         updateTab(i);
+    updateHeader();
 }
 
 void DockTabGroup::syncContents()
@@ -352,10 +538,14 @@ SizeLimits DockTabGroup::sizeLimits() const
     }
     contentMax = contentMax.expandedTo(contentMin);
 
+    // The header: the title row, and tabs that are shown below the content.
+    const bool tabsBelow = m_titleMode && !m_tabBar->isHidden();
+    const int headerH = (m_titleBar->isHidden() ? 0 : m_titleBar->sizeHint().height())
+        + (tabsBelow ? m_tabBar->sizeHint().height() : 0);
     const QMargins frame = contentsMargins();
     const int extraW = frame.left() + frame.right();
-    const int extraH = frame.top() + frame.bottom() + m_titleBar->sizeHint().height();
-    const int titleMinW = m_titleBar->minimumSizeHint().width();
+    const int extraH = frame.top() + frame.bottom() + headerH;
+    const int titleMinW = m_titleBar->isHidden() ? 0 : m_titleBar->minimumSizeHint().width();
 
     SizeLimits limits;
     limits.min = QSize(qMax(contentMin.width(), titleMinW) + extraW, contentMin.height() + extraH);
@@ -412,6 +602,8 @@ void DockTabGroup::changeEvent(QEvent *event)
 
 bool DockTabGroup::eventFilter(QObject *watched, QEvent *event)
 {
+    if (watched == m_titleBar && titleBarEvent(event))
+        return true;
     if (watched == m_host) {
         if (event->type() == QEvent::Resize) {
             updateContentGeometry();

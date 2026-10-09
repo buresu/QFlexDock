@@ -212,8 +212,10 @@ QPixmap DockDragController::pictureOf(DockTabGroup *group, const DragSession &se
     QPixmap picture = group->grab();
     DockTabBar *bar = group->tabBar();
     const int index = bar->indexOfPanel(session.primary);
-    if (session.wholeGroup || bar->count() < 2 || index < 0)
+    if (session.wholeGroup || bar->count() < 2 || index < 0
+        || bar->parentWidget() != group->titleBar()) {
         return picture;
+    }
 
     // One tab out of several: the other tabs stay behind. Repaint the tab bar
     // with just that tab, moved to the front.

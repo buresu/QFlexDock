@@ -170,6 +170,20 @@ bool DockPanel::hidesContentDuringDrag() const
     return d->hideContentDuringDrag;
 }
 
+bool DockPanel::isHeaderVisible() const
+{
+    return d->headerVisible;
+}
+
+void DockPanel::setHeaderVisible(bool visible)
+{
+    if (d->headerVisible == visible)
+        return;
+    d->headerVisible = visible;
+    DockManagerPrivate::get(d->manager)->panelAppearanceChanged(this);
+    Q_EMIT metadataChanged();
+}
+
 void DockPanel::setHidesContentDuringDrag(bool hide)
 {
     d->hideContentDuringDrag = hide;

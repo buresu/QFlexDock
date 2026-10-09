@@ -57,7 +57,7 @@ void DockTabBar::setActiveIndicatorColor(const QColor &color)
 
 QRect DockTabBar::tabDropRegion() const
 {
-    if (count() == 0)
+    if (count() == 0 || isHidden())
         return {};
     const QRect last = tabRect(count() - 1);
     QRect region = tabRect(0).united(last);
@@ -123,8 +123,10 @@ void DockTabBar::paintEvent(QPaintEvent *)
         const QColor mark = m_indicatorColor.isValid()
             ? m_indicatorColor : palette().color(QPalette::Active, QPalette::Highlight);
         if (m_activeGroup && mark.alpha() > 0) {
+            // On the edge of the tab that faces away from the content.
             const QRect r = tabRect(current);
-            painter.fillRect(QRect(r.left(), r.top(), r.width(), 2), mark);
+            const bool below = shape() == QTabBar::RoundedSouth || shape() == QTabBar::TriangularSouth;
+            painter.fillRect(QRect(r.left(), below ? r.bottom() - 1 : r.top(), r.width(), 2), mark);
         }
     }
 }

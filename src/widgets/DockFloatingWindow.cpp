@@ -25,17 +25,17 @@ constexpr int FrameWidth = 4;
 
 DockFloatingWindow::DockFloatingWindow(DockManagerPrivate *manager, const QString &containerId,
                                        DockManager::FloatingFrame frame)
-    : QWidget(nullptr, frame == DockManager::FloatingFrame::Custom
-                           ? Qt::Window | Qt::FramelessWindowHint : Qt::Window)
+    : QWidget(nullptr, frame == DockManager::FloatingFrame::Native
+                           ? Qt::Window : Qt::Window | Qt::FramelessWindowHint)
     , m_manager(manager)
     , m_containerId(containerId)
-    , m_customFrame(frame == DockManager::FloatingFrame::Custom)
+    , m_customFrame(frame != DockManager::FloatingFrame::Native)
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    if (m_customFrame) {
+    if (frame == DockManager::FloatingFrame::Custom) {
         m_titleBar = new QWidget(this);
         m_titleBar->setObjectName(QStringLiteral("dockFloatingTitleBar"));
         m_titleBar->setAttribute(Qt::WA_StyledBackground);
@@ -68,7 +68,8 @@ DockFloatingWindow::DockFloatingWindow(DockManagerPrivate *manager, const QStrin
         titleLayout->addWidget(m_maximizeButton);
         titleLayout->addWidget(m_closeButton);
         layout->addWidget(m_titleBar);
-
+    }
+    if (m_customFrame) {
         setMouseTracking(true); // for the resize cursors along the border
         updateFrameMargins();
     }
@@ -111,7 +112,7 @@ void DockFloatingWindow::updateTitle()
 
 void DockFloatingWindow::refreshAppearance()
 {
-    if (!m_customFrame || !m_manager)
+    if (!m_titleBar || !m_manager)
         return;
     m_closeButton->setIcon(m_manager->icon(DockIcon::Close, this));
     m_maximizeButton->setIcon(

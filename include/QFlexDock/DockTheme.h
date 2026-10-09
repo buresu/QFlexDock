@@ -53,6 +53,17 @@ struct QFLEXDOCK_EXPORT DockOverlayStyle
 /// Buttons whose icon can be replaced.
 enum class DockIcon { Close, Maximize, Restore, Float, Dock, Pin, Unpin, Menu };
 
+/// Buttons in the header of a tab group. Float and Close act on the current
+/// panel and are only shown for a panel that may be floated or closed.
+enum class DockTitleButton {
+    Menu = 0x1,
+    Maximize = 0x2,
+    Float = 0x4,
+    Close = 0x8,
+};
+Q_DECLARE_FLAGS(DockTitleButtons, DockTitleButton)
+Q_DECLARE_OPERATORS_FOR_FLAGS(DockTitleButtons)
+
 /// Dock-specific tokens layered on top of the host's QStyle, QPalette, QFont
 /// and style sheet. Everything left at its default follows the host.
 struct QFLEXDOCK_EXPORT DockTheme
@@ -61,6 +72,8 @@ struct QFLEXDOCK_EXPORT DockTheme
     int splitHandleWidth = -1;
     /// Size of tab and button icons; -1 uses the host style's metrics.
     int iconSize = -1;
+    /// Which buttons the header of a tab group shows.
+    DockTitleButtons titleButtons = DockTitleButton::Menu | DockTitleButton::Maximize;
     DockOverlayStyle overlay;
     /// Replacement icons; anything missing comes from the host style.
     QHash<DockIcon, QIcon> icons;

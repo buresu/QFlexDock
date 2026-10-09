@@ -21,9 +21,10 @@ class DockAreaWidget;
 /// the layout state; closing it closes its panels (they stay registered).
 ///
 /// Its frame is either the platform's (DockManager::FloatingFrame::Native) or
-/// drawn here (Custom): a frameless window with a title row of its own and
-/// resizable edges. Moving and resizing are still done by the window system
-/// (QWindow::startSystemMove() / startSystemResize()).
+/// drawn here: a frameless window with resizable edges and (Custom) a title
+/// row of its own, or (Minimal) none, in which case the headers of the tab
+/// groups inside are what moves it. Moving and resizing are still done by the
+/// window system (QWindow::startSystemMove() / startSystemResize()).
 ///
 /// Style sheets: class selector `QFlexDock--DockFloatingWindow`; with the
 /// custom frame also `#dockFloatingTitleBar`, `#dockFloatingTitle`,
@@ -45,6 +46,8 @@ public:
     [[nodiscard]] QString containerId() const { return m_containerId; }
     [[nodiscard]] DockAreaWidget *area() const { return m_area; }
     [[nodiscard]] bool hasCustomFrame() const { return m_customFrame; }
+    /// A custom frame without a title row (FloatingFrame::Minimal).
+    [[nodiscard]] bool hasMinimalFrame() const { return m_customFrame && !m_titleBar; }
     [[nodiscard]] QWidget *titleBar() const { return m_titleBar; }
     [[nodiscard]] QToolButton *closeButton() const { return m_closeButton; }
     [[nodiscard]] QToolButton *maximizeButton() const { return m_maximizeButton; }

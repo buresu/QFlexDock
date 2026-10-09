@@ -9,6 +9,7 @@ Made for creative tools, IDEs, 3D editors and node editors.
 - **Layouts as JSON** — versioned, validated and repaired on load; unknown panels and broken data do not break the layout.
 - **QML and GPU content** — `QQuickWidget`, `QOpenGLWidget` and native `QWindow`s as panels.
 - **Follows the host application** — drawn with its `QStyle`, `QPalette`, `QFont` and style sheet, and follows changes at run time.
+- **Tabs or title bars** — groups headed by their tabs, or by a title bar with tabs only where panels are stacked; fixed content that panels dock around.
 - Floating windows, auto-hide, maximize, undo/redo, named presets, per-panel dock policies, lazily created panels.
 
 > **Status: 0.1.0, in development.** The public API may still change.
@@ -48,7 +49,8 @@ if (QFlexDock::DockResult r = manager.loadLayout("layout.json"); !r)
     qWarning() << r.message();
 ```
 
-Examples are in [examples/](examples/): `basic`, `multi-window`, `quick-panel`, `gpu-panel`.
+Examples are in [examples/](examples/): `basic`, `multi-window`, `quick-panel`, `gpu-panel`, and
+`obs-style`, which rebuilds the window layout and look of OBS Studio (layout and style only).
 
 ## Build
 
@@ -84,9 +86,9 @@ target_link_libraries(app PRIVATE QFlexDock::QFlexDock)
 ## Status
 
 **Not implemented:** keyboard-only docking and accessibility (beyond accessible button names and Ctrl+Tab
-within a group), custom title bars for docked groups, animations. Replacing the dock UI itself with QML is out of scope.
+within a group), title bars made of the application's own widgets, animations. Replacing the dock UI itself with QML is out of scope.
 
-**Tested** — all 13 test suites pass, with warnings as errors, in [CI](.github/workflows/ci.yml) and locally:
+**Tested** — all 14 test suites pass, with warnings as errors, in [CI](.github/workflows/ci.yml) and locally:
 
 | Environment | Notes |
 |---|---|

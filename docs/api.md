@@ -85,9 +85,18 @@ Features: `Movable`, `Closable`, `Floatable`, `Tabbable` (both the dragged and t
 `undo()` / `redo()` cover layout changes; dragging a splitter is one step, switching tabs and moving a
 floating window are none.
 
-**Behaviour and looks** — `setLinkedSplittersEnabled()`, `setFloatsOnOutsideDrop()`,
-`setFloatingWindowFrame(FloatingFrame::Native | Custom)`, `setDragGhostEnabled()`, `setTheme()`,
+**Behaviour and looks** — `setLinkedSplittersEnabled()`, `setCornerResizeEnabled()`, `setFloatsOnOutsideDrop()`,
+`setFloatingWindowFrame(FloatingFrame::Native | Custom | Minimal)`, `setDragGhostEnabled()`, `setTheme()`,
 `setOverlayPainter()`. See [styling.md](styling.md) and [platform-notes.md](platform-notes.md).
+
+`setGroupHeader()` chooses what tab groups have at their top:
+
+| `GroupHeader` | |
+|---|---|
+| `Tabs` (default) | The tabs, always. Drag a tab to move a panel, the empty part of the bar to move the group |
+| `TitleBar` | A title bar naming the current panel; drag it to move that panel, double click to float it or dock it again. Tabs appear below the content once a group holds more than one panel |
+
+Which buttons the header has is a theme token (`DockTheme::titleButtons`).
 
 **Signals** — `layoutAboutToChange()` / `layoutChanged()`, `panelAboutToMove()` / `panelMoved()`,
 `panelOpenChanged()`, `panelWindowChanged()`, `activePanelChanged()`, `panelRegistered()` /
@@ -99,6 +108,16 @@ floating window are none.
 Title, icon, tool tip, policy, and state (`isOpen()`, `isActive()`, `isFloating()`, `isAutoHidden()`,
 `workspace()`), all as properties that QML can bind to. `setDirty()`, `setPinnedTab()` and `setPreviewTab()`
 only change how the tab is drawn; the application supplies the state.
+
+**Fixed content.** `setHeaderVisible(false)` leaves a panel without a header while it is alone in its group.
+With no dock features either, it is content that stays where the application put it, and other panels dock around it:
+
+```cpp
+QFlexDock::DockPanel *view = manager.registerPanel("view", viewWidget);
+view->setFeatures({});              // not movable, closable, floatable or tabbable
+view->setHeaderVisible(false);
+workspace->addPanel("view", QFlexDock::DockArea::Center);
+```
 
 Signals about the content's lifecycle, mainly for GPU and native-window content:
 

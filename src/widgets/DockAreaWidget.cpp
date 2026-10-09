@@ -236,7 +236,9 @@ void DockAreaWidget::placeWidgets()
     }
 
     // Corners lie on top of the handles that meet in them.
-    m_corners = SplitterCoordinator::corners(m_solved);
+    m_corners.clear();
+    if (m_manager && m_manager->cornerResize)
+        m_corners = SplitterCoordinator::corners(m_solved);
     const int corners = int(m_corners.size());
     while (m_cornerWidgets.size() < corners)
         m_cornerWidgets.append(new DockSplitCorner(this));

@@ -1821,6 +1821,32 @@ void DockManager::setLinkedSplittersEnabled(bool enabled)
     Q_EMIT linkedSplittersEnabledChanged(enabled);
 }
 
+bool DockManager::isCornerResizeEnabled() const
+{
+    return d->cornerResize;
+}
+
+void DockManager::setCornerResizeEnabled(bool enabled)
+{
+    if (d->cornerResize == enabled)
+        return;
+    d->cornerResize = enabled;
+    d->refreshAllAppearance();
+}
+
+DockManager::GroupHeader DockManager::groupHeader() const
+{
+    return d->groupHeader;
+}
+
+void DockManager::setGroupHeader(GroupHeader header)
+{
+    if (d->groupHeader == header)
+        return;
+    d->groupHeader = header;
+    d->refreshAllAppearance();
+}
+
 bool DockManager::floatsOnOutsideDrop() const
 {
     return d->floatOnOutsideDrop;

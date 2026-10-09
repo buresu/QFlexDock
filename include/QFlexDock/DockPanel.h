@@ -86,6 +86,14 @@ public:
     [[nodiscard]] bool isPreviewTab() const;
     void setPreviewTab(bool preview);
 
+    /// Whether the tab group shows a header while this panel is alone in it
+    /// (default true). Without one there is nothing to drag, close or float
+    /// the panel by, which is the point: together with setFeatures({}) it
+    /// makes content that just stays where the application put it, like the
+    /// central view other panels are docked around.
+    [[nodiscard]] bool isHeaderVisible() const;
+    void setHeaderVisible(bool visible);
+
     /// Whether the content is hidden while a dock drag is in progress
     /// (default false). Meant for content that is a native window (see
     /// NativeWindowAdapter): such a window covers every widget, the drop guide

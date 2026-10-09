@@ -39,6 +39,7 @@ struct DockPanel::Private
     bool pinnedTab = false;
     bool previewTab = false;
     bool hideContentDuringDrag = false;
+    bool headerVisible = true;
 
     // Derived from the layout state after every commit.
     std::optional<PanelLocation> location;
@@ -202,6 +203,8 @@ public:
     DockTheme theme;
     std::shared_ptr<DockOverlayPainter> overlayPainter;
     bool linkedSplitters = true;
+    bool cornerResize = true;
+    DockManager::GroupHeader groupHeader = DockManager::GroupHeader::Tabs;
     bool floatOnOutsideDrop = false;
     bool dragGhostEnabled = true;
     DockManager::FloatingFrame floatingFrame = DockManager::FloatingFrame::Native;

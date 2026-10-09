@@ -80,8 +80,22 @@ public:
         /// platform allows it (see docs/platform-notes.md) such a window can
         /// be docked by dragging its title row onto a dock area.
         Custom,
+        /// QFlexDock, without a title row: just a resizable border around
+        /// the content. The headers of the tab groups inside are what the
+        /// user takes hold of, which suits GroupHeader::TitleBar.
+        Minimal,
     };
     Q_ENUM(FloatingFrame)
+
+    /// What a tab group has at its top.
+    enum class GroupHeader {
+        /// Its tabs, always.
+        Tabs,
+        /// A title bar naming the current panel. Tabs appear only once the
+        /// group holds more than one panel, and then at its bottom.
+        TitleBar,
+    };
+    Q_ENUM(GroupHeader)
 
     explicit DockManager(QObject *parent = nullptr);
     ~DockManager() override;
@@ -212,6 +226,10 @@ public:
     /// Whether aligned split handles are dragged together (default true).
     /// Holding Alt while dragging moves a single handle either way.
     void setLinkedSplittersEnabled(bool enabled);
+    [[nodiscard]] bool isCornerResizeEnabled() const;
+    /// Whether the point where a vertical and a horizontal split handle meet
+    /// can be dragged to move both at once (default true).
+    void setCornerResizeEnabled(bool enabled);
     [[nodiscard]] bool floatsOnOutsideDrop() const;
     /// Whether dropping a dragged panel outside every dock area floats it.
     /// Defaults to true where that can be told apart from a cancelled drag
@@ -222,6 +240,9 @@ public:
     /// Frame of floating windows created from now on (default Native).
     /// Existing floating windows keep theirs.
     void setFloatingWindowFrame(FloatingFrame frame);
+    [[nodiscard]] GroupHeader groupHeader() const;
+    /// Header of every tab group (default Tabs). Can be changed at any time.
+    void setGroupHeader(GroupHeader header);
     [[nodiscard]] bool isDragGhostEnabled() const;
     /// Whether a dragged panel is shown as a window that follows the pointer
     /// and, dropped outside every dock area, becomes the floating window right
