@@ -86,21 +86,22 @@ target_link_libraries(app PRIVATE QFlexDock::QFlexDock)
 **Not implemented:** keyboard-only docking and accessibility (beyond accessible button names and Ctrl+Tab
 within a group), custom title bars for docked groups, animations. Replacing the dock UI itself with QML is out of scope.
 
-**Tested** (all 13 test suites pass):
+**Tested** — all 13 test suites pass, with warnings as errors, in [CI](.github/workflows/ci.yml) and locally:
 
 | Environment | Notes |
 |---|---|
-| Linux, Qt 6.12, GCC 16 | Debug static; Release shared with `-Werror` |
-| Linux, Qt 6.12, Clang 23 + ASan + UBSan | No findings |
+| Linux, Qt 6.8, 6.10 and 6.12 | Static and shared; also with ASan + UBSan |
+| Windows, Qt 6.8 and 6.10 | Build and tests on the `offscreen` platform only |
+| macOS, Qt 6.8 and 6.10 | Build and tests on the `offscreen` platform only |
 | `offscreen` | `QOpenGLWidget` and real-drag tests are skipped |
 | X11 (Xvfb) | Includes real `QDrag` between windows, Esc, outside drops, moving a `QOpenGLWidget` |
-| Wayland (headless KWin) | Real-drag and window-position tests are skipped |
+| Wayland (headless KWin and Weston) | Real-drag and window-position tests are skipped |
 
 **Not verified:**
 
-- **Qt 6.8 / 6.10** — 6.8 is the declared minimum, but only 6.12 has been built.
-- **Windows and macOS** — never built or run. The CI workflow in [.github/workflows/ci.yml](.github/workflows/ci.yml) covers them but has not run yet.
-- **Automated pointer drags on Wayland, Windows and macOS**, high-DPI and mixed-DPI multi-monitor setups.
+- **Windows and macOS on screen** — the library builds and its tests pass there, but nothing was run with the
+  native platform plugin: no real windows, no real drags.
+- **Automated pointer drags on Wayland**, high-DPI and mixed-DPI multi-monitor setups.
 - **Vulkan / Direct3D / Metal** content. Only OpenGL and a plain `QWindow` were tried.
 
 Platform limits and a manual test checklist are in [docs/platform-notes.md](docs/platform-notes.md).

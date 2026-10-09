@@ -5,10 +5,10 @@ work from Qt's documentation, but nobody has checked.
 
 | | Automated tests | Real `QDrag` |
 |---|---|---|
-| Linux X11 (Xvfb, Qt 6.12) | All suites pass | **Automated** (`tst_realdrag`) |
-| Linux Wayland (headless KWin and Weston, Qt 6.12) | All suites pass | Tab drags tried by hand on KWin; cannot be automated |
+| Linux X11 (Xvfb) | All suites pass | **Automated** (`tst_realdrag`) |
+| Linux Wayland (headless KWin and Weston) | All suites pass | Tab drags tried by hand on KWin; cannot be automated |
 | `offscreen` | All suites pass (no `QOpenGLWidget`) | — |
-| Windows, macOS | **Never run** | Not verified |
+| Windows, macOS | All suites pass on `offscreen`; **never run with the native platform** | Not verified |
 
 ## Drag and drop
 
