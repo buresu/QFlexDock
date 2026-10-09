@@ -123,6 +123,13 @@ draws no shadow around such a window.
   choice for video or heavy 3D views.
 - Moving to another top-level window keeps the `QQuickWidget` and its QML objects; Qt only recreates the
   scene graph's GPU resources (checked with the software renderer in `tst_quick`).
+- **A panel may float, dock or close itself from its own QML** (a button in it). Rendering with the GPU, a
+  `QQuickWidget` replaces its scene window when it enters another top-level window, and doing so while a
+  click is still being delivered in that scene crashes. The widgets `QmlPanelAdapter` creates wait until the
+  scene has returned from the event. A `QQuickWidget` of your own, registered with `registerPanel()`, does
+  not: make such calls from a queued connection or `Qt.callLater()`. `tst_quick` runs on the software
+  renderer, where none of this happens; `QFLEXDOCK_TEST_RHI=1` with a native platform plugin runs it on the
+  GPU (tried on Windows with Direct3D).
 - For performance, embed a `QQuickWindow` through `NativeWindowAdapter` instead (not verified); the limits
   of native windows below then apply.
 

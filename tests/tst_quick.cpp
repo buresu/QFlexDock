@@ -88,8 +88,12 @@ class tst_Quick : public QObject
 private Q_SLOTS:
     void initTestCase()
     {
-        // Deterministic and available everywhere, including offscreen.
-        QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
+        // Deterministic and available everywhere, including offscreen. With
+        // QFLEXDOCK_TEST_RHI set, the scenes are rendered as an application's
+        // are instead (not on "offscreen"): a QQuickWidget then makes itself
+        // a new scene window whenever it enters another top-level window.
+        if (!qEnvironmentVariableIsSet("QFLEXDOCK_TEST_RHI"))
+            QQuickWindow::setGraphicsApi(QSGRendererInterface::Software);
         QVERIFY(m_dir.isValid());
         QFile file(m_dir.filePath(p("Panel.qml")));
         QVERIFY(file.open(QIODevice::WriteOnly));
@@ -333,6 +337,86 @@ private Q_SLOTS:
         QDragLeaveEvent leave;
         QCoreApplication::sendEvent(quick, &leave);
         QT_WARNING_POP
+    }
+
+    // A button in a QML panel that floats, docks or closes that very panel:
+    // the layout must not change while Qt Quick is still handing the click
+    // to the scene, which the change takes to another window.
+    void qmlPanelMovesItselfFromAClick()
+    {
+        QFile file(m_dir.filePath(p("Buttons.qml")));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(R"(
+import QtQuick
+import QFlexDock
+
+Rectangle {
+    property string action: "float"
+    property int clicks: 0
+    MouseArea {
+        anchors.fill: parent
+        hoverEnabled: true
+        cursorShape: Qt.PointingHandCursor
+        onClicked: {
+            parent.clicks++
+            if (parent.action === "float") dock.floatPanel("q")
+            else if (parent.action === "dock") dock.dockPanel("q")
+            else dock.hidePanel("q")
+        }
+    }
+}
+)");
+        file.close();
+
+        QQmlEngine engine;
+        TwoWindows f;
+        QmlDockController dock(&f.manager);
+        dock.installInto(&engine);
+        f.show();
+        DockPanel *panel = QmlPanelAdapter::registerPanel(&f.manager, p("q"), &engine,
+                                                          QUrl::fromLocalFile(file.fileName()));
+        QVERIFY(panel);
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("q"), DockArea::Right));
+        QVERIFY(QTest::qWaitForWindowExposed(&f.windowA));
+        const QPointer<QQuickWidget> quick = QmlPanelAdapter::quickWidget(panel);
+        QVERIFY(quick && quick->rootObject());
+        QObject *root = quick->rootObject();
+        const auto click = [&] {
+            // The pointer is where the click is, as it is for a user: a
+            // widget that goes or comes under it is told so by Qt at once.
+            const QPoint at = quick->mapTo(quick->window(), quick->rect().center());
+            QCursor::setPos(quick->mapToGlobal(quick->rect().center()));
+            QTest::mouseMove(quick->window()->windowHandle(), at);
+            QTest::mouseClick(quick->window()->windowHandle(), Qt::LeftButton, {}, at);
+        };
+
+        click();
+        QCOMPARE(root->property("clicks").toInt(), 1);
+        QTRY_VERIFY(panel->isFloating());
+        QVERIFY(quick);
+        QCOMPARE(quick->rootObject(), root);
+        QVERIFY(QTest::qWaitForWindowExposed(quick->window()));
+
+        root->setProperty("action", p("dock"));
+        click();
+        QCOMPARE(root->property("clicks").toInt(), 2);
+        QTRY_VERIFY(!panel->isFloating());
+        QCOMPARE(quick->window(), &f.windowA);
+        QCOMPARE(describe(f.a), p("H(a, q)"));
+
+        root->setProperty("action", p("hide"));
+        click();
+        QCOMPARE(root->property("clicks").toInt(), 3);
+        QTRY_VERIFY(!panel->isOpen());
+        QVERIFY(quick);
+
+        // The scene is still good for the next click.
+        QVERIFY(f.manager.showPanel(p("q")));
+        root->setProperty("action", p("float"));
+        click();
+        QCOMPARE(root->property("clicks").toInt(), 4);
+        QTRY_VERIFY(panel->isFloating());
     }
 
 private:

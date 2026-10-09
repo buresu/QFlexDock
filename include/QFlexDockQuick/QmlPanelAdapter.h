@@ -31,7 +31,9 @@ class QFLEXDOCKQUICK_EXPORT QmlPanelAdapter
 public:
     /// A QQuickWidget showing `source`, its root item resized with the widget.
     /// All panels created with the same `engine` share its context, including
-    /// a QmlDockController installed into it.
+    /// a QmlDockController installed into it. Unlike a plain QQuickWidget,
+    /// it can be moved to another window by its own scene (a button in the
+    /// panel that floats it): see docs/platform-notes.md.
     [[nodiscard]] static QQuickWidget *createWidget(QQmlEngine *engine, const QUrl &source,
                                                     QWidget *parent = nullptr);
 
