@@ -128,6 +128,7 @@ const DragSession *DockDragController::begin(const PanelId &panel, bool wholeGro
     }
     m_session = std::move(session);
     m_pendingDrop.reset();
+    qApp->installEventFilter(this);
     m_manager->setDragInProgress(true);
     return &*m_session;
 }
@@ -164,6 +165,7 @@ const DragSession *DockDragController::beginContainer(const QString &containerId
     session.primary = container->tree.tabNodes().front()->active;
     m_session = std::move(session);
     m_pendingDrop.reset();
+    qApp->installEventFilter(this);
     m_manager->setDragInProgress(true);
     return &*m_session;
 }
@@ -393,6 +395,7 @@ void DockDragController::cancel()
 {
     m_session.reset();
     m_pendingDrop.reset();
+    qApp->removeEventFilter(this);
     m_manager->hideAllOverlays();
     m_manager->showDraggedOut(nullptr);
     m_manager->setDragInProgress(false);
@@ -403,9 +406,9 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
 {
     m_running = true;
     m_escapePressed = false;
-    // Installed from inside the drag's event loop, so that it comes after (and
-    // therefore runs before) the filter the platform's drag loop installs,
-    // which swallows the Escape key.
+    // Installed once more from inside the drag's event loop, so that it comes
+    // after (and therefore runs before) the filter the platform's drag loop
+    // installs, which swallows the Escape key.
     QTimer::singleShot(0, this, [this] {
         if (m_running)
             qApp->installEventFilter(this);
@@ -475,7 +478,6 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     if (!self)
         return;
 
-    qApp->removeEventFilter(this);
     m_running = false;
     setCarriedWindow(nullptr);
     if (followed) {
@@ -601,16 +603,27 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
     (void)m_manager->activate(session.primary, true);
 }
 
-// Notes an Escape key press during the drag, on platforms whose drag loop runs
-// on Qt's event queue (on Windows the key never gets here). Together with the
-// mouse button state this tells a cancelled drag from a drop outside every
-// window.
-bool DockDragController::eventFilter(QObject *, QEvent *event)
+// Watches the application for as long as there is a session.
+bool DockDragController::eventFilter(QObject *watched, QEvent *event)
 {
+    // An Escape key press during the drag, on platforms whose drag loop runs
+    // on Qt's event queue (on Windows the key never gets here). Together with
+    // the mouse button state this tells a cancelled drag from a drop outside
+    // every window.
     if (m_running
         && (event->type() == QEvent::KeyPress || event->type() == QEvent::ShortcutOverride)
         && static_cast<QKeyEvent *>(event)->key() == Qt::Key_Escape) {
         m_escapePressed = true;
+    }
+    // A dock drag is for dock areas. Content that takes whatever is dragged
+    // over it (a QQuickWidget does, whatever its items say) would keep the
+    // drag from the area it is in, and the drop guide with it. It is passed
+    // over: Qt then offers the drag to the widgets around it, up to the area.
+    if (event->type() == QEvent::DragEnter && watched->isWidgetType()
+        && !qobject_cast<DockAreaWidget *>(watched) && !qobject_cast<DockFloatingWindow *>(watched)
+        && sessionFor(static_cast<QDragEnterEvent *>(event)->mimeData())) {
+        event->ignore();
+        return true;
     }
     return false;
 }

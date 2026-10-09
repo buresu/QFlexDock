@@ -4,7 +4,12 @@
 #include <QFlexDockQuick/QmlDockController.h>
 #include <QFlexDockQuick/QmlPanelAdapter.h>
 
+#include "core/DockDragController.h"
+#include "widgets/DockDropOverlay.h"
+
+#include <QtCore/QMimeData>
 #include <QtCore/QTemporaryDir>
+#include <QtGui/QDragEnterEvent>
 #include <QtQml/QQmlEngine>
 #include <QtQuick/QQuickItem>
 #include <QtQuick/QQuickWindow>
@@ -273,6 +278,61 @@ private Q_SLOTS:
         QVERIFY(!second.manager());
         QVERIFY(!second.showPanel(p("q"))); // a controller without manager fails politely
         QVERIFY(second.panels().isEmpty());
+    }
+
+    // A QQuickWidget takes every drag that enters it, whatever its items make
+    // of it. A dock drag is not for content: it has to get to the dock area
+    // the panel is in, or there is no drop guide over a QML panel.
+    void dockDragOverAQmlPanelReachesTheDockArea()
+    {
+        QQmlEngine engine;
+        TwoWindows f;
+        QmlDockController dock(&f.manager);
+        dock.installInto(&engine);
+        f.show();
+        DockPanel *panel = QmlPanelAdapter::registerPanel(&f.manager, p("q"), &engine, m_source);
+        QVERIFY(panel);
+        QVERIFY(f.a->addPanel(p("q")));
+        QVERIFY(f.a->addPanel(p("a"), DockArea::Right));
+        QVERIFY(QTest::qWaitForWindowExposed(&f.windowA));
+        QQuickWidget *quick = QmlPanelAdapter::quickWidget(panel);
+        QVERIFY(quick && quick->isVisible() && quick->acceptDrops());
+        DockAreaWidget *area = areaOf(f.a);
+        DockDragController *controller = priv(f.manager)->drag;
+        const QPoint middle = quick->rect().center();
+
+        QT_WARNING_PUSH
+        QT_WARNING_DISABLE_DEPRECATED
+        // Sent to the QML panel, as Qt does with a drag that is over it.
+        QVERIFY(controller->begin(p("a"), false));
+        const std::unique_ptr<QMimeData> mime(controller->createMimeData());
+        QDragEnterEvent enter(middle, Qt::MoveAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(quick, &enter);
+        QVERIFY(enter.isAccepted());
+        QDragMoveEvent move(middle + QPoint(2, 2), Qt::MoveAction, mime.get(), Qt::LeftButton,
+                            Qt::NoModifier);
+        QCoreApplication::sendEvent(quick, &move);
+        QVERIFY(area->overlay()->isVisible());
+        QVERIFY(area->overlay()->scene().preview.isValid());
+        QVERIFY(move.isAccepted());
+        // And the drop goes where the guide showed it: among the tabs there.
+        QDropEvent drop(middle + QPoint(2, 2), Qt::MoveAction, mime.get(), Qt::LeftButton,
+                        Qt::NoModifier);
+        QCoreApplication::sendEvent(quick, &drop);
+        QVERIFY(!controller->isActive());
+        QVERIFY(!area->overlay()->isVisible());
+        QCOMPARE(describe(f.a), p("q|a"));
+
+        // Any other drag is the scene's to take or leave, as before.
+        QMimeData text;
+        text.setText(p("text"));
+        QDragEnterEvent other(middle, Qt::CopyAction, &text, Qt::LeftButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(quick, &other);
+        QVERIFY(other.isAccepted());
+        QVERIFY(!area->overlay()->isVisible());
+        QDragLeaveEvent leave;
+        QCoreApplication::sendEvent(quick, &leave);
+        QT_WARNING_POP
     }
 
 private:

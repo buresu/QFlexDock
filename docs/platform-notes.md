@@ -81,8 +81,8 @@ system is asked whether the button is still down (floating was tried by hand; th
 follows Qt's source and is **not verified**). On macOS nothing is verified; if you turn it on, check that
 Esc does not float the panel.
 
-A content widget that accepts every MIME format hides the drop guide over itself; one that refuses
-QFlexDock's format lets the drop through to the dock area.
+Content is never offered a dock drag: it goes to the dock area the content is in, also over a widget that
+accepts whatever is dragged onto it (`QQuickWidget` does). Other drags reach the content as usual.
 
 ## Floating window frame
 
