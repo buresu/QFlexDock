@@ -239,21 +239,31 @@ void DockTabGroup::toggleFloating()
 // groups. Where a dock drag moves the window anyway (the platform carries it
 // along, or leaves it where it is dropped), that is all there is to it.
 // Elsewhere a drag of everything in the window just moves the window.
-bool DockTabGroup::moveWindowInstead(qsizetype draggedPanels)
+//
+// Where the window would have to be moved from here to follow the drag
+// (Windows), only a tab is worth that: it can be put among the tabs of
+// another window. The header beside the tabs (`byHeader`) is the title bar
+// such a window does not have, and the window system moves a window better.
+bool DockTabGroup::moveWindowInstead(qsizetype draggedPanels, bool byHeader)
 {
     const auto *floating = qobject_cast<const DockFloatingWindow *>(window());
     if (!floating || !floating->hasMinimalFrame() || !floating->windowHandle()
-        || m_area->tree().panels().size() != draggedPanels
-        || m_manager->drag->carriesWindows() || m_manager->floatOnOutsideDrop) {
+        || m_area->tree().panels().size() != draggedPanels) {
         return false;
     }
+    const DockDragController *drag = m_manager->drag;
+    const bool leftToTheHeader = byHeader && drag->movesCarriedWindows();
+    if (!leftToTheHeader && (drag->carriesWindows() || m_manager->floatOnOutsideDrop))
+        return false;
     return floating->windowHandle()->startSystemMove();
 }
 
 void DockTabGroup::startPanelDrag(const PanelId &panel, const QPixmap &pixmap)
 {
-    if (!m_manager || !m_manager->userMay(panel, DockFeature::Movable) || moveWindowInstead(1))
+    if (!m_manager || !m_manager->userMay(panel, DockFeature::Movable)
+        || moveWindowInstead(1, false)) {
         return;
+    }
     m_manager->drag->requestPanelDrag(panel, pixmap);
 }
 
@@ -265,7 +275,7 @@ void DockTabGroup::startGroupDrag()
         if (!m_manager->userMay(panel, DockFeature::Movable))
             return;
     }
-    if (!moveWindowInstead(m_panels.size()))
+    if (!moveWindowInstead(m_panels.size(), true))
         m_manager->drag->requestGroupDrag(m_current, m_titleBar->grab());
 }
 

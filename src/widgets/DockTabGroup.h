@@ -134,7 +134,7 @@ private:
     void restyle();
     void startPanelDrag(const PanelId &panel, const QPixmap &pixmap);
     void startGroupDrag();
-    [[nodiscard]] bool moveWindowInstead(qsizetype draggedPanels);
+    [[nodiscard]] bool moveWindowInstead(qsizetype draggedPanels, bool byHeader);
     void toggleMaximized();
     void toggleFloating();
     void closeByUser(const PanelId &panel);

@@ -233,6 +233,9 @@ void DockFloatingWindow::adoptAs(const QString &containerId)
 
 void DockFloatingWindow::setCarriedAlong(bool carried)
 {
+    if (carried == m_carriedAlong)
+        return;
+    m_carriedAlong = carried;
     if (QWindow *handle = windowHandle()) {
         // On the window as it is: new flags for the widget would have it
         // make another one, in the middle of a drag.

@@ -150,8 +150,10 @@ On Wayland a drag can carry a window ([platform-notes.md](platform-notes.md)). A
 rather than really detaching the panel, which keeps "nothing changes during a drag" true; a ghost that
 nobody took is adopted as the view of a new floating container. On Windows nothing carries a window, so
 the controller moves it to the pointer on a timer for as long as the drag lasts; such a window lets the
-pointer through (`Qt::WindowTransparentForInput`), or the drag would find nothing but it. A ghost made that
-way is replaced by a window proper where it was dropped. What happens after a drag is all in
+pointer through (`Qt::WindowTransparentForInput`), or the drag would find nothing but it: a ghost always,
+a floating window that is itself moved only while another dock window is at the pointer, so that other
+applications are not offered the drag. A ghost made that way is replaced by a window proper where it was
+dropped. What happens after a drag is all in
 `DockDragController::finish()`, which tests drive without a real drag.
 
 ## Choices worth knowing

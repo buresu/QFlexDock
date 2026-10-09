@@ -197,6 +197,23 @@ bool DockDragController::movesCarriedWindows() const
     return m_manager->dragGhostEnabled && onWindows();
 }
 
+bool DockDragController::dockWindowAt(const QPoint &globalPos, const QWidget *except) const
+{
+    const auto isAt = [&](const QWidget *window) {
+        return window && window != except && window->isVisible() && !window->isMinimized()
+            && window->frameGeometry().contains(globalPos);
+    };
+    for (const DockWorkspace *workspace : std::as_const(m_manager->workspaces)) {
+        if (isAt(workspace->window()))
+            return true;
+    }
+    for (const DockFloatingWindow *window : std::as_const(m_manager->floatingWindows)) {
+        if (!window->isGhost() && isAt(window))
+            return true;
+    }
+    return false;
+}
+
 DockFloatingWindow *DockDragController::windowDraggedWhole() const
 {
     if (!m_session)
@@ -425,16 +442,21 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     const QPointer<DockFloatingWindow> followed(moved ? carried : nullptr);
     QPoint origin;
     QTimer follow;
-    const auto keepAtPointer = [followed, hold] {
-        if (followed) {
-            const QPoint frame = followed->geometry().topLeft() - followed->pos();
-            followed->move(QCursor::pos() - hold - frame);
-        }
+    const auto keepAtPointer = [this, followed, hold, isGhost = !carriedWindow] {
+        if (!followed)
+            return;
+        const QPoint pointer = QCursor::pos();
+        const QPoint frame = followed->geometry().topLeft() - followed->pos();
+        followed->move(pointer - hold - frame);
+        // A ghost lets the pointer through all the time. A window that is
+        // itself moved only does over where it could be docked: anywhere
+        // else it is a window being moved, which no other application is to
+        // take for something dragged over it.
+        if (!isGhost)
+            followed->setCarriedAlong(dockWindowAt(pointer, followed));
     };
     if (followed) {
         origin = followed->pos();
-        if (carriedWindow)
-            carriedWindow->setCarriedAlong(true); // a ghost is made that way
         follow.setTimerType(Qt::PreciseTimer);
         connect(&follow, &QTimer::timeout, this, keepAtPointer);
         follow.start(FollowInterval);
@@ -461,9 +483,14 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
         keepAtPointer(); // where it was let go of, to the pixel
         if (carriedWindow) {
             carriedWindow->setCarriedAlong(false);
-            // Put down, it stays there; a cancelled drag takes it back.
-            if (!m_pendingDrop && (m_escapePressed || dragButtonStillDown()))
-                carriedWindow->move(origin);
+            if (!m_pendingDrop) {
+                // Put down, it stays there; a cancelled drag takes it back.
+                // Either way it is the window the user has been holding.
+                if (m_escapePressed || dragButtonStillDown())
+                    carriedWindow->move(origin);
+                carriedWindow->raise();
+                carriedWindow->activateWindow();
+            }
         }
     }
     finish(action, ghost, carriedWindow != nullptr, moved && ghost);

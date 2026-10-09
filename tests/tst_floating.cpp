@@ -464,6 +464,40 @@ private Q_SLOTS:
         QTRY_VERIFY(!ghost);
     }
 
+    // A floating window that is itself moved along with a drag lets the
+    // pointer through only where another window with a dock area is: what
+    // tells is where the windows of the manager are.
+    void dockWindowsAtAPoint()
+    {
+        TwoWindows f;
+        f.windowA.move(20, 20);
+        f.windowB.move(940, 40);
+        f.show();
+        buildLayout(f);
+        QVERIFY(f.manager.floatPanel(p("a"), QRect(60, 60, 320, 240)));
+        DockFloatingWindow *window = floatingWindowOf(f, "a");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const DockDragController *controller = priv(f.manager)->drag;
+
+        // The window of a workspace, a floating window; nothing elsewhere.
+        const QRect all =
+            f.windowA.frameGeometry() | f.windowB.frameGeometry() | window->frameGeometry();
+        QVERIFY(controller->dockWindowAt(f.windowA.frameGeometry().center(), window));
+        QVERIFY(controller->dockWindowAt(window->frameGeometry().center(), &f.windowA));
+        QVERIFY(!controller->dockWindowAt(all.bottomRight() + QPoint(50, 50), window));
+
+        // Not the window that is left out, and not one that is not shown.
+        const QPoint corner = f.windowA.frameGeometry().topLeft() + QPoint(5, 5);
+        if (!windowPositionsWork() || f.windowB.frameGeometry().contains(corner)
+            || window->frameGeometry().contains(corner)) {
+            return;
+        }
+        QVERIFY(controller->dockWindowAt(corner, window));
+        QVERIFY(!controller->dockWindowAt(corner, &f.windowA));
+        f.windowA.hide();
+        QVERIFY(!controller->dockWindowAt(corner, window));
+    }
+
     void windowMovedAlongLetsThePointerThrough()
     {
         TwoWindows f;

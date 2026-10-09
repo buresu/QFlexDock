@@ -55,16 +55,20 @@ for as long as the drag lasts:
 - **Dragging a tab** shows the same ghost as on Wayland. The pointer goes through it, so the drag reaches
   the dock area underneath, and it is translucent, so the drop guide shows. Dropped outside every dock area,
   a floating window appears in its place (the ghost itself is not kept).
-- **Dragging everything a floating window contains** moves that window itself, translucent for the time of
-  the drag. Dropped on a dock area it docks; Esc puts it back where it was. A maximized window is not moved:
-  a ghost stands in for it.
-- A custom title row still moves its window through the window system, which snaps it to the screen edges;
-  such a window is docked by dragging a tab.
+- **Dragging everything a floating window contains** moves that window itself. It is a window being moved,
+  and in the way of the drag, until the pointer is over another window with a dock area: only there does it
+  turn translucent and let the pointer through. So no other application sees the drag, or comes to the
+  front when the window is put down over it. (Where a window of another application lies between the two,
+  that one does.) Dropped on a dock area the window docks; Esc puts it back where it was. A maximized window
+  is not moved: a ghost stands in for it.
+- What stands for a title bar still moves its window through the window system, which snaps it to the
+  screen edges: a custom title row, and in a `Minimal` window the header beside the tabs. Such a window is
+  docked by dragging a tab (or, with `GroupHeader::TitleBar`, the title of its panel).
 - Outside a dock area the pointer shows the system's "no drop" cursor, although letting go there floats.
 - `DockManager::setDragGhostEnabled(false)` goes back to a picture of the tab.
 
-Observed by hand: a tab dropped outside floats. The ghost, the window that moves along and Esc are
-**not verified** on screen.
+Observed by hand: the ghost, floating by dropping outside, and docking a window moved along. That such a
+window stays opaque and in front over other applications, and Esc, are **not verified** on screen.
 
 ### Dropping outside = floating
 
@@ -89,10 +93,11 @@ QFlexDock's format lets the drop through to the dock area.
 | Title bar and border | The window system's | A title row and border drawn by QFlexDock | Only a border; the headers of the groups inside serve as the title |
 | Move and resize | The window system | Requested with `QWindow::startSystemMove()` / `startSystemResize()` | Resize as `Custom`; moved by dragging a header (below) |
 | Snapping, tiling, window menu | Yes | Up to the window system | Up to the window system |
-| Re-dock by dragging the title | No (drag a tab instead) | On Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag |
+| Re-dock by dragging the title | No (drag a tab instead) | On Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag (on Windows: a tab only) |
 
 A `Minimal` window is moved by a dock drag of what it contains: on Wayland and Windows the window follows
-the pointer, on X11 a picture does and the window then moves by as much as the pointer did. Where outside
+the pointer, on X11 a picture does and the window then moves by as much as the pointer did. (On Windows
+that is so for its only tab; the header beside the tabs moves the window and nothing else.) Where outside
 drops do not float (macOS by default), the drag just moves the window and docking is left to the float button.
 A double click on the header of its one tab group, beside the tabs, maximizes such a window.
 
@@ -171,8 +176,9 @@ What the tests cannot drive, to be tried with the examples:
   off as a translucent ghost of the same size that stays at the pointer; the guide shows through it and the
   zones underneath still take the drop; let go of outside every dock area (over the desktop, another
   application, a title bar) a floating window appears exactly where the ghost was; Esc while it is held
-  there floats nothing; the only tab of a floating window moves that window, which docks when dropped on a
-  zone and goes back where it was on Esc.
+  there floats nothing; the only tab of a floating window moves that window, opaque, which turns
+  translucent over another dock window, docks when dropped on a zone there, goes back where it was on Esc,
+  and put down over another application stays in front of it.
 - **Splitters**, `qflexdock-basic` — boundaries in a line highlight and move together, Alt moves one; the
   point where two boundaries meet shows the four-way cursor and moves both.
 - **Workspace inside a panel**, `qflexdock-vscode-style` — a document tab splits and re-tabs only within
@@ -188,7 +194,8 @@ What the tests cannot drive, to be tried with the examples:
   the row of another window (its tabs, or the row beside them) it becomes a tab there; let go of anywhere
   else, over a page or the desktop, it becomes a window of the same size; the last tab takes its window with
   it, in either direction; the only tab of a window drags the window, and can still be dropped into another
-  row; the row beside the tabs moves the window and a double click there maximizes it, as does the button,
+  row; the row beside the tabs moves the window (on Windows nothing more: it stays opaque, snaps to the
+  screen edges and goes into no other row) and a double click there maximizes it, as does the button,
   whose icon follows; the edges resize the window although the page reaches them; the corners at the top
   are round, and square when maximized; with many tabs they all get narrower and the + stays behind the
   last; closing the last window ends the application.

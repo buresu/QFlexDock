@@ -88,7 +88,8 @@ public:
     /// it, so that the drag finds what is underneath, and so does a little
     /// of the drop guide there. A window not shown yet stays that way, and
     /// above other windows, for good (a ghost); one that is shown can be
-    /// turned back.
+    /// turned back, and is whenever nothing it could be docked in is
+    /// underneath.
     void setCarriedAlong(bool carried);
 
 protected:
@@ -128,6 +129,7 @@ private:
     QElapsedTimer m_clock;
     bool m_presented = false;
     bool m_ghost = false;
+    bool m_carriedAlong = false;
 
     // Custom frame only.
     QWidget *m_titleBar = nullptr;
