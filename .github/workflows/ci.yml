@@ -15,12 +15,28 @@ jobs:
         os: [ubuntu-24.04, windows-latest, macos-latest]
         qt: ['6.8.*', '6.10.*']
         shared: [false]
+        exclude:
+          - os: macos-latest
+            qt: '6.8.*'
         include:
           - os: ubuntu-24.04
             qt: '6.8.*'
             shared: true
+          # The last open-source Qt 6.8 (6.8.3) links the AGL framework, which
+          # the macOS 26 SDK no longer has (QTBUG-137687, fixed in 6.8.4 and
+          # 6.9.2). It needs the macOS 15 SDK, i.e. Xcode 16.
+          - os: macos-15
+            qt: '6.8.*'
+            shared: false
+            xcode: '16'
     steps:
       - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        if: matrix.xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_${{ matrix.xcode }}*.app | sort -V | tail -1)"
+          xcodebuild -version
 
       - name: Install Qt
         uses: jurplel/install-qt-action@v4

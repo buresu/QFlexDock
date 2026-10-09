@@ -108,6 +108,12 @@ context** and calls `initializeGL()` again: create GL resources there and releas
 Verified: a plain `QWindow` moved between tabs, windows and floating windows (X11, headless Wayland), and
 an OpenGL window rendering on X11. Vulkan, Direct3D and Metal were not tried.
 
+## macOS
+
+Qt 6.8.3, the last open-source release of 6.8, cannot be linked against the macOS 26 SDK: it asks for the
+AGL framework, which that SDK no longer has (QTBUG-137687, fixed in Qt 6.8.4 and 6.9.2). With Qt 6.8,
+build with Xcode 16; otherwise use Qt 6.9.2 or later.
+
 ## High DPI and multiple monitors
 
 Sizes and saved geometries are device-independent pixels; scaling is left to Qt. On restore, windows that

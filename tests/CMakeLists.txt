@@ -12,6 +12,11 @@ function(qflexdock_add_test name)
     # Tests may reach into non-installed headers to check internals directly.
     target_include_directories(${name} PRIVATE ${PROJECT_SOURCE_DIR}/src)
     qflexdock_configure_target(${name})
+    # QTRY_* in Qt 6.8 and 6.10 narrow a chrono count to int inside the macro,
+    # which GCC reports at the place of use even for a system header.
+    if(NOT MSVC)
+        target_compile_options(${name} PRIVATE -Wno-conversion)
+    endif()
     add_test(NAME ${name} COMMAND ${name})
     # An empty QFLEXDOCK_TEST_PLATFORM leaves the choice to the environment.
     if(ARG_GUI AND QFLEXDOCK_TEST_PLATFORM)
