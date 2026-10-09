@@ -33,6 +33,8 @@ struct DropCandidate
     DockArea hovered = DockArea::None;
     QRect preview;
     QRect tabIndicator;
+    /// For a drop among tabs: where among the tabs shown there it goes.
+    int tabGap = -1;
 };
 
 /// Shows one layout tree: a tab group widget per tab node, a handle per split
@@ -82,6 +84,8 @@ public:
     [[nodiscard]] DropCandidate candidateAt(const QPoint &pos, const DragSession &session) const;
     void showOverlay(const DropCandidate &candidate);
     void hideOverlay();
+    /// Preview of a tab drag: see DockTabGroup::setDropGap().
+    void showDropGap(NodeId node, int index);
 
     // --- Split handle dragging -----------------------------------------------
     void setHandleHover(int handleIndex, bool hovered);

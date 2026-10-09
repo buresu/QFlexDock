@@ -70,7 +70,7 @@ tests/                    Qt Test; shared fixtures in TestUtils.h
 - **Nothing copied from other docking libraries or applications**: no code, no artwork, no theme files, no
   material of unclear origin, no Conan files. Other docking libraries are not named in the repository. An
   example that rebuilds the layout and look of an existing application may name it (`examples/obs-style`,
-  `examples/vscode-style`), and does so with its own code and drawings only.
+  `examples/vscode-style`, `examples/chrome-style`), and does so with its own code and drawings only.
 - A public API change comes with its tests, examples and `docs/api.md`.
 - A style sheet selector or property goes into `docs/styling.md` only once `tests/tst_style.cpp` shows it works.
 - The README's "Status" lists only what was implemented and what was actually run.
@@ -91,7 +91,8 @@ tests/                    Qt Test; shared fixtures in TestUtils.h
   move through the window, after `QCursor::setPos()` from elsewhere inside the window on platforms with a
   real pointer (see `thinHandlesCanBeGrabbed`).
 - A real `QDrag` can only be automated on X11 (`tst_realdrag`). The whole drag happens inside one
-  `processEvents()`, so intermediate state is recorded in steps scheduled by timers.
+  `processEvents()`, so intermediate state is recorded in steps scheduled by timers. `QTest` does not move
+  the real pointer while a button is down; where the code under test reads `QCursor::pos()`, the test sets it.
 - Wayland gives no top-level window positions; tests that look at them branch on `windowPositionsWork()`.
 - A lambda connected to a signal that captures locals must be declared before the fixture (`TwoWindows`) or
   disconnected before leaving scope: destroying the fixture emits layout signals too.

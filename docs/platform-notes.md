@@ -26,8 +26,10 @@ Dock drags use `QDrag`. The layout never changes during a drag; the drop is comm
 A Wayland client can neither move a window to the pointer nor see the pointer over other windows. The
 compositor can, however, move a window as part of a drag (`xdg-toplevel-drag-v1`). QFlexDock uses that:
 
-- **Dragging a tab** carries a ghost, held where it was grabbed. Dropped on a dock area it docks and the
-  ghost disappears; dropped elsewhere the ghost itself becomes the floating window; Esc just removes it.
+- **Dragging a tab** carries a ghost, held where it was grabbed. One tab out of several keeps its place in
+  the ghost's row of tabs, so that the pointer stays on it; in the window it becomes it is the first tab.
+  Dropped on a dock area it docks and the ghost disappears; dropped elsewhere the ghost itself becomes the
+  floating window; Esc just removes it.
 - **Dragging everything a floating window contains** (its only tab or only tab group) carries that window
   itself: no second window appears.
 - **A floating window with a custom frame** can be dragged by its title row and dropped onto a dock area.
@@ -67,14 +69,20 @@ QFlexDock's format lets the drop through to the dock area.
 | Re-dock by dragging the title | No (drag a tab instead) | On Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag |
 
 A `Minimal` window is moved by a dock drag of what it contains: on Wayland the window follows the pointer,
-on X11 a picture does and the window lands where it is dropped. Where outside drops do not float
-(Windows and macOS by default), the drag just moves the window and docking is left to the float button.
+on X11 a picture does and the window then moves by as much as the pointer did. Where outside drops do not
+float (Windows and macOS by default), the drag just moves the window and docking is left to the float button.
+A double click on the header of its one tab group, beside the tabs, maximizes such a window.
+
+Frames drawn by QFlexDock can have round corners (`DockTheme::floatingCornerRadius`). The window is then
+translucent, which needs a compositor: without one (a bare X server) the corners are black. QFlexDock
+draws no shadow around such a window.
 
 ## Wayland
 
 - **Window positions can be neither read nor set.** Where a window floated from the API or a menu appears
   is up to the compositor, and only the size of a saved geometry is restored.
-- Floating windows are transient for the window of the workspace that owns them, and stay above it.
+- Floating windows are transient for the window of the workspace that owns them, and stay above it. Without
+  a workspace they are windows in their own right.
 - To run the tests, configure with `-DQFLEXDOCK_TEST_PLATFORM=` (empty) and use
   `tests/run-on-wayland.sh <build-dir>`. It starts a headless compositor (`kwin_wayland --virtual` or
   `weston --backend=headless`; `QFLEXDOCK_WAYLAND_COMPOSITOR` picks one when both are installed) with its
@@ -146,6 +154,16 @@ What the tests cannot drive, to be tried with the examples:
   their sizes; so does pushing the edge of an area far enough against it, and dragging inwards from the
   edge it went to (also at the right edge of the window, for the secondary side bar); with the documents split, the
   point where their boundary meets the panel's or a side bar's moves both.
+- **Windows of tabs**, `qflexdock-chrome-style` — a tab that is dragged is out of its row at once, the
+  others closing up, and a row it is held over opens a place for it (on Wayland the ghost lies over that
+  place, its tab where the pointer is); Esc puts it back; a tab dragged along its row changes places; dragged onto
+  the row of another window (its tabs, or the row beside them) it becomes a tab there; let go of anywhere
+  else, over a page or the desktop, it becomes a window of the same size; the last tab takes its window with
+  it, in either direction; the only tab of a window drags the window, and can still be dropped into another
+  row; the row beside the tabs moves the window and a double click there maximizes it, as does the button,
+  whose icon follows; the edges resize the window although the page reaches them; the corners at the top
+  are round, and square when maximized; with many tabs they all get narrower and the + stays behind the
+  last; closing the last window ends the application.
 - **Style** — the Theme menu and the system's light/dark switch are followed at once.
 - **GPU**, `qflexdock-gpu-panel` — rendering continues through tabbing, splitting, floating and moving to the
   other window; the native-window panel hides during a drag.

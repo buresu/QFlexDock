@@ -39,6 +39,7 @@ Rectangle {
     function hide(id) { return dock.hidePanel(id) }
     function hideBoth(a, b) { return dock.hidePanels([a, b]) }
     function showBoth(a, b) { return dock.showPanels([a, b]) }
+    function tabsOf(id) { return dock.tabGroupPanels(id) }
     function toggle(id) { return dock.togglePanel(id) }
     function activate(id) { return dock.activatePanel(id) }
     function moveBelow(id, other) { return dock.movePanel(id, other, Dock.Bottom) }
@@ -204,6 +205,8 @@ private Q_SLOTS:
         QCOMPARE(call(root, "showBoth", {p("q"), p("b")}).toBool(), true);
         QVERIFY(f.manager.panel(p("q"))->isOpen());
         QCOMPARE(describe(f.b), p("b"));
+        QCOMPARE(call(root, "tabsOf", {p("b")}).toStringList(), QStringList{p("b")});
+        QVERIFY(call(root, "tabsOf", {p("nope")}).toStringList().isEmpty());
 
         // Failures are reported, not thrown, and change nothing.
         const QString before = describe(f.a);

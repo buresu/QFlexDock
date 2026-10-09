@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "TestUtils.h"
 
+#include "widgets/DockFloatingWindow.h"
+
 #include "core/DockDragController.h"
 #include "widgets/DockAutoHide.h"
 #include "widgets/DockDropOverlay.h"
@@ -473,6 +475,92 @@ private Q_SLOTS:
         DockTabGroup *other = areaOf(f.b)->groupOfPanel(p("d"));
         QCOMPARE(pixel(other->tabBar(), other->tabBar()->tabRect(0).center() + QPoint(0, 9)),
                  QColor(0, 0, 0xff));
+        qApp->setStyleSheet(QString());
+    }
+
+    void styleSheetsStyleTheTitleActionPlaces()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QAction list(p("List"));
+        QAction add(p("Add"));
+        add.setObjectName(p("newTab"));
+        QAction other(p("Other"));
+        QAction more(p("More"));
+        DockPanel *a = f.manager.panel(p("a"));
+        a->setTitleActions({&list}, DockTitlePlace::Start);
+        a->setTitleActions({&add, &other}, DockTitlePlace::AfterTabs);
+        a->setTitleActions({&more});
+
+        qApp->setStyleSheet(QStringLiteral(R"(
+            #dockTitleStartActions { background: #102030; }
+            #dockTabActions { background: #203040; }
+            #dockActionButton { background: #abcdef; border: none; margin: 2px; }
+            #dockTabActions #dockActionButton { background: #00ff00; }
+            #dockTabActions #dockActionButton[action="newTab"] { background: #ff0000; }
+        )"));
+        QCoreApplication::processEvents();
+
+        const DockTabGroup *group = areaOf(f.a)->groupOfPanel(p("a"));
+        QVERIFY(containsColor(group->actionBar(DockTitlePlace::Start)->grab().toImage(),
+                              QColor(0x10, 0x20, 0x30)));
+        QVERIFY(containsColor(group->actionBar(DockTitlePlace::AfterTabs)->grab().toImage(),
+                              QColor(0x20, 0x30, 0x40)));
+        const auto middle = [&](const QAction *action) {
+            QWidget *button = group->widgetForAction(action);
+            return pixel(button, QPoint(3, button->height() / 2));
+        };
+        QCOMPARE(middle(&list), QColor(0xab, 0xcd, 0xef));
+        QCOMPARE(middle(&more), QColor(0xab, 0xcd, 0xef));
+        QCOMPARE(middle(&other), QColor(0, 0xff, 0));
+        QCOMPARE(middle(&add), QColor(0xff, 0, 0));
+        grab(&f.windowA, p("style-qss-action-places"));
+        qApp->setStyleSheet(QString());
+    }
+
+    // A frame of QFlexDock's own with round corners, styled by a style sheet.
+    void styleSheetsStyleTheRoundFloatingFrame()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        DockTheme theme;
+        theme.floatingBorderWidth = 1;
+        theme.floatingCornerRadius = 12;
+        f.manager.setTheme(theme);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        qApp->setStyleSheet(QStringLiteral(R"(
+            QFlexDock--DockFloatingWindow {
+                background: #112233; border: 1px solid #ff8800;
+                border-top-left-radius: 12px; border-top-right-radius: 12px;
+            }
+            QFlexDock--DockFloatingWindow[maximized="true"] { border: none; border-radius: 0; }
+        )"));
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
+        auto *window = qobject_cast<DockFloatingWindow *>(f.widgets[p("b")]->window());
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QTRY_COMPARE(window->size(), QSize(320, 240));
+
+        // Round where the style sheet says so, and only there.
+        const QImage image = window->grab().toImage();
+        QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
+        QCOMPARE(image.pixelColor(image.width() - 1, 0).alpha(), 0);
+        QCOMPARE(image.pixelColor(0, image.height() - 1), QColor(0xff, 0x88, 0x00));
+        QCOMPARE(image.pixelColor(0, image.height() / 2), QColor(0xff, 0x88, 0x00));
+        QCOMPARE(image.pixelColor(image.width() / 2, 0), QColor(0xff, 0x88, 0x00));
+        grab(window, p("style-qss-round-frame"));
+
+        window->showMaximized();
+        const QSize normal(320, 240);
+        if (QTest::qWaitFor([&] { return window->isMaximized() && window->size() != normal; }, 3000)) {
+            QCoreApplication::processEvents();
+            const QImage maximized = window->grab().toImage();
+            QCOMPARE(maximized.pixelColor(0, 0).alpha(), 255);
+            QVERIFY(maximized.pixelColor(0, maximized.height() / 2) != QColor(0xff, 0x88, 0x00));
+        }
         qApp->setStyleSheet(QString());
     }
 

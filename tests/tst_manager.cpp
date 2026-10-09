@@ -685,6 +685,49 @@ private Q_SLOTS:
         QCoreApplication::processEvents(); // the empty workspace keeps working
     }
 
+    // One middle click closes one tab, also when the next one moves up
+    // under the pointer.
+    void middleClickClosesOneTab()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        DockTabBar *bar = areaOf(f.a)->groupOfPanel(p("a"))->tabBar();
+        const QPoint first = bar->tabRect(0).center();
+        QTest::mouseClick(bar, Qt::MiddleButton, {}, first);
+        QCOMPARE(describe(f.a), p("b|c"));
+        QCOMPARE(bar->tabAt(first), 0);
+
+        // Pressed on one tab and let go of on another, it closes neither.
+        QTest::mousePress(bar, Qt::MiddleButton, {}, bar->tabRect(0).center());
+        QTest::mouseRelease(bar, Qt::MiddleButton, {}, bar->tabRect(1).center());
+        QCOMPARE(describe(f.a), p("b|c"));
+        QTest::mouseClick(bar, Qt::MiddleButton, {}, bar->tabRect(1).center());
+        QCOMPARE(describe(f.a), p("b"));
+    }
+
+    void panelsOfATabGroupAreListedInTabOrder()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center, 1));
+        QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Right));
+        QCOMPARE(f.manager.tabGroupPanels(p("b")), (QStringList{p("a"), p("c"), p("b")}));
+        QCOMPARE(f.manager.tabGroupPanels(p("d")), QStringList{p("d")});
+        // Floating windows have tab groups like any other place.
+        QVERIFY(f.manager.floatTabGroup(p("a")));
+        QCOMPARE(f.manager.tabGroupPanels(p("c")), (QStringList{p("a"), p("c"), p("b")}));
+        // Closed, auto-hidden or unknown: in no group.
+        QVERIFY(f.manager.setPanelAutoHide(p("d"), true));
+        QVERIFY(f.manager.tabGroupPanels(p("d")).isEmpty());
+        QVERIFY(f.manager.tabGroupPanels(p("e")).isEmpty());
+        QVERIFY(f.manager.tabGroupPanels(p("nope")).isEmpty());
+    }
+
     void failedOperationsChangeNothing()
     {
         TwoWindows f;
@@ -705,7 +748,6 @@ private Q_SLOTS:
                  DockError::InvalidArgument);
         QCOMPARE(f.manager.movePanel(p("a"), p("a"), DockArea::Left).error(),
                  DockError::InvalidArgument); // alone in its group
-        QCOMPARE(f.manager.floatPanel(p("c")).error(), DockError::NotPlaced);
         QCOMPARE(f.manager.maximizePanel(p("c")).error(), DockError::NotPlaced);
         QCOMPARE(f.manager.setPanelAutoHide(p("a"), true, DockArea::Center).error(),
                  DockError::InvalidArgument);

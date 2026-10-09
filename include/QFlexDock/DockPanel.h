@@ -110,13 +110,18 @@ public:
     void setCollapsible(bool collapsible);
 
     /// Actions of the application's own in the header of the panel's tab
-    /// group, shown while the panel is the current one there, before the
-    /// built-in buttons. An ordinary action becomes a button (one with a menu
-    /// opens it), a separator a thin line, and a QWidgetAction puts its
-    /// widget there. The actions stay the caller's; one that is destroyed
-    /// drops out.
-    [[nodiscard]] QList<QAction *> titleActions() const;
-    void setTitleActions(const QList<QAction *> &actions);
+    /// group, shown while the panel is the current one there. An ordinary
+    /// action becomes a button (one with a menu opens it), a separator a thin
+    /// line, and a QWidgetAction puts its widget there. The actions stay the
+    /// caller's; one that is destroyed drops out.
+    ///
+    /// There are three places for them, each with a list of its own: the end
+    /// of the header, before the built-in buttons (the default), its start,
+    /// before the tabs, and right behind the last tab, where the tabs then
+    /// take only the room they need.
+    [[nodiscard]] QList<QAction *> titleActions(DockTitlePlace place = DockTitlePlace::End) const;
+    void setTitleActions(const QList<QAction *> &actions,
+                         DockTitlePlace place = DockTitlePlace::End);
 
     /// Whether the content is hidden while a dock drag is in progress
     /// (default false). Meant for content that is a native window (see

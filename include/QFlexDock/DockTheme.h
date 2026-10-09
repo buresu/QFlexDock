@@ -64,6 +64,15 @@ enum class DockTitleButton {
 Q_DECLARE_FLAGS(DockTitleButtons, DockTitleButton)
 Q_DECLARE_OPERATORS_FOR_FLAGS(DockTitleButtons)
 
+/// What the tabs of a group do when there is not room for all of them.
+enum class DockTabOverflow {
+    /// They keep their width, and arrows scroll the bar.
+    Scroll,
+    /// They get narrower together, their titles cut short. Tabs too narrow
+    /// for it lose their close button, except the current one.
+    Shrink,
+};
+
 /// Dock-specific tokens layered on top of the host's QStyle, QPalette, QFont
 /// and style sheet. Everything left at its default follows the host.
 struct QFLEXDOCK_EXPORT DockTheme
@@ -79,6 +88,18 @@ struct QFLEXDOCK_EXPORT DockTheme
     int iconSize = -1;
     /// Which buttons the header of a tab group shows.
     DockTitleButtons titleButtons = DockTitleButton::Menu | DockTitleButton::Maximize;
+    /// Width of a tab while there is room for it; -1 makes each as wide as
+    /// its icon and title need.
+    int tabWidth = -1;
+    DockTabOverflow tabOverflow = DockTabOverflow::Scroll;
+    /// Floating windows whose frame is drawn by QFlexDock (FloatingFrame
+    /// Custom and Minimal). The width of the border around their content;
+    /// -1 is 4 pixels. The border is what such a window is resized by: a
+    /// thinner one is grabbed a few pixels into the content as well.
+    int floatingBorderWidth = -1;
+    /// The radius of their corners while they are not maximized; 0 leaves
+    /// them square. Used by the windows created from then on.
+    int floatingCornerRadius = 0;
     DockOverlayStyle overlay;
     /// Replacement icons; anything missing comes from the host style.
     QHash<DockIcon, QIcon> icons;

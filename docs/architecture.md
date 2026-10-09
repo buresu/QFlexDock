@@ -122,6 +122,18 @@ Priority at a position: the band along the border (docking against the whole wor
 are a center rectangle and four trapezoids that together cover the target, so there is no small icon to aim
 for. Over the dragged group itself the center zone means "leave it here" and changes nothing.
 
+Two things change this for windows that are rows of tabs. Where a group has no edge zone to offer (the
+dragged panels allow `Center` only), its whole title row counts as its tabs. And with
+`DockManager::setCenterDropEnabled(false)` there is no center zone, not even the "leave it here" one: what
+is not dropped on a header is dropped nowhere, which `finish()` treats like a drop outside every window.
+
+**Previewing a tab drag** (`DockManager::setTabDragPreviewEnabled()`) is a matter of the views alone. A tab
+group can show its node with one panel left out (`setDraggedOut()`, set by the drag once it has its
+pictures of the group) and with an empty tab kept open among the others (`setDropGap()`, set by the dock
+area from the candidate under the pointer). The state is not touched. Positions are counted among the tabs
+shown, the empty one excepted, and translated back to a position among the group's panels; a drop is worked
+out before the preview is taken down, so that it goes where the tabs showed it would.
+
 Only the coordinates of Qt's drag events are used, never global positions or `QApplication::widgetAt()`.
 
 On Wayland a drag can carry a window ([platform-notes.md](platform-notes.md)). A tab drag carries a ghost
@@ -148,6 +160,15 @@ nobody took is adopted as the view of a new floating container. What happens aft
   putting it back takes that share out of the neighbour again. So areas that are closed and reopened, in any
   order, come back at their sizes, as long as the window has not been resized in between: sizes are shares,
   not pixels.
+- **A floating container needs no workspace.** Its owner may be empty, and `floatPanel()` shows a closed
+  panel in a new one, so an application can be floating windows only. Nothing else is special about that
+  case: the same containers, the same drags.
+- **The header's own actions are per panel, not per group or window.** The current panel brings them, in
+  three places (`DockTitlePlace`). What looks like a window's buttons in `examples/chrome-style` are the
+  actions of whichever tab is in front.
+- **A torn-off panel keeps its size.** A window with a frame of its own is made larger by that frame, and a
+  floating window dragged by all it holds (where no compositor carries it) moves by as much as the pointer
+  did, not to the pointer.
 - **A dock area ignores a drag it may not take anything from** (the dragged panels are not allowed in its
   workspace). Qt then offers the drag to the widgets above it, which is what makes a workspace inside a
   panel of another workspace work: the inner area takes its own panels, the outer one everything else.

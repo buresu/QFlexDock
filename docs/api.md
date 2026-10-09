@@ -59,11 +59,12 @@ Registering does not show a panel.
 | `addPanel(id, workspace, area, fraction)`, `movePanel(id, workspace, area, fraction)` | Dock against the whole workspace: an edge, or `Center` to join the tab group used last |
 | `movePanel(id, relativeTo, area, tabIndex, fraction)` | Dock against the tab group of `relativeTo`: split it on an edge, or `Center` to become a tab |
 | `moveTabGroup(anyPanel, …)` | The same for a whole tab group |
-| `floatPanel(id, geometry)`, `floatTabGroup(anyPanel, geometry)` | Into a new floating window |
+| `floatPanel(id, geometry)`, `floatTabGroup(anyPanel, geometry)` | Into a new floating window; a closed panel is shown in one |
 | `dockPanel(id)` | From floating or auto-hide back to where it was docked last |
 | `showPanel(id)`, `hidePanel(id)`, `togglePanel(id)` | Reopen a closed panel in its old place / close it (it stays registered) |
 | `showPanels(ids)`, `hidePanels(ids)` | The same for several panels as one change and one undo step |
 | `activatePanel(id)`, `activePanel()` | Bring the tab to the front, raise the window, give focus |
+| `tabGroupPanels(id)` | The panels sharing a tab group with `id`, in the order of their tabs |
 | `maximizePanel(id)`, `restoreMaximizedPanel()` | Let the tab group fill its container; the layout tree is not changed |
 | `setPanelAutoHide(id, on, edge)` | Collapse into an auto-hide bar / pin back |
 
@@ -75,7 +76,9 @@ A panel that is closed leaves its room to the neighbour it was split off from; n
 return in their old tab order, with the same tab in front. With `DockPanel::setCollapsible(true)` the user
 can put them away as well, by pushing a split handle against them, and pull them out again.
 
-**Policies** — `setDockPolicy(id, policy)`, `setDropFilter(filter)` (called for every drop; return `false` to refuse).
+**Policies** — `setDockPolicy(id, policy)`, `setDropFilter(filter)` (called for every drop; return `false` to
+refuse). The request names the panels, the target and its area, and for a drop on a header the position
+among the tabs there (`tabIndex`, -1 elsewhere).
 
 ```cpp
 QFlexDock::DockPolicy policy;
@@ -93,8 +96,37 @@ Features: `Movable`, `Closable`, `Floatable`, `Tabbable` (both the dragged and t
 floating window are none.
 
 **Behaviour and looks** — `setLinkedSplittersEnabled()`, `setCornerResizeEnabled()`, `setFloatsOnOutsideDrop()`,
-`setFloatingWindowFrame(FloatingFrame::Native | Custom | Minimal)`, `setDragGhostEnabled()`, `setTheme()`,
-`setOverlayPainter()`. See [styling.md](styling.md) and [platform-notes.md](platform-notes.md).
+`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setFloatingWindowFrame(FloatingFrame::Native | Custom | Minimal)`,
+`setDragGhostEnabled()`, `setTheme()`, `setOverlayPainter()`. See [styling.md](styling.md) and
+[platform-notes.md](platform-notes.md).
+
+**Windows of tabs.** Floating windows need no workspace, so an application can consist of them alone.
+With `setCenterDropEnabled(false)` the middle of a tab group takes no drop: a panel becomes a tab by the
+header only, and let go of anywhere else it floats. Panels that allow `DockArea::Center` only never split a
+window, and for them the whole title row takes a tab, not just the tabs. `examples/chrome-style` is built
+this way:
+
+```cpp
+manager.setFloatingWindowFrame(QFlexDock::DockManager::FloatingFrame::Minimal);  // the tabs are the title
+manager.setCenterDropEnabled(false);
+manager.setFloatsOnOutsideDrop(true);
+manager.setTabDragPreviewEnabled(true);                       // tabs show the drag as it will turn out
+
+QFlexDock::DockPanel *tab = manager.registerPanel("tab-1", page, "New Tab");
+QFlexDock::DockPolicy policy;
+policy.allowedAreas = QFlexDock::DockArea::Center;
+tab->setPolicy(policy);
+manager.floatPanel("tab-1", QRect(100, 80, 1200, 800));       // a window
+manager.movePanel("tab-2", "tab-1", QFlexDock::DockArea::Center);   // another tab in it
+```
+
+A window is gone with its last panel. In a `Minimal` window the header of its one group stands in for the
+title bar: dragged beside the tabs it moves the window, a double click there maximizes it.
+
+`setTabDragPreviewEnabled(true)` (for any layout, not only this one) lets the tab bars show a tab drag as
+it would turn out: the dragged tab is out of its bar at once and the tabs behind it close up, and the tabs
+it is held over make room where it would go, in place of the mark between two tabs. Only what is shown
+changes; the layout changes with the drop, and Esc puts everything back.
 
 `setGroupHeader()` chooses what tab groups have at their top:
 
@@ -139,14 +171,17 @@ closed together (one `hidePanels()` call, or one group pushed away), not a tab t
 before. There is no such edge where a split handle already runs.
 
 **Buttons of your own in the header.** `setTitleActions()` takes `QAction`s that are shown in the header of
-the panel's tab group while the panel is the current one there, before the built-in buttons. An action with a
-menu opens it, a separator becomes a line, and a `QWidgetAction` puts its widget there. The actions stay yours.
+the panel's tab group while the panel is the current one there. An action with a menu opens it, a separator
+becomes a line, and a `QWidgetAction` puts its widget there. The actions stay yours. There are three places,
+each with its own list: `DockTitlePlace::End` (the default, before the built-in buttons), `Start` (before
+the tabs) and `AfterTabs` (right behind the last tab; the tabs then take only the room they need).
 
 ```cpp
 auto *split = new QAction(splitIcon, "Split Right", panel);
 auto *filter = new QWidgetAction(panel);
 filter->setDefaultWidget(new QLineEdit);
 panel->setTitleActions({filter, split});
+panel->setTitleActions({newTab}, QFlexDock::DockTitlePlace::AfterTabs);
 ```
 
 **A workspace inside a panel.** The content of a panel may hold another workspace: a place for documents in
@@ -190,7 +225,7 @@ QFlexDock::QmlPanelAdapter::registerPanel(&manager, "qml", &engine, QUrl("qrc:/P
 ```
 
 `QmlDockController` mirrors `DockManager` and has no state of its own. From QML: `dock.showPanel(id)`,
-`hidePanel`, `showPanels(ids)`, `hidePanels(ids)`, `togglePanel`, `activatePanel`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,
+`hidePanel`, `showPanels(ids)`, `hidePanels(ids)`, `togglePanel`, `activatePanel`, `tabGroupPanels(id)`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,
 `floatPanel`, `dockPanel`, `maximizePanel`, `restoreMaximizedPanel`, `setPanelAutoHide`, `undo`, `redo`,
 `resetLayout` (each returns `true` on success; `dock.lastError` has the reason otherwise), the properties
 `activePanel`, `panels`, `openPanels`, `maximizedPanel`, `canUndo`, `canRedo`, and `dock.panel(id)` for

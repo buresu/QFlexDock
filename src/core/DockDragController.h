@@ -88,6 +88,10 @@ public:
     /// leave everything as it was. `windowDrag`: an existing floating window
     /// was carried. Separate from the drag itself so tests can drive it.
     void finish(Qt::DropAction action, DockFloatingWindow *ghost, bool windowDrag);
+    /// Has the dragged tab shown as gone from its group, where tab drags are
+    /// previewed (done by the drag itself, once it has its pictures of the
+    /// group; tests may).
+    void showSourcePreview();
     /// Names the window the drag carries (done by the drag itself; tests may).
     void setCarriedWindow(QWidget *window);
     /// A drag event at `pos` reached `receiver`. Returns true if the receiver
@@ -131,6 +135,8 @@ private:
     bool m_running = false;
     bool m_escapePressed = false;
     bool m_carryingUnsupported = false;
+    /// Where the pointer was when the drag was asked for.
+    std::optional<QPoint> m_dragStart;
     QPointer<QWidget> m_carried;
     std::optional<QPoint> m_carriedPointer;
     QPoint m_ghostGrip;

@@ -32,6 +32,9 @@ struct QFLEXDOCK_EXPORT DockDropRequest
     /// as a whole (outer edge or empty workspace).
     PanelId targetPanel;
     DockArea area = DockArea::None;
+    /// For a drop on the header of the target tab group, the position it
+    /// takes among the tabs there; -1 for a drop on anything else.
+    int tabIndex = -1;
 };
 
 /// Application-wide veto on top of the per-panel policies. Return false to

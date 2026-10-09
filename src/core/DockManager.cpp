@@ -186,8 +186,15 @@ void DockManagerPrivate::syncViews()
         if (c.kind == ContainerKind::Floating) {
             DockFloatingWindow *window = floatingWindows.value(c.id);
             window->setLayoutState(c);
-            if (!created.contains(window) && c.geometry.isValid() && window->geometry() != c.geometry)
+            // The geometry in the state is that of the window as a plain
+            // window. Maximized (or the like) it is somewhere else, and
+            // stays there.
+            const bool plain = !(window->windowState()
+                                 & (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized));
+            if (!created.contains(window) && plain && c.geometry.isValid()
+                && window->geometry() != c.geometry) {
                 window->setGeometry(c.geometry);
+            }
         } else if (DockWorkspace *workspace = workspaceFor(c.id)) {
             get(workspace)->area->setLayoutState(c);
         }
@@ -358,8 +365,21 @@ DockResult DockManagerPrivate::floatPanels(const PanelId &panel, bool wholeGroup
     if (!panels.contains(panel))
         return unknownPanel(panel);
     const std::optional<PanelLocation> location = state.locate(panel);
-    if (!location)
-        return fail(DockError::NotPlaced, QStringLiteral("panel '%1' is not placed").arg(panel));
+    if (!location) {
+        // A closed panel is shown, in a window of its own.
+        if (adopt) {
+            return fail(DockError::NotPlaced,
+                        QStringLiteral("panel '%1' is not placed").arg(panel));
+        }
+        LayoutState next = state;
+        const PanelMemory memory = next.memory.take(panel);
+        if (!geometry.isValid())
+            geometry = memory.floating && memory.geometry.isValid() ? memory.geometry
+                                                                    : QRect(120, 120, 480, 360);
+        ContainerState &floating = next.addFloating(defaultWorkspaceId(), geometry);
+        floating.tree = LayoutTree(LayoutNode::makeTabs({panel}));
+        return apply(std::move(next), true);
+    }
 
     const bool inGroup = !location->isAutoHidden();
     QStringList moved{panel};
@@ -698,6 +718,13 @@ bool DockManagerPrivate::dropAllowed(const DragSession &session, const DropTarge
     if (!container || target.area == DockArea::None)
         return false;
 
+    // With the middle of a group taking no drops, a panel becomes a tab (or
+    // changes places with one) by the header only.
+    if (!centerDrop && !target.node.isNull() && target.area == DockArea::Center
+        && target.tabIndex < 0) {
+        return false;
+    }
+
     const bool ownCenter = !target.node.isNull() && target.area == DockArea::Center
         && session.sourceContainer == target.container && session.sourceNode == target.node;
     if (ownCenter) {
@@ -719,6 +746,7 @@ bool DockManagerPrivate::dropAllowed(const DragSession &session, const DropTarge
         if (const LayoutNode *group = container->tree.findNode(target.node))
             request.targetPanel = group->active;
         request.area = target.area;
+        request.tabIndex = target.area == DockArea::Center ? target.tabIndex : -1;
         if (!dropFilter(request))
             return false;
     }
@@ -784,6 +812,23 @@ void DockManagerPrivate::hideAllOverlays()
         get(workspace)->area->hideOverlay();
     for (DockFloatingWindow *window : std::as_const(floatingWindows))
         window->area()->hideOverlay();
+}
+
+void DockManagerPrivate::showDraggedOut(const DragSession *session)
+{
+    const bool one = session && tabDragPreview && !session->wholeGroup;
+    const auto show = [&](DockAreaWidget *area, const QString &container) {
+        const QList<DockTabGroup *> groups = area->groups();
+        for (DockTabGroup *group : groups) {
+            const bool source = one && container == session->sourceContainer
+                && group->nodeId() == session->sourceNode;
+            group->setDraggedOut(source ? session->primary : PanelId());
+        }
+    };
+    for (DockWorkspace *workspace : std::as_const(workspaces))
+        show(get(workspace)->area, workspace->workspaceId());
+    for (auto it = floatingWindows.cbegin(); it != floatingWindows.cend(); ++it)
+        show(it.value()->area(), it.key());
 }
 
 // --- Interactive resizing ----------------------------------------------------
@@ -1668,6 +1713,11 @@ DockPanel *DockManager::activePanel() const
     return d->activePanel;
 }
 
+QStringList DockManager::tabGroupPanels(const PanelId &id) const
+{
+    return d->groupPanels(id);
+}
+
 DockResult DockManager::maximizePanel(const PanelId &id)
 {
     return d->setMaximized(id, true);
@@ -1993,6 +2043,26 @@ void DockManager::setGroupHeader(GroupHeader header)
         return;
     d->groupHeader = header;
     d->refreshAllAppearance();
+}
+
+bool DockManager::isCenterDropEnabled() const
+{
+    return d->centerDrop;
+}
+
+void DockManager::setCenterDropEnabled(bool enabled)
+{
+    d->centerDrop = enabled;
+}
+
+bool DockManager::isTabDragPreviewEnabled() const
+{
+    return d->tabDragPreview;
+}
+
+void DockManager::setTabDragPreviewEnabled(bool enabled)
+{
+    d->tabDragPreview = enabled;
 }
 
 bool DockManager::floatsOnOutsideDrop() const

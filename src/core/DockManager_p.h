@@ -12,6 +12,7 @@
 #include <QtCore/QPointer>
 #include <QtGui/QAction>
 
+#include <array>
 #include <optional>
 #include <vector>
 
@@ -42,7 +43,8 @@ struct DockPanel::Private
     bool hideContentDuringDrag = false;
     bool headerVisible = true;
     bool collapsible = false;
-    QList<QPointer<QAction>> titleActions;
+    /// Indexed by DockTitlePlace.
+    std::array<QList<QPointer<QAction>>, 3> titleActions;
 
     // Derived from the layout state after every commit.
     std::optional<PanelLocation> location;
@@ -158,6 +160,9 @@ public:
     [[nodiscard]] bool dropAllowed(const DragSession &session, const DropTarget &target) const;
     DockResult commitDrop(const DragSession &session, const DropTarget &target);
     void hideAllOverlays();
+    /// Preview of a tab drag: the tab `session` drags is shown as gone from
+    /// its group (null: every group shows what it holds).
+    void showDraggedOut(const DragSession *session);
     /// Called when a drag session starts and ends.
     void setDragInProgress(bool inProgress);
     /// The panel's content must stay hidden right now (see above).
@@ -235,6 +240,8 @@ public:
     std::shared_ptr<DockOverlayPainter> overlayPainter;
     bool linkedSplitters = true;
     bool cornerResize = true;
+    bool centerDrop = true;
+    bool tabDragPreview = false;
     DockManager::GroupHeader groupHeader = DockManager::GroupHeader::Tabs;
     bool floatOnOutsideDrop = false;
     bool dragGhostEnabled = true;

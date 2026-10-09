@@ -575,21 +575,31 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
 
             // Onto the tabs: join at a specific position, or reorder within
             // the panel's own group. Only the tabs themselves count for this;
-            // elsewhere on the title row the five areas apply as usual.
+            // elsewhere on the title row the five areas apply as usual. That
+            // is, if there are any besides the centre: what can only become
+            // a tab here is taken as one by the whole row.
             const bool ownGroup = session.sourceContainer == m_containerId
                 && session.sourceNode == it.key();
             const bool reorder = ownGroup && !session.wholeGroup;
-            const bool tabDrop = overTabs(g)
+            const QWidget *title = g->titleBar();
+            const bool overTitleRow = g->tabBar()->parentWidget() == title && title->isVisible()
+                && QRect(title->mapTo(this, QPoint(0, 0)), title->size()).contains(pos);
+            const bool tabsOnly = !(c.zones & EdgeDockAreas);
+            const bool tabDrop = (overTabs(g) || (overTitleRow && tabsOnly))
                 && (reorder || (!ownGroup && c.zones.testFlag(DockArea::Center)));
+            // The middle of a group may be closed to drops: then the header
+            // is the one way to become a tab, and the guide shows no centre.
+            if (!m_manager->centerDrop)
+                c.zones &= ~DockAreas(DockArea::Center);
             if (tabDrop) {
                 DockTabBar *bar = g->tabBar();
-                const int index = bar->insertIndexAt(bar->mapFrom(this, pos));
+                const int index = g->dropIndexAt(bar->mapFrom(this, pos), &c.tabGap);
                 c.hovered = DockArea::Center;
                 c.target.node = it.key();
                 c.target.area = DockArea::Center;
                 c.target.tabIndex = index;
-                c.tabIndicator = QRect(bar->mapTo(this, bar->insertIndicatorRect(index).topLeft()),
-                                       bar->insertIndicatorRect(index).size());
+                c.tabIndicator = QRect(bar->mapTo(this, bar->insertIndicatorRect(c.tabGap).topLeft()),
+                                       bar->insertIndicatorRect(c.tabGap).size());
                 c.preview = reorder ? QRect() : rect;
             } else {
                 const DropZoneLayout zones = DropZoneLayout::compute(c.zoneRect, style.edgeFraction,
@@ -612,6 +622,7 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
         c.hovered = DockArea::None;
         c.preview = QRect();
         c.tabIndicator = QRect();
+        c.tabGap = -1;
         c.outer = false;
     }
     return c;
@@ -634,8 +645,7 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
             DockOverlayScene::Zone zone;
             zone.area = area;
             zone.shape = zones.polygon(area);
-            zone.hovered = !candidate.outer && candidate.hovered == area
-                && !candidate.tabIndicator.isValid();
+            zone.hovered = !candidate.outer && candidate.hovered == area && candidate.tabGap < 0;
             scene.zones.append(zone);
         }
     }
@@ -658,7 +668,11 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
         }
     }
     scene.preview = candidate.preview;
-    scene.tabIndicator = candidate.tabIndicator;
+    // With the tabs making room themselves, no mark is needed between them.
+    const bool tabsMakeRoom = m_manager && m_manager->tabDragPreview;
+    if (!tabsMakeRoom)
+        scene.tabIndicator = candidate.tabIndicator;
+    showDropGap(tabsMakeRoom ? candidate.target.node : NodeId(), candidate.tabGap);
 
     m_overlay->setScene(scene);
     m_overlay->setGeometry(rect());
@@ -670,6 +684,14 @@ void DockAreaWidget::hideOverlay()
 {
     m_overlay->hide();
     m_overlay->setScene({});
+    showDropGap({}, -1);
+}
+
+// Room among the tabs of `node` for what is held over them, and nowhere else.
+void DockAreaWidget::showDropGap(NodeId node, int index)
+{
+    for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it)
+        it.value()->setDropGap(it.key() == node ? index : -1);
 }
 
 void DockAreaWidget::handleDrag(QDragMoveEvent *event)
@@ -730,18 +752,22 @@ void DockAreaWidget::dragLeaveEvent(QDragLeaveEvent *)
 
 void DockAreaWidget::dropEvent(QDropEvent *event)
 {
-    hideOverlay();
     if (m_manager && m_manager->drag->noteDragOver(this, event->position().toPoint())) {
+        hideOverlay();
         event->ignore();
         return;
     }
     const DragSession *session =
         m_manager ? m_manager->drag->sessionFor(event->mimeData()) : nullptr;
     if (!session) {
+        hideOverlay();
         event->ignore();
         return;
     }
+    // Where it goes is worked out with everything as it was shown: tabs that
+    // made room are where the pointer found them.
     const DropCandidate candidate = candidateAt(event->position().toPoint(), *session);
+    hideOverlay();
     if (candidate.valid && m_manager->drag->drop(candidate.target)) {
         event->setDropAction(Qt::MoveAction);
         event->accept();

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <QFlexDock/DockTheme.h>
 #include <QFlexDock/Global.h>
 
 #include <QtCore/QSet>
@@ -28,6 +29,12 @@ public:
     explicit DockTabBar(QWidget *parent = nullptr);
 
     [[nodiscard]] PanelId panelAt(int index) const { return tabData(index).toString(); }
+    /// The tab at `index` is no panel's: an empty place kept open among the
+    /// tabs for what is being dragged over them. It has no tab data, is not
+    /// painted, and is as wide as setGapWidth() says.
+    [[nodiscard]] bool isGap(int index) const { return index >= 0 && panelAt(index).isEmpty(); }
+    [[nodiscard]] int gapIndex() const;
+    void setGapWidth(int width);
     [[nodiscard]] int indexOfPanel(const PanelId &panel) const;
 
     /// Panels whose title is drawn in italics (preview tabs).
@@ -37,11 +44,22 @@ public:
     [[nodiscard]] QColor activeIndicatorColor() const { return m_indicatorColor; }
     void setActiveIndicatorColor(const QColor &color);
 
+    /// How wide tabs are and what becomes of them in a bar too narrow for
+    /// them (DockTheme::tabWidth and tabOverflow).
+    void setTabSizing(int tabWidth, DockTabOverflow overflow);
+    [[nodiscard]] int tabWidth() const { return m_tabWidth; }
+    [[nodiscard]] DockTabOverflow tabOverflow() const
+    {
+        return m_shrink ? DockTabOverflow::Shrink : DockTabOverflow::Scroll;
+    }
+
     /// The part of the bar where a drop inserts between tabs: the tabs
-    /// themselves plus a little room behind the last one for appending. The
-    /// empty rest of the bar is not part of it.
+    /// themselves plus a little room behind the last one for appending
+    /// (which may lie beyond a bar that ends with its last tab). The empty
+    /// rest of the bar is not part of it.
     [[nodiscard]] QRect tabDropRegion() const;
-    /// Tab index a drop at `pos` would insert at (0..count).
+    /// Position among the tabs a drop at `pos` would insert at (0..count).
+    /// A gap is not counted: it is where the drop goes, not a tab.
     [[nodiscard]] int insertIndexAt(const QPoint &pos) const;
     /// Marker to draw for an insertion at `index`, in tab bar coordinates.
     [[nodiscard]] QRect insertIndicatorRect(int index) const;
@@ -51,13 +69,19 @@ Q_SIGNALS:
     void panelDragStarted(const QFlexDock::PanelId &panel);
     /// Same, but on the part of the bar without tabs: drags the whole group.
     void groupDragStarted();
-    /// Middle click on a tab.
+    /// Middle click on a tab (pressed and let go of on the same one).
     void panelCloseRequested(const QFlexDock::PanelId &panel);
     void panelMenuRequested(const QFlexDock::PanelId &panel, const QPoint &globalPos);
     /// Double click on a tab or on the empty part of the bar.
-    void barDoubleClicked();
+    void barDoubleClicked(bool onTab);
+
+public:
+    [[nodiscard]] QSize minimumSizeHint() const override;
 
 protected:
+    [[nodiscard]] QSize tabSizeHint(int index) const override;
+    [[nodiscard]] QSize minimumTabSizeHint(int index) const override;
+    void tabLayoutChange() override;
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
@@ -66,11 +90,22 @@ protected:
     void contextMenuEvent(QContextMenuEvent *event) override;
 
 private:
+    [[nodiscard]] QSize unsqueezedMinimum(int index) const;
+    void updateTabButtons();
+
     QSet<PanelId> m_italic;
+    int m_tabWidth = -1;
+    int m_gapWidth = 0;
+    bool m_shrink = false;
+    /// Tab buttons were hidden for want of room, and may have to come back.
+    bool m_buttonsHidden = false;
+    mutable bool m_measuringMinimum = false;
     QColor m_indicatorColor;
     bool m_activeGroup = false;
     bool m_pressed = false;
     int m_pressIndex = -1;
+    /// The tab the middle button went down on.
+    PanelId m_middlePanel;
     QPoint m_pressPos;
 };
 

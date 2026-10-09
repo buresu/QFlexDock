@@ -62,6 +62,8 @@ public:
 
     Q_INVOKABLE bool hasPanel(const QString &id) const;
     Q_INVOKABLE bool isPanelOpen(const QString &id) const;
+    /// The panels sharing a tab group with `id`, in the order of their tabs.
+    Q_INVOKABLE QStringList tabGroupPanels(const QString &id) const;
     /// The panel object (title, icon, open, active, floating, dirty... as
     /// properties with change signals), or null. Owned by the dock manager.
     Q_INVOKABLE QObject *panel(const QString &id) const;

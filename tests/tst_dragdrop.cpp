@@ -965,6 +965,320 @@ private Q_SLOTS:
         QVERIFY(!second.move(area, zonePoint(area, "b", DockArea::Left)));
     }
 
+    // The drop filter learns whether a drop goes onto the tabs.
+    void dropFilterIsToldAboutDropsOnTabs()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.b->addPanel(p("c")));
+        QList<int> indexes;
+        bool tabsOnly = false;
+        f.manager.setDropFilter([&](const DockDropRequest &request) {
+            indexes << request.tabIndex;
+            return !tabsOnly || request.tabIndex >= 0;
+        });
+        DockAreaWidget *area = areaOf(f.a);
+        const DockTabBar *bar = area->groupOfPanel(p("a"))->tabBar();
+        const QPoint onTabs = bar->mapTo(area, bar->tabRect(1).topLeft() + QPoint(4, 8));
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("c"));
+        QVERIFY(drag.move(area, onTabs));
+        QCOMPARE(indexes.constLast(), 1);
+        QVERIFY(drag.move(area, zonePoint(area, "a", DockArea::Center)));
+        QCOMPARE(indexes.constLast(), -1);
+        QVERIFY(drag.move(area, zonePoint(area, "a", DockArea::Left)));
+        QCOMPARE(indexes.constLast(), -1);
+
+        // Which lets it take nothing but tabs.
+        tabsOnly = true;
+        QVERIFY(!drag.move(area, zonePoint(area, "a", DockArea::Center)));
+        QVERIFY(!drag.move(area, zonePoint(area, "a", DockArea::Left)));
+        QVERIFY(drag.drop(area, onTabs));
+        QCOMPARE(describe(f.a), p("a|c|b"));
+    }
+
+    // What can only become a tab is taken as one by the whole title row.
+    void titleRowTakesWhatCanOnlyBecomeATab()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.b->addPanel(p("c")));
+        DockAreaWidget *area = areaOf(f.a);
+        const DockTabGroup *group = area->groupOfPanel(p("a"));
+        const DockTabBar *bar = group->tabBar();
+        // On the title row, well beside the tabs.
+        const QPoint beside = bar->mapTo(area, QPoint(bar->tabRect(1).right() + 200, bar->height() / 2));
+        QVERIFY(group->titleBar()->geometry().contains(group->mapFrom(area, beside)));
+        QVERIFY(!bar->tabDropRegion().contains(bar->mapFrom(area, beside)));
+
+        // Ordinarily that spot belongs to the areas that split.
+        {
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("c"));
+            QVERIFY(drag.move(area, beside));
+            QVERIFY(area->overlay()->scene().tabIndicator.isNull());
+        }
+
+        DockPolicy policy;
+        policy.allowedAreas = DockArea::Center;
+        for (const char *id : {"a", "b", "c"})
+            QVERIFY(f.manager.setDockPolicy(p(id), policy));
+        {
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("c"));
+            QVERIFY(drag.move(area, beside));
+            QVERIFY(area->overlay()->scene().tabIndicator.isValid());
+            QVERIFY(drag.drop(area, beside));
+            QCOMPARE(describe(f.a), p("a|b|c"));
+        }
+        // The same goes for putting a tab of the group last.
+        {
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("a"));
+            QVERIFY(drag.drop(area, beside));
+            QCOMPARE(describe(f.a), p("b|c|a"));
+        }
+        // The content below still takes it, unless a drop filter says no.
+        QVERIFY(f.manager.movePanel(p("c"), f.b, DockArea::Center));
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("c"));
+        QVERIFY(drag.move(area, zonePoint(area, "a", DockArea::Center)));
+        QVERIFY(!drag.move(area, zonePoint(area, "a", DockArea::Left)));
+    }
+
+    // Tabs that are joined by the header only, and torn off anywhere else.
+    void centreOfAGroupCanBeClosedToDrops()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.b->addPanel(p("c")));
+        QVERIFY(f.manager.movePanel(p("d"), p("c"), DockArea::Center));
+        DockAreaWidget *area = areaOf(f.a);
+        DockAreaWidget *areaB = areaOf(f.b);
+        const DockTabBar *bar = area->groupOfPanel(p("a"))->tabBar();
+        const QPoint onTabs = bar->mapTo(area, bar->tabRect(1).topLeft() + QPoint(4, 8));
+        QVERIFY(f.manager.isCenterDropEnabled());
+        f.manager.setCenterDropEnabled(false);
+        QVERIFY(!f.manager.isCenterDropEnabled());
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("c"));
+        // On another group: its sides and its tabs, not its middle.
+        QVERIFY(!drag.move(area, zonePoint(area, "a", DockArea::Center)));
+        for (const auto &zone : area->overlay()->scene().zones)
+            QVERIFY(zone.area != DockArea::Center);
+        QVERIFY(drag.move(area, zonePoint(area, "a", DockArea::Left)));
+        QVERIFY(drag.move(area, onTabs));
+        drag.leave(area);
+        // On its own group: among the tabs, to change places. The middle
+        // does not put it back; it is no place to drop anything.
+        QVERIFY(!drag.move(areaB, zonePoint(areaB, "c", DockArea::Center)));
+        const DockTabBar *barB = areaB->groupOfPanel(p("c"))->tabBar();
+        QVERIFY(drag.move(areaB, barB->mapTo(areaB, barB->tabRect(1).center() + QPoint(8, 0))));
+        drag.leave(areaB);
+        // An empty workspace has no header to aim for, and takes the panel.
+        QVERIFY(f.manager.hidePanels({p("a"), p("b")}));
+        QVERIFY(drag.move(area, area->rect().center()));
+        QVERIFY(f.manager.showPanels({p("a"), p("b")}));
+        drag.leave(area);
+
+        // A drop that names the middle directly is refused as well.
+        DropTarget target;
+        target.container = p("A");
+        target.node = area->groupOfPanel(p("a"))->nodeId();
+        target.area = DockArea::Center;
+        QVERIFY(!priv(f.manager)->dropAllowed(drag.session(), target));
+        target.tabIndex = 0;
+        QVERIFY(priv(f.manager)->dropAllowed(drag.session(), target));
+
+        // With panels that may only be tabs, nothing of the guide is left
+        // but the mark between two tabs, and the whole title row takes them.
+        DockPolicy policy;
+        policy.allowedAreas = DockArea::Center;
+        QVERIFY(f.manager.setDockPolicy(p("c"), policy));
+        QVERIFY(!drag.move(area, zonePoint(area, "a", DockArea::Left)));
+        QVERIFY(area->overlay()->scene().zones.isEmpty());
+        const QPoint beside = bar->mapTo(area, QPoint(bar->tabRect(1).right() + 200, bar->height() / 2));
+        QVERIFY(drag.move(area, beside));
+        QVERIFY(area->overlay()->scene().tabIndicator.isValid());
+        QVERIFY(drag.drop(area, beside));
+        QCOMPARE(describe(f.a), p("a|b|c"));
+        // The API is not bound by any of this.
+        QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Center));
+        QCOMPARE(describe(f.a), p("a|b|c|d"));
+    }
+
+    // A tab drag shown as it would turn out: the tab leaves its bar at once,
+    // and the tabs it is held over make room for it.
+    void tabDragIsPreviewedInTheTabBars()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        QVERIFY(f.b->addPanel(p("d")));
+        QVERIFY(f.manager.movePanel(p("e"), p("d"), DockArea::Center));
+        QVERIFY(f.manager.activatePanel(p("b")));
+        QVERIFY(!f.manager.isTabDragPreviewEnabled());
+        f.manager.setTabDragPreviewEnabled(true);
+        DockAreaWidget *area = areaOf(f.a);
+        DockAreaWidget *areaB = areaOf(f.b);
+        DockTabGroup *group = area->groupOfPanel(p("a"));
+        DockTabGroup *groupB = areaB->groupOfPanel(p("d"));
+        DockTabBar *bar = group->tabBar();
+        DockTabBar *barB = groupB->tabBar();
+        DockDragController *controller = priv(f.manager)->drag;
+        const auto tabs = [](const DockTabBar *of) {
+            QStringList names;
+            for (int i = 0; i < of->count(); ++i)
+                names << (of->isGap(i) ? p("_") : of->panelAt(i));
+            return names.join(QLatin1Char(' '));
+        };
+        const auto at = [](const DockAreaWidget *in, const DockTabBar *of, int x) {
+            return of->mapTo(in, QPoint(x, of->height() / 2));
+        };
+        QSignalSpy changed(&f.manager, &DockManager::layoutChanged);
+
+        {
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("b"));
+            QCOMPARE(tabs(bar), p("a b c")); // not before the drag has its pictures
+            controller->showSourcePreview();
+
+            // Gone from its bar, with the content of the tab behind it shown.
+            // Nothing of that is in the layout.
+            QCOMPARE(tabs(bar), p("a c"));
+            QCOMPARE(group->draggedOut(), p("b"));
+            QCOMPARE(group->shownPanel(), p("c"));
+            QCOMPARE(bar->panelAt(bar->currentIndex()), p("c"));
+            QVERIFY(f.widgets[p("c")]->isVisible());
+            QVERIFY(!f.widgets[p("b")]->isVisible());
+            QCOMPARE(group->currentPanel(), p("b"));
+            QCOMPARE(describe(f.a), p("a|b|c"));
+
+            // Held over the tabs of the other window: room where it would go,
+            // as wide as a tab, and no mark besides.
+            const int width = barB->tabRect(1).width();
+            const int left = barB->tabRect(1).left();
+            QVERIFY(drag.move(areaB, at(areaB, barB, left + 4)));
+            QCOMPARE(tabs(barB), p("d _ e"));
+            QCOMPARE(groupB->dropGap(), 1);
+            QVERIFY(barB->tabRect(1).width() > width / 2);
+            QCOMPARE(barB->tabRect(2).left(), left + barB->tabRect(1).width());
+            QVERIFY(areaB->overlay()->scene().tabIndicator.isNull());
+            QVERIFY(!barB->isGap(barB->currentIndex()));
+            QCOMPARE(describe(f.b), p("d|e"));
+            // The pointer is over the room now, and that changes nothing.
+            QVERIFY(drag.move(areaB, at(areaB, barB, barB->tabRect(1).center().x())));
+            QCOMPARE(tabs(barB), p("d _ e"));
+            // Further along, past the middle of the tab behind it.
+            QVERIFY(drag.move(areaB, at(areaB, barB, barB->tabRect(2).center().x() + 4)));
+            QCOMPARE(tabs(barB), p("d e _"));
+            QVERIFY(drag.move(areaB, at(areaB, barB, 12)));
+            QCOMPARE(tabs(barB), p("_ d e"));
+            // Off the tabs, the room is given up.
+            QVERIFY(drag.move(areaB, zonePoint(areaB, "d", DockArea::Left)));
+            QCOMPARE(tabs(barB), p("d e"));
+            QVERIFY(drag.move(areaB, at(areaB, barB, 12)));
+            QCOMPARE(tabs(barB), p("_ d e"));
+            drag.leave(areaB);
+            QCOMPARE(tabs(barB), p("d e"));
+
+            // Its own bar makes room the same way; where it came from is one
+            // of the places.
+            QVERIFY(drag.move(area, at(area, bar, bar->tabRect(1).left() + 4)));
+            QCOMPARE(tabs(bar), p("a _ c"));
+            QVERIFY(drag.move(area, at(area, bar, 12)));
+            QCOMPARE(tabs(bar), p("_ a c"));
+            QVERIFY(drag.move(area, at(area, bar, bar->tabRect(2).right() - 3)));
+            QCOMPARE(tabs(bar), p("a c _"));
+            QCOMPARE(changed.size(), 0);
+            QVERIFY(drag.drop(area, at(area, bar, bar->tabRect(2).center().x())));
+        }
+        // Dropped: now it is in the layout, and the bars show what there is.
+        QCOMPARE(describe(f.a), p("a|c|b"));
+        QCOMPARE(tabs(bar), p("a c b"));
+        QVERIFY(group->draggedOut().isEmpty());
+        QCOMPARE(group->dropGap(), -1);
+        QVERIFY(f.widgets[p("b")]->isVisible());
+        QCOMPARE(changed.size(), 1);
+
+        {
+            // Put back where it came from: a drop that changes nothing.
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("c"));
+            controller->showSourcePreview();
+            QCOMPARE(tabs(bar), p("a b"));
+            QVERIFY(drag.move(area, at(area, bar, bar->tabRect(1).left() + 4)));
+            QCOMPARE(tabs(bar), p("a _ b"));
+            QVERIFY(drag.drop(area, at(area, bar, bar->tabRect(1).center().x())));
+            QCOMPARE(describe(f.a), p("a|c|b"));
+            QCOMPARE(tabs(bar), p("a c b"));
+        }
+        {
+            // Into the other window, between its tabs.
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("a"));
+            controller->showSourcePreview();
+            QCOMPARE(tabs(bar), p("c b"));
+            const QPoint between = at(areaB, barB, barB->tabRect(1).left() + 4);
+            QVERIFY(drag.move(areaB, between));
+            QCOMPARE(tabs(barB), p("d _ e"));
+            QVERIFY(drag.drop(areaB, between));
+            QCOMPARE(describe(f.b), p("d|a|e"));
+            QCOMPARE(describe(f.a), p("c|b"));
+            QCOMPARE(tabs(barB), p("d a e"));
+            QCOMPARE(tabs(bar), p("c b"));
+        }
+        {
+            // A cancelled drag puts everything back.
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("a"));
+            controller->showSourcePreview();
+            QVERIFY(drag.move(area, at(area, bar, 12)));
+            QCOMPARE(tabs(barB), p("d e"));
+            QCOMPARE(tabs(bar), p("_ c b"));
+        }
+        QCOMPARE(tabs(barB), p("d a e"));
+        QCOMPARE(tabs(bar), p("c b"));
+        QVERIFY(groupB->draggedOut().isEmpty());
+        QCOMPARE(describe(f.b), p("d|a|e"));
+
+        {
+            // The last tab of a group stays in it, and so does a group that
+            // is dragged whole.
+            QVERIFY(f.manager.hidePanel(p("b")));
+            Drag last(f.manager);
+            QVERIFY(last.begin("c"));
+            controller->showSourcePreview();
+            QCOMPARE(tabs(bar), p("c"));
+        }
+        {
+            Drag whole(f.manager);
+            QVERIFY(whole.begin("d", true));
+            controller->showSourcePreview();
+            QCOMPARE(tabs(barB), p("d a e"));
+        }
+
+        // Turned off, a mark between the tabs is all there is.
+        f.manager.setTabDragPreviewEnabled(false);
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("a"));
+        controller->showSourcePreview();
+        QCOMPARE(tabs(barB), p("d a e"));
+        QVERIFY(drag.move(area, at(area, bar, 12)));
+        QCOMPARE(tabs(bar), p("c"));
+        QVERIFY(area->overlay()->scene().tabIndicator.isValid());
+    }
+
     void tabBarStartsDrags()
     {
         TwoWindows f;

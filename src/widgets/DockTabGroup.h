@@ -6,6 +6,8 @@
 #include <QtCore/QPointer>
 #include <QtWidgets/QFrame>
 
+#include <array>
+
 QT_BEGIN_NAMESPACE
 class QAction;
 class QBoxLayout;
@@ -37,8 +39,11 @@ class DockTabBar;
 /// `#dockTitleBar`, the title in it `#dockTitle`, its buttons
 /// `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton` and
 /// `#dockCloseButton`. The buttons of the current panel's own actions
-/// (DockPanel::setTitleActions()) are `#dockActionButton`s inside
-/// `#dockTitleActions`, the lines between them `#dockActionSeparator`.
+/// (DockPanel::setTitleActions()) are `#dockActionButton`s, each with the
+/// object name of its action as its `action` property, and the lines between
+/// them `#dockActionSeparator`. They are inside `#dockTitleActions` at the
+/// end of the header, `#dockTitleStartActions` at its start and
+/// `#dockTabActions` behind the tabs.
 class QFLEXDOCK_EXPORT DockTabGroup : public QFrame
 {
     Q_OBJECT
@@ -71,12 +76,33 @@ public:
     [[nodiscard]] QToolButton *floatButton() const { return m_floatButton; }
     [[nodiscard]] QToolButton *closeButton() const { return m_closeButton; }
     [[nodiscard]] QLabel *titleLabel() const { return m_titleLabel; }
-    /// Holds what the current panel's title actions are shown as, in order.
-    [[nodiscard]] QWidget *actionBar() const { return m_actionBar; }
+    /// Holds what the current panel's title actions for `place` are shown
+    /// as, in order.
+    [[nodiscard]] QWidget *actionBar(DockTitlePlace place = DockTitlePlace::End) const
+    {
+        return m_actionBars[size_t(place)].bar;
+    }
     [[nodiscard]] QWidget *widgetForAction(const QAction *action) const;
     /// Gives the widgets of QWidgetActions back. For a group that is about
     /// to go: the group taking over may need them before this one is deleted.
     void releaseTitleActions() { clearTitleActions(); }
+
+    // --- Preview of a tab drag (DockManager::setTabDragPreviewEnabled()) -------
+    // What is shown only; the group's node is what it was.
+    /// `panel` is being dragged out of this group: its tab is not shown, and
+    /// if it was in front, its neighbour's content is. Empty: as it is.
+    void setDraggedOut(const PanelId &panel);
+    [[nodiscard]] PanelId draggedOut() const { return m_draggedOut; }
+    /// Keeps a place open among the tabs shown, before the tab at `index`,
+    /// for what is held over them; -1 closes it.
+    void setDropGap(int index);
+    [[nodiscard]] int dropGap() const { return m_dropGap; }
+    /// The position among the group's panels a drop at `pos` (tab bar
+    /// coordinates) takes, and in `gap` where among the tabs shown that is.
+    [[nodiscard]] int dropIndexAt(const QPoint &pos, int *gap = nullptr) const;
+    /// The panel whose content and header are shown: the current one, unless
+    /// that is being dragged out.
+    [[nodiscard]] PanelId shownPanel() const;
 
     /// Smallest and largest size this group can take, from its panels' content.
     [[nodiscard]] SizeLimits sizeLimits() const;
@@ -93,10 +119,15 @@ protected:
 
 private:
     void rebuildTabs();
+    void insertGap(int index);
     void updateTab(int index);
     void updateHeader();
+    struct ActionBar;
     void updateTitleActions(const DockPanel *current);
+    [[nodiscard]] bool fillActionBar(ActionBar &bar, const QList<QAction *> &actions);
+    void clearActionBar(ActionBar &bar);
     void clearTitleActions();
+    void headerDoubleClicked(bool onTab);
     void syncContents();
     void showGroupMenu();
     void showPanelMenu(const PanelId &panel, const QPoint &globalPos);
@@ -114,6 +145,8 @@ private:
     NodeId m_nodeId;
     QStringList m_panels;
     PanelId m_current;
+    PanelId m_draggedOut;
+    int m_dropGap = -1;
     bool m_active = false;
     bool m_maximized = false;
     bool m_headerVisible = true;
@@ -130,9 +163,7 @@ private:
     QToolButton *m_maximizeButton = nullptr;
     QToolButton *m_floatButton = nullptr;
     QToolButton *m_closeButton = nullptr;
-    QWidget *m_actionBar = nullptr;
-    QBoxLayout *m_actionLayout = nullptr;
-    /// What is in the action bar: each action with the widget standing for it.
+    /// What is in an action bar: each action with the widget standing for it.
     struct ShownAction
     {
         QPointer<QAction> action;
@@ -140,8 +171,17 @@ private:
         /// The widget was asked of a QWidgetAction and goes back to it.
         bool requested = false;
     };
-    QList<ShownAction> m_shownActions;
-    QList<QAction *> m_shownActionList;
+    struct ActionBar
+    {
+        QWidget *bar = nullptr;
+        QBoxLayout *layout = nullptr;
+        QList<ShownAction> shown;
+        QList<QAction *> list;
+    };
+    /// One for each DockTitlePlace.
+    std::array<ActionBar, 3> m_actionBars;
+    /// Takes the room behind tabs that only take what they need.
+    QWidget *m_filler = nullptr;
     bool m_actionRetried = false;
     QWidget *m_host = nullptr;
     QPoint m_titlePress;

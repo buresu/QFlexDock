@@ -378,6 +378,241 @@ private Q_SLOTS:
         QTRY_VERIFY(group->titleBar()->isVisible());
     }
 
+    // Actions before the tabs and right behind them, besides those at the end.
+    void titleActionsHaveThreePlaces()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.activatePanel(p("a")));
+        DockTabGroup *group = areaOf(f.a)->groupOfPanel(p("a"));
+        DockTabBar *bar = group->tabBar();
+        // By default the tabs have the header to themselves.
+        const int fullWidth = bar->width();
+        QVERIFY(fullWidth > bar->tabRect(1).right() + 200);
+
+        QAction list(p("List"));
+        list.setObjectName(p("tabList"));
+        QAction add(p("Add"));
+        add.setObjectName(p("newTab"));
+        int added = 0;
+        connect(&add, &QAction::triggered, this, [&added] { ++added; });
+        QAction more(p("More"));
+        DockPanel *a = f.manager.panel(p("a"));
+        a->setTitleActions({&list}, DockTitlePlace::Start);
+        a->setTitleActions({&add}, DockTitlePlace::AfterTabs);
+        a->setTitleActions({&more});
+        QCOMPARE(a->titleActions(DockTitlePlace::Start), QList<QAction *>{&list});
+        QCOMPARE(a->titleActions(DockTitlePlace::AfterTabs), QList<QAction *>{&add});
+        QCOMPARE(a->titleActions(DockTitlePlace::End), QList<QAction *>{&more});
+        QCOMPARE(a->titleActions(), QList<QAction *>{&more});
+        QCoreApplication::processEvents();
+
+        QWidget *listButton = group->widgetForAction(&list);
+        QWidget *addButton = group->widgetForAction(&add);
+        QWidget *moreButton = group->widgetForAction(&more);
+        QVERIFY(listButton && addButton && moreButton);
+        QCOMPARE(listButton->parentWidget(), group->actionBar(DockTitlePlace::Start));
+        QCOMPARE(addButton->parentWidget(), group->actionBar(DockTitlePlace::AfterTabs));
+        QCOMPARE(moreButton->parentWidget(), group->actionBar(DockTitlePlace::End));
+        QCOMPARE(group->actionBar(DockTitlePlace::Start)->objectName(), p("dockTitleStartActions"));
+        QCOMPARE(group->actionBar(DockTitlePlace::AfterTabs)->objectName(), p("dockTabActions"));
+        QCOMPARE(group->actionBar()->objectName(), p("dockTitleActions"));
+        // A button is told from the others by the name of its action.
+        QCOMPARE(addButton->property("action").toString(), p("newTab"));
+
+        // Start, tabs, the button right behind the last tab, and the rest of
+        // the header before what is at its end.
+        const QRect tabs = inGroup(group, bar);
+        QVERIFY(inGroup(group, listButton).right() < tabs.left());
+        QCOMPARE(bar->width(), bar->tabRect(1).right() + 1);
+        QVERIFY(bar->width() < fullWidth);
+        QCOMPARE(inGroup(group, addButton).left(), tabs.right() + 1);
+        QVERIFY(inGroup(group, moreButton).left() > inGroup(group, addButton).right() + 200);
+        QVERIFY(inGroup(group, moreButton).right() < inGroup(group, group->menuButton()).left());
+        grab(&f.windowA, p("header-action-places"));
+        QTest::mouseClick(addButton, Qt::LeftButton);
+        QCOMPARE(added, 1);
+
+        // A drop a little behind the last tab still appends, although the
+        // tab bar ends there.
+        const QRect region = bar->tabDropRegion();
+        QVERIFY(region.right() > bar->rect().right());
+
+        // The header beside the tabs is the title bar now. It acts like the
+        // empty part of a tab bar and stands for the group.
+        const QPoint beside = group->titleBar()->mapFrom(
+            group, QPoint(inGroup(group, addButton).right() + 60, tabs.center().y()));
+        QCOMPARE(group->titleBar()->childAt(beside), nullptr);
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.maximizedPanel().isEmpty());
+        QTest::mouseDClick(group->titleBar(), Qt::LeftButton, {}, beside);
+        QCOMPARE(f.manager.maximizedPanel(), p("a"));
+        QVERIFY(f.manager.restoreMaximizedPanel());
+        // The other tab has none: the tabs take the header again.
+        QVERIFY(f.manager.activatePanel(p("b")));
+        QCoreApplication::processEvents();
+        QVERIFY(!group->actionBar(DockTitlePlace::AfterTabs)->isVisible());
+        QVERIFY(!group->actionBar(DockTitlePlace::Start)->isVisible());
+        QVERIFY(bar->width() > bar->tabRect(1).right() + 100);
+
+        // An action may be in two places. Destroyed, it drops out of both.
+        auto *shared = new QAction(p("Shared"), this);
+        DockPanel *b = f.manager.panel(p("b"));
+        b->setTitleActions({shared}, DockTitlePlace::Start);
+        b->setTitleActions({shared}, DockTitlePlace::End);
+        delete shared;
+        QVERIFY(b->titleActions(DockTitlePlace::Start).isEmpty());
+        QVERIFY(b->titleActions().isEmpty());
+        QCoreApplication::processEvents();
+        QVERIFY(!group->actionBar()->isVisible());
+
+        // With a title bar the tabs are elsewhere; the actions stay.
+        QVERIFY(f.manager.activatePanel(p("a")));
+        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        QCoreApplication::processEvents();
+        QVERIFY(group->widgetForAction(&add)->isVisible());
+        QVERIFY(group->widgetForAction(&list)->isVisible());
+        QVERIFY(inGroup(group, group->widgetForAction(&list)).right()
+                < inGroup(group, group->titleLabel()).left());
+        QVERIFY(inGroup(group, group->titleLabel()).right()
+                < inGroup(group, group->widgetForAction(&add)).left());
+        f.manager.setGroupHeader(DockManager::GroupHeader::Tabs);
+        a->setTitleActions({}, DockTitlePlace::Start);
+        a->setTitleActions({}, DockTitlePlace::AfterTabs);
+        a->setTitleActions({});
+    }
+
+    // Tabs of one width that share the bar when it gets crowded.
+    void tabsOfAFixedWidthShrinkToShareTheBar()
+    {
+        TwoWindows f(14);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.activatePanel(p("a")));
+        const DockTabGroup *group = areaOf(f.a)->groupOfPanel(p("a"));
+        DockTabBar *bar = group->tabBar();
+        const int natural = bar->tabRect(0).width();
+        QCOMPARE(bar->tabOverflow(), DockTabOverflow::Scroll);
+
+        DockTheme theme;
+        theme.tabWidth = 150;
+        f.manager.setTheme(theme);
+        QCoreApplication::processEvents();
+        QVERIFY(natural != 150);
+        for (int i = 0; i < 3; ++i)
+            QCOMPARE(bar->tabRect(i).width(), 150);
+        QVERIFY(bar->usesScrollButtons());
+
+        theme.tabOverflow = DockTabOverflow::Shrink;
+        f.manager.setTheme(theme);
+        QCoreApplication::processEvents();
+        QCOMPARE(bar->tabOverflow(), DockTabOverflow::Shrink);
+        QVERIFY(!bar->usesScrollButtons());
+        for (int i = 0; i < 3; ++i)
+            QCOMPARE(bar->tabRect(i).width(), 150);
+        const auto closeButton = [bar](int index) {
+            QWidget *button = bar->tabButton(index, QTabBar::RightSide);
+            return button ? button : bar->tabButton(index, QTabBar::LeftSide);
+        };
+        QVERIFY(closeButton(1) && closeButton(1)->isVisible());
+
+        // More tabs than fit at that width: they all get narrower, by the
+        // same amount, and stay inside the bar.
+        for (const char *id : {"d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n"})
+            QVERIFY(f.manager.movePanel(p(id), p("a"), DockArea::Center));
+        QVERIFY(f.manager.activatePanel(p("a")));
+        QCoreApplication::processEvents();
+        QCOMPARE(bar->count(), 14);
+        const int width = bar->tabRect(0).width();
+        QVERIFY(width < 150);
+        for (int i = 0; i < bar->count(); ++i) {
+            QVERIFY(qAbs(bar->tabRect(i).width() - width) <= 1);
+            QVERIFY(bar->rect().contains(bar->tabRect(i)));
+        }
+        QVERIFY(bar->tabRect(13).right() > bar->width() - 14);
+        grab(&f.windowA, p("header-tabs-shrunk"));
+
+        // In a narrow window they are squeezed further than their buttons
+        // have room for; only the current tab keeps its own.
+        f.windowA.resize(420, 400);
+        QTRY_VERIFY(bar->tabRect(0).width() < 40);
+        for (int i = 0; i < bar->count(); ++i)
+            QVERIFY(bar->rect().contains(bar->tabRect(i)));
+        QVERIFY(closeButton(0)->isVisible());
+        QVERIFY(!closeButton(1)->isVisible());
+        QVERIFY(f.manager.activatePanel(p("b")));
+        QCoreApplication::processEvents();
+        QVERIFY(!closeButton(0)->isVisible());
+        QVERIFY(closeButton(1)->isVisible());
+        grab(&f.windowA, p("header-tabs-squeezed"));
+        // The group does not need its tabs' full width.
+        QVERIFY(group->sizeLimits().min.width() < 300);
+
+        // With room again, the buttons are back.
+        f.windowA.resize(900, 600);
+        QVERIFY(f.manager.hidePanels({p("d"), p("e"), p("f"), p("g"), p("h"), p("i"), p("j"), p("k"),
+                                      p("l"), p("m"), p("n")}));
+        QTRY_COMPARE(bar->tabRect(0).width(), 150);
+        QTRY_VERIFY(closeButton(0)->isVisible());
+        QVERIFY(closeButton(2)->isVisible());
+        theme.tabOverflow = DockTabOverflow::Scroll;
+        theme.tabWidth = -1;
+        f.manager.setTheme(theme);
+        QCoreApplication::processEvents();
+        QVERIFY(bar->usesScrollButtons());
+        QCOMPARE(bar->tabRect(0).width(), natural);
+    }
+
+    // The header of a window without a title row maximizes it.
+    void minimalWindowIsMaximizedByItsHeader()
+    {
+        TwoWindows f;
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(40, 40, 420, 300)));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        DockFloatingWindow *window = onlyFloatingWindow(f.manager);
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const DockTabGroup *group = window->area()->groupOfPanel(p("b"));
+        DockTabBar *bar = group->tabBar();
+        const QPoint beside(bar->tabRect(1).right() + 60, bar->height() / 2);
+        QVERIFY(bar->tabAt(beside) < 0);
+
+        // On a tab a double click is about the panel, as everywhere.
+        QTest::mouseDClick(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
+        QCoreApplication::processEvents();
+        QVERIFY(!window->isMaximized());
+        QVERIFY(f.manager.restoreMaximizedPanel());
+
+        const QSize normal = window->size();
+        QTest::mouseDClick(bar, Qt::LeftButton, {}, beside);
+        if (QTest::qWaitFor([&] { return window->isMaximized() && window->size() != normal; }, 3000)) {
+            QVERIFY(f.manager.maximizedPanel().isEmpty());
+            QTest::qWait(100);
+            QTest::mouseDClick(bar, Qt::LeftButton, {}, QPoint(bar->tabRect(1).right() + 60, 4));
+            QTRY_VERIFY(!window->isMaximized());
+            // (Let the window system finish before the layout changes again.)
+            QTRY_COMPARE(window->size(), normal);
+        }
+
+        // With a second group in the window, a header is about its group.
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Right));
+        QCoreApplication::processEvents();
+        DockTabBar *other = window->area()->groupOfPanel(p("c"))->tabBar();
+        // (Without a window manager the window is still "maximized" from above.)
+        const bool windowWasMaximized = window->isMaximized();
+        QTest::mouseDClick(other, Qt::LeftButton, {},
+                           QPoint(other->tabRect(0).right() + 30, other->height() / 2));
+        QCOMPARE(f.manager.maximizedPanel(), p("c"));
+        QCOMPARE(window->isMaximized(), windowWasMaximized);
+    }
+
     void minimalFrameLeavesTheHeadersToMoveTheWindow()
     {
         TwoWindows f;

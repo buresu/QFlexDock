@@ -57,17 +57,23 @@ QString DockDragController::mimeType()
 
 void DockDragController::requestPanelDrag(const PanelId &panel, const QPixmap &pixmap)
 {
+    m_dragStart = QCursor::pos();
     QMetaObject::invokeMethod(this, [this, panel, pixmap] {
         if (begin(panel, false))
             run(pixmap);
+        else
+            m_dragStart.reset();
     }, Qt::QueuedConnection);
 }
 
 void DockDragController::requestGroupDrag(const PanelId &anyPanelOfGroup, const QPixmap &pixmap)
 {
+    m_dragStart = QCursor::pos();
     QMetaObject::invokeMethod(this, [this, anyPanelOfGroup, pixmap] {
         if (begin(anyPanelOfGroup, true))
             run(pixmap);
+        else
+            m_dragStart.reset();
     }, Qt::QueuedConnection);
 }
 
@@ -183,9 +189,13 @@ DockFloatingWindow *DockDragController::createGhost()
     QPixmap picture;
     QSize size(480, 360);
     m_ghostGrip = GhostGrip;
-    QWidget *owner = nullptr;
+    // The window this may become belongs to what any floating window of the
+    // same origin belongs to: the window of the owner workspace, if there is
+    // one. Not to the window the tab is dragged out of: a child of that
+    // could never get behind it, and would not count as a window of its own.
+    const DockWorkspace *workspace = m_manager->workspaceFor(m_session->sourceContainer);
+    QWidget *owner = workspace ? workspace->window() : nullptr;
     if (DockAreaWidget *area = m_manager->areaFor(m_session->sourceContainer)) {
-        owner = area->window();
         if (DockTabGroup *group = area->group(m_session->sourceNode)) {
             size = group->size();
             picture = pictureOf(group, *m_session);
@@ -218,17 +228,40 @@ QPixmap DockDragController::pictureOf(DockTabGroup *group, const DragSession &se
     }
 
     // One tab out of several: the other tabs stay behind. Repaint the tab bar
-    // with just that tab, moved to the front.
+    // with just that tab. It stays where it is, under the pointer that holds
+    // it; in the window this becomes, it will be the first.
     const QRect barRect(bar->mapTo(group, QPoint(0, 0)), bar->size());
-    const QPixmap tab = bar->grab(bar->tabRect(index));
+    const QRect tabRect = bar->tabRect(index).intersected(bar->rect());
+    const QPixmap tab = bar->grab(tabRect);
     QPainter painter(&picture);
     painter.setClipRect(barRect);
     painter.fillRect(barRect, group->palette().color(QPalette::Window));
     QWidget *title = group->titleBar();
     title->render(&painter, title->mapTo(group, QPoint(0, 0)), QRegion(),
                   QWidget::DrawWindowBackground);
-    painter.drawPixmap(barRect.topLeft() + QPoint(0, bar->tabRect(index).top()), tab);
+    painter.drawPixmap(barRect.topLeft() + tabRect.topLeft(), tab);
+
+    // What stands right behind the tabs stands behind the one that is left.
+    QWidget *behind = group->actionBar(DockTitlePlace::AfterTabs);
+    if (behind->isVisible() && behind->parentWidget() == title) {
+        const QRect was(behind->mapTo(group, QPoint(0, 0)), behind->size());
+        QPixmap buttons(behind->size() * picture.devicePixelRatio());
+        buttons.setDevicePixelRatio(picture.devicePixelRatio());
+        buttons.fill(Qt::transparent);
+        behind->render(&buttons, QPoint(), QRegion(), QWidget::DrawChildren);
+        painter.setClipRect(was);
+        painter.fillRect(was, group->palette().color(QPalette::Window));
+        title->render(&painter, title->mapTo(group, QPoint(0, 0)), QRegion(),
+                      QWidget::DrawWindowBackground);
+        painter.setClipRect(QRect(title->mapTo(group, QPoint(0, 0)), title->size()));
+        painter.drawPixmap(QPoint(barRect.left() + tabRect.right() + 1, was.top()), buttons);
+    }
     return picture;
+}
+
+void DockDragController::showSourcePreview()
+{
+    m_manager->showDraggedOut(session());
 }
 
 void DockDragController::setCarriedWindow(QWidget *window)
@@ -282,6 +315,9 @@ DockResult DockDragController::drop(const DropTarget &target)
 DockResult DockDragController::end()
 {
     DockResult result;
+    // The views show what they hold again before that changes.
+    m_manager->hideAllOverlays();
+    m_manager->showDraggedOut(nullptr);
     if (m_session && m_pendingDrop) {
         const DragSession session = *m_session;
         result = m_manager->commitDrop(session, *m_pendingDrop);
@@ -297,6 +333,7 @@ void DockDragController::cancel()
     m_session.reset();
     m_pendingDrop.reset();
     m_manager->hideAllOverlays();
+    m_manager->showDraggedOut(nullptr);
     m_manager->setDragInProgress(false);
 }
 
@@ -332,6 +369,7 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     }
     DockFloatingWindow *carried = carriedWindow ? carriedWindow : ghost.data();
     setCarriedWindow(carried);
+    showSourcePreview();
 
     // The drag belongs to the manager, not to the tab bar it started on: that
     // widget may be gone by the time the drag ends.
@@ -350,6 +388,7 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     m_running = false;
     setCarriedWindow(nullptr);
     finish(action, ghost, carriedWindow != nullptr);
+    m_dragStart.reset();
 }
 
 void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost, bool windowDrag)
@@ -410,11 +449,17 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
     }
 
     QRect geometry;
+    // What is torn off keeps its size: the frame of its window comes on top.
+    bool frameToAdd = false;
     if (ghost) {
         // The ghost is where the user dropped it (only the compositor knows
         // where that is) and already has the right size: it simply stops
         // being a picture.
         geometry = ghost->geometry();
+    } else if (const DockFloatingWindow *whole = windowDraggedWhole(); whole && m_dragStart) {
+        // A floating window dragged by all it holds, where nothing carries
+        // it along: it goes as far as the pointer went.
+        geometry = whole->geometry().translated(QCursor::pos() - *m_dragStart);
     } else {
         QSize size(480, 360);
         if (DockAreaWidget *area = m_manager->areaFor(session.sourceContainer)) {
@@ -422,13 +467,26 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
                 size = group->size();
         }
         geometry = QRect(QCursor::pos() - QPoint(40, 12), size);
+        frameToAdd = true;
     }
     cancel();
     const DockResult result = m_manager->floatPanels(session.primary, session.wholeGroup, geometry, ghost);
-    if (result)
-        (void)m_manager->activate(session.primary, true);
-    else
+    if (!result) {
         discardGhost();
+        return;
+    }
+    if (frameToAdd) {
+        const std::optional<PanelLocation> location = m_manager->state.locate(session.primary);
+        DockFloatingWindow *window =
+            location ? m_manager->floatingWindows.value(location->container) : nullptr;
+        if (window && window->hasCustomFrame()) {
+            const QMargins frame = window->layout()->contentsMargins();
+            const int title = window->titleBar() ? window->titleBar()->sizeHint().height() : 0;
+            window->resize(geometry.size() + QSize(frame.left() + frame.right(),
+                                                   frame.top() + frame.bottom() + title));
+        }
+    }
+    (void)m_manager->activate(session.primary, true);
 }
 
 // Notes an Escape key press during the drag, on platforms whose drag loop runs

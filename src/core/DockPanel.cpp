@@ -6,6 +6,8 @@
 #include <QtCore/QEvent>
 #include <QtWidgets/QWidget>
 
+#include <algorithm>
+
 namespace QFlexDock {
 
 DockPanel::DockPanel(DockManager *manager, const PanelId &id)
@@ -194,30 +196,41 @@ void DockPanel::setCollapsible(bool collapsible)
     d->collapsible = collapsible;
 }
 
-QList<QAction *> DockPanel::titleActions() const
+QList<QAction *> DockPanel::titleActions(DockTitlePlace place) const
 {
     QList<QAction *> actions;
-    for (const QPointer<QAction> &action : std::as_const(d->titleActions)) {
+    for (const QPointer<QAction> &action : std::as_const(d->titleActions[size_t(place)])) {
         if (action)
             actions.append(action);
     }
     return actions;
 }
 
-void DockPanel::setTitleActions(const QList<QAction *> &actions)
+void DockPanel::setTitleActions(const QList<QAction *> &actions, DockTitlePlace place)
 {
-    if (titleActions() == actions)
+    if (titleActions(place) == actions)
         return;
-    for (const QPointer<QAction> &action : std::as_const(d->titleActions)) {
-        if (action)
+    using Lists = std::array<QList<QPointer<QAction>>, 3>;
+    const auto uses = [](const Lists &lists, const QAction *action) {
+        return std::any_of(lists.begin(), lists.end(),
+                           [action](const auto &list) { return list.contains(action); });
+    };
+    const Lists before = d->titleActions;
+    QList<QPointer<QAction>> &list = d->titleActions[size_t(place)];
+    list.clear();
+    for (QAction *action : actions) {
+        if (action && !list.contains(action))
+            list.append(action);
+    }
+    // An action's button goes with the action. (The same action may be in
+    // more than one place; it is watched once, while it is in any.)
+    for (const QPointer<QAction> &action : before[size_t(place)]) {
+        if (action && !uses(d->titleActions, action))
             disconnect(action, &QObject::destroyed, this, nullptr);
     }
-    d->titleActions.clear();
-    for (QAction *action : actions) {
-        if (!action || d->titleActions.contains(action))
+    for (const QPointer<QAction> &action : std::as_const(list)) {
+        if (uses(before, action))
             continue;
-        d->titleActions.append(action);
-        // Its button goes with it.
         connect(action, &QObject::destroyed, this, [this] {
             DockManagerPrivate::get(d->manager)->panelAppearanceChanged(this);
         });

@@ -18,8 +18,47 @@ namespace QFlexDock {
 
 namespace {
 
-// Width of the resizable border of a custom-framed window.
-constexpr int FrameWidth = 4;
+// How long before a window is known to be maximized its geometry may have
+// begun to change towards that already, in milliseconds.
+constexpr qint64 StateChangeTime = 250;
+
+// Width of the border of a custom-framed window unless the theme says.
+constexpr int DefaultBorderWidth = 4;
+// How far in from its edge such a window can be taken hold of to resize it.
+constexpr int GripReach = 4;
+
+// A strip along one edge of a window whose border is too thin to be grabbed.
+// It lies over the content there and paints nothing.
+class WindowGrip : public QWidget
+{
+public:
+    explicit WindowGrip(DockFloatingWindow *window)
+        : QWidget(window)
+        , m_window(window)
+    {
+        setMouseTracking(true);
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() != Qt::LeftButton || !m_window->startResize(edgesAt(event)))
+            event->ignore();
+    }
+    void mouseMoveEvent(QMouseEvent *event) override
+    {
+        if (event->buttons() == Qt::NoButton)
+            setCursor(DockFloatingWindow::resizeCursor(edgesAt(event)));
+    }
+
+private:
+    [[nodiscard]] Qt::Edges edgesAt(const QMouseEvent *event) const
+    {
+        return m_window->resizeEdgesAt(mapTo(m_window, event->position().toPoint()));
+    }
+
+    DockFloatingWindow *m_window;
+};
 
 } // namespace
 
@@ -69,13 +108,25 @@ DockFloatingWindow::DockFloatingWindow(DockManagerPrivate *manager, const QStrin
         titleLayout->addWidget(m_closeButton);
         layout->addWidget(m_titleBar);
     }
-    if (m_customFrame) {
-        setMouseTracking(true); // for the resize cursors along the border
-        updateFrameMargins();
-    }
-
     m_area = new DockAreaWidget(manager, containerId, this);
     layout->addWidget(m_area, 1);
+
+    if (m_customFrame) {
+        const DockTheme &theme = manager->theme;
+        m_borderWidth = theme.floatingBorderWidth >= 0 ? theme.floatingBorderWidth
+                                                       : DefaultBorderWidth;
+        m_cornerRadius = qMax(0, theme.floatingCornerRadius);
+        // What lies outside round corners has to be see-through, and that is
+        // settled before the window exists.
+        if (m_cornerRadius > 0)
+            setAttribute(Qt::WA_TranslucentBackground);
+        setMouseTracking(true); // for the resize cursors along the border
+        if (m_borderWidth < GripReach) {
+            for (int i = 0; i < 4; ++i)
+                m_grips.append(new WindowGrip(this));
+        }
+        updateFrameMargins();
+    }
     refreshAppearance();
 }
 
@@ -137,6 +188,9 @@ void DockFloatingWindow::present(const QRect &geometry, QWidget *ownerWindow)
     }
     m_presented = true;
     show();
+    // Where the plain window is, to begin with.
+    m_clock.start();
+    m_reported = {Reported{0, this->geometry()}};
 }
 
 // --- Drag ghost --------------------------------------------------------------
@@ -155,6 +209,7 @@ void DockFloatingWindow::beginGhost(const QPixmap &picture, const QString &title
     m_ghostPicture->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     static_cast<QVBoxLayout *>(layout())->addWidget(m_ghostPicture, 1);
     m_area->hide();
+    updateFrameMargins(); // a ghost is not resized
     // Lets the ghost notice if the compositor does not carry it along with the
     // drag after all (see dragEnterEvent()).
     setAcceptDrops(true);
@@ -169,6 +224,9 @@ void DockFloatingWindow::adoptAs(const QString &containerId)
     delete m_ghostPicture;
     m_ghostPicture = nullptr;
     m_area->show();
+    updateFrameMargins();
+    m_clock.start();
+    m_reported = {Reported{0, this->geometry()}};
 }
 
 void DockFloatingWindow::dragEnterEvent(QDragEnterEvent *event)
@@ -203,8 +261,20 @@ void DockFloatingWindow::ghostDragMoved()
 
 void DockFloatingWindow::paintEvent(QPaintEvent *)
 {
-    // Background (and whatever a style sheet says about this class).
     QPainter painter(this);
+    const qreal radius = isMaximized() || isFullScreen() ? 0 : m_cornerRadius;
+    painter.setRenderHint(QPainter::Antialiasing, radius > 0);
+    if (testAttribute(Qt::WA_TranslucentBackground)) {
+        // Nobody fills in behind a translucent window. Kept a pixel inside
+        // the outline, so that none of it shows around what is drawn next.
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(palette().window());
+        if (radius > 0)
+            painter.drawRoundedRect(QRectF(rect()).adjusted(1, 1, -1, -1), radius - 1, radius - 1);
+        else
+            painter.drawRect(rect());
+    }
+    // Whatever a style sheet says about this class.
     QStyleOption option;
     option.initFrom(this);
     style()->drawPrimitive(QStyle::PE_Widget, &option, &painter, this);
@@ -212,7 +282,11 @@ void DockFloatingWindow::paintEvent(QPaintEvent *)
         // No window system frame: a hairline keeps the window apart from
         // what is behind it.
         painter.setPen(palette().color(QPalette::Mid));
-        painter.drawRect(rect().adjusted(0, 0, -1, -1));
+        painter.setBrush(Qt::NoBrush);
+        if (radius > 0)
+            painter.drawRoundedRect(QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5), radius, radius);
+        else
+            painter.drawRect(rect().adjusted(0, 0, -1, -1));
     }
 }
 
@@ -235,6 +309,7 @@ void DockFloatingWindow::moveEvent(QMoveEvent *event)
 void DockFloatingWindow::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
+    updateFrameMargins(); // the grips follow the edges
     reportGeometry();
 }
 
@@ -243,8 +318,14 @@ void DockFloatingWindow::changeEvent(QEvent *event)
     QWidget::changeEvent(event);
     switch (event->type()) {
     case QEvent::WindowStateChange:
+        if (!isPlain())
+            settlePlainGeometry();
         updateFrameMargins();
         refreshAppearance();
+        // For style sheet rules that go by the `maximized` property.
+        style()->unpolish(this);
+        style()->polish(this);
+        update();
         break;
     case QEvent::PaletteChange:
     case QEvent::StyleChange:
@@ -255,10 +336,39 @@ void DockFloatingWindow::changeEvent(QEvent *event)
     }
 }
 
+bool DockFloatingWindow::isPlain() const
+{
+    return !(windowState() & (Qt::WindowMaximized | Qt::WindowFullScreen | Qt::WindowMinimized));
+}
+
+// The state remembers where the window is as a plain window; maximized or
+// the like, it is somewhere else and the state keeps what it has.
 void DockFloatingWindow::reportGeometry()
 {
-    if (m_manager && m_presented && !m_ghost && isVisible() && !isMaximized())
-        m_manager->floatingGeometryChanged(m_containerId, geometry());
+    if (!m_manager || !m_presented || m_ghost || !isVisible() || !isPlain())
+        return;
+    m_reported.append({m_clock.elapsed(), geometry()});
+    if (m_reported.size() > 8)
+        m_reported.removeFirst();
+    m_manager->floatingGeometryChanged(m_containerId, geometry());
+}
+
+// The window has just been maximized (or the like). Window systems differ
+// in what they tell first, the new size or the new state: what was reported
+// on the way here may be the geometry of the new state already. The plain
+// window is where it was before all that.
+void DockFloatingWindow::settlePlainGeometry()
+{
+    if (!m_manager || m_reported.isEmpty())
+        return;
+    const qint64 now = m_clock.elapsed();
+    Reported plain = m_reported.constFirst();
+    for (const Reported &reported : std::as_const(m_reported)) {
+        if (now - reported.at >= StateChangeTime)
+            plain = reported;
+    }
+    m_reported = {plain};
+    m_manager->floatingGeometryChanged(m_containerId, plain.geometry);
 }
 
 // --- Custom frame ------------------------------------------------------------
@@ -267,8 +377,24 @@ void DockFloatingWindow::updateFrameMargins()
 {
     if (!m_customFrame)
         return;
-    const int margin = isMaximized() ? 0 : FrameWidth;
-    layout()->setContentsMargins(margin, margin, margin, margin);
+    const bool framed = !isMaximized() && !isFullScreen();
+    const int margin = framed ? m_borderWidth : 0;
+    if (layout()->contentsMargins() != QMargins(margin, margin, margin, margin))
+        layout()->setContentsMargins(margin, margin, margin, margin);
+    if (m_grips.isEmpty())
+        return;
+    const QRect edges[4] = {
+        QRect(0, 0, GripReach, height()),
+        QRect(width() - GripReach, 0, GripReach, height()),
+        QRect(0, 0, width(), GripReach),
+        QRect(0, height() - GripReach, width(), GripReach),
+    };
+    for (int i = 0; i < 4; ++i) {
+        QWidget *grip = m_grips.at(i);
+        grip->setGeometry(edges[i]);
+        grip->setVisible(framed && !m_ghost);
+        grip->raise();
+    }
 }
 
 void DockFloatingWindow::toggleMaximized()
@@ -279,35 +405,54 @@ void DockFloatingWindow::toggleMaximized()
         showMaximized();
 }
 
-Qt::Edges DockFloatingWindow::edgesAt(const QPoint &pos) const
+Qt::Edges DockFloatingWindow::resizeEdgesAt(const QPoint &pos) const
 {
     Qt::Edges edges;
-    if (!m_customFrame || isMaximized())
+    if (!m_customFrame || isMaximized() || isFullScreen())
         return edges;
+    const int reach = qMax(m_borderWidth, GripReach);
     // Corners reach a little further than the border itself.
-    const int corner = FrameWidth * 3;
+    const int corner = reach * 3;
     const bool nearLeft = pos.x() < corner;
     const bool nearRight = pos.x() >= width() - corner;
     const bool nearTop = pos.y() < corner;
     const bool nearBottom = pos.y() >= height() - corner;
-    if (pos.x() < FrameWidth || (nearLeft && (pos.y() < FrameWidth || pos.y() >= height() - FrameWidth)))
+    if (pos.x() < reach || (nearLeft && (pos.y() < reach || pos.y() >= height() - reach)))
         edges |= Qt::LeftEdge;
-    if (pos.x() >= width() - FrameWidth
-        || (nearRight && (pos.y() < FrameWidth || pos.y() >= height() - FrameWidth)))
+    if (pos.x() >= width() - reach
+        || (nearRight && (pos.y() < reach || pos.y() >= height() - reach)))
         edges |= Qt::RightEdge;
-    if (pos.y() < FrameWidth || (nearTop && (pos.x() < FrameWidth || pos.x() >= width() - FrameWidth)))
+    if (pos.y() < reach || (nearTop && (pos.x() < reach || pos.x() >= width() - reach)))
         edges |= Qt::TopEdge;
-    if (pos.y() >= height() - FrameWidth
-        || (nearBottom && (pos.x() < FrameWidth || pos.x() >= width() - FrameWidth)))
+    if (pos.y() >= height() - reach
+        || (nearBottom && (pos.x() < reach || pos.x() >= width() - reach)))
         edges |= Qt::BottomEdge;
     return edges;
 }
 
+bool DockFloatingWindow::startResize(Qt::Edges edges)
+{
+    return edges && windowHandle() && windowHandle()->startSystemResize(edges);
+}
+
+Qt::CursorShape DockFloatingWindow::resizeCursor(Qt::Edges edges)
+{
+    if (edges == (Qt::LeftEdge | Qt::TopEdge) || edges == (Qt::RightEdge | Qt::BottomEdge))
+        return Qt::SizeFDiagCursor;
+    if (edges == (Qt::RightEdge | Qt::TopEdge) || edges == (Qt::LeftEdge | Qt::BottomEdge))
+        return Qt::SizeBDiagCursor;
+    if (edges & (Qt::LeftEdge | Qt::RightEdge))
+        return Qt::SizeHorCursor;
+    if (edges & (Qt::TopEdge | Qt::BottomEdge))
+        return Qt::SizeVerCursor;
+    return Qt::ArrowCursor;
+}
+
 void DockFloatingWindow::mousePressEvent(QMouseEvent *event)
 {
-    const Qt::Edges edges = edgesAt(event->position().toPoint());
-    if (event->button() == Qt::LeftButton && edges && windowHandle()) {
-        windowHandle()->startSystemResize(edges);
+    // On the border itself. (Over the content, the grips see to it.)
+    if (event->button() == Qt::LeftButton
+        && startResize(resizeEdgesAt(event->position().toPoint()))) {
         return;
     }
     QWidget::mousePressEvent(event);
@@ -316,15 +461,9 @@ void DockFloatingWindow::mousePressEvent(QMouseEvent *event)
 void DockFloatingWindow::mouseMoveEvent(QMouseEvent *event)
 {
     if (m_customFrame && event->buttons() == Qt::NoButton) {
-        const Qt::Edges edges = edgesAt(event->position().toPoint());
-        if (edges == (Qt::LeftEdge | Qt::TopEdge) || edges == (Qt::RightEdge | Qt::BottomEdge))
-            setCursor(Qt::SizeFDiagCursor);
-        else if (edges == (Qt::RightEdge | Qt::TopEdge) || edges == (Qt::LeftEdge | Qt::BottomEdge))
-            setCursor(Qt::SizeBDiagCursor);
-        else if (edges & (Qt::LeftEdge | Qt::RightEdge))
-            setCursor(Qt::SizeHorCursor);
-        else if (edges & (Qt::TopEdge | Qt::BottomEdge))
-            setCursor(Qt::SizeVerCursor);
+        const Qt::Edges edges = resizeEdgesAt(event->position().toPoint());
+        if (edges)
+            setCursor(resizeCursor(edges));
         else
             unsetCursor();
     }

@@ -97,19 +97,34 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     m_closeButton = makeTitleButton(m_titleBar, "dockCloseButton", tr("Close"));
     m_floatButton->hide();
     m_closeButton->hide();
-    m_actionBar = new QWidget(m_titleBar);
-    m_actionBar->setObjectName(QStringLiteral("dockTitleActions"));
-    m_actionBar->hide();
-    m_actionLayout = new QHBoxLayout(m_actionBar);
-    m_actionLayout->setContentsMargins(0, 0, 0, 0);
-    m_actionLayout->setSpacing(0);
+    const auto makeActionBar = [this](DockTitlePlace place, const char *objectName) {
+        ActionBar &bar = m_actionBars[size_t(place)];
+        bar.bar = new QWidget(m_titleBar);
+        bar.bar->setObjectName(QLatin1String(objectName));
+        bar.bar->hide();
+        bar.layout = new QHBoxLayout(bar.bar);
+        bar.layout->setContentsMargins(0, 0, 0, 0);
+        bar.layout->setSpacing(0);
+        return bar.bar;
+    };
+    QWidget *startActions = makeActionBar(DockTitlePlace::Start, "dockTitleStartActions");
+    QWidget *tabActions = makeActionBar(DockTitlePlace::AfterTabs, "dockTabActions");
+    QWidget *endActions = makeActionBar(DockTitlePlace::End, "dockTitleActions");
+    // Part of the title bar as far as the mouse is concerned.
+    m_filler = new QWidget(m_titleBar);
+    m_filler->setAttribute(Qt::WA_TransparentForMouseEvents);
+    m_filler->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    m_filler->hide();
 
     m_titleLayout = new QHBoxLayout(m_titleBar);
     m_titleLayout->setContentsMargins(0, 0, 2, 0);
     m_titleLayout->setSpacing(0);
+    m_titleLayout->addWidget(startActions, 0, Qt::AlignVCenter);
     m_titleLayout->addWidget(m_tabBar, 1);
     m_titleLayout->addWidget(m_titleLabel, 1);
-    m_titleLayout->addWidget(m_actionBar, 0, Qt::AlignVCenter);
+    m_titleLayout->addWidget(tabActions, 0, Qt::AlignVCenter);
+    m_titleLayout->addWidget(m_filler, 1);
+    m_titleLayout->addWidget(endActions, 0, Qt::AlignVCenter);
     for (QToolButton *button : {m_menuButton, m_maximizeButton, m_floatButton, m_closeButton})
         m_titleLayout->addWidget(button, 0, Qt::AlignVCenter);
 
@@ -131,7 +146,7 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
         (void)m_manager->activate(m_tabBar->panelAt(index), true);
         // Whatever the manager decided is what the bar shows.
         const QSignalBlocker blocker(m_tabBar);
-        m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(m_current));
+        m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(shownPanel()));
     });
     connect(m_tabBar, &QTabBar::tabCloseRequested, this,
             [this](int index) { closeByUser(m_tabBar->panelAt(index)); });
@@ -141,7 +156,7 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     });
     connect(m_tabBar, &DockTabBar::groupDragStarted, this, &DockTabGroup::startGroupDrag);
     connect(m_tabBar, &DockTabBar::panelMenuRequested, this, &DockTabGroup::showPanelMenu);
-    connect(m_tabBar, &DockTabBar::barDoubleClicked, this, &DockTabGroup::toggleMaximized);
+    connect(m_tabBar, &DockTabBar::barDoubleClicked, this, &DockTabGroup::headerDoubleClicked);
     connect(m_maximizeButton, &QToolButton::clicked, this, &DockTabGroup::toggleMaximized);
     connect(m_menuButton, &QToolButton::clicked, this, &DockTabGroup::showGroupMenu);
     connect(m_floatButton, &QToolButton::clicked, this, &DockTabGroup::toggleFloating);
@@ -196,6 +211,17 @@ void DockTabGroup::toggleMaximized()
 {
     if (m_manager && m_manager->userMay(m_current, DockFeature::Maximizable))
         (void)m_manager->setMaximized(m_current, !m_maximized);
+}
+
+// In a floating window without a title row, the header of its one group
+// stands in for it: a double click beside the tabs maximizes the window.
+void DockTabGroup::headerDoubleClicked(bool onTab)
+{
+    auto *floating = qobject_cast<DockFloatingWindow *>(window());
+    if (!onTab && floating && floating->hasMinimalFrame() && m_area->tree().tabNodes().size() == 1)
+        floating->toggleMaximized();
+    else
+        toggleMaximized();
 }
 
 void DockTabGroup::toggleFloating()
@@ -255,10 +281,12 @@ void DockTabGroup::showPanelMenu(const PanelId &panel, const QPoint &globalPos)
 }
 
 // The title bar of GroupHeader::TitleBar stands for the current panel: drag
-// it to move that panel, double click to float it or dock it again.
+// it to move that panel, double click to float it or dock it again. With
+// tabs in it, whatever of it shows beside them is like the empty part of the
+// tab bar and stands for the group.
 bool DockTabGroup::titleBarEvent(QEvent *event)
 {
-    if (!m_titleMode || !m_manager)
+    if (!m_manager)
         return false;
     switch (event->type()) {
     case QEvent::MouseButtonPress: {
@@ -266,7 +294,8 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
         if (mouse->button() == Qt::LeftButton) {
             m_titlePressed = true;
             m_titlePress = mouse->position().toPoint();
-            (void)m_manager->activate(m_current, true);
+            if (m_titleMode)
+                (void)m_manager->activate(m_current, true);
         }
         break;
     }
@@ -276,7 +305,10 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
             && (mouse->position().toPoint() - m_titlePress).manhattanLength()
                    >= QApplication::startDragDistance()) {
             m_titlePressed = false; // one drag per press
-            startPanelDrag(m_current, m_titleBar->grab());
+            if (m_titleMode)
+                startPanelDrag(m_current, m_titleBar->grab());
+            else
+                startGroupDrag();
         }
         break;
     }
@@ -286,7 +318,10 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
     case QEvent::MouseButtonDblClick:
         if (static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
             m_titlePressed = false;
-            toggleFloating();
+            if (m_titleMode)
+                toggleFloating();
+            else
+                headerDoubleClicked(false);
             return true;
         }
         break;
@@ -304,6 +339,9 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
 void DockTabGroup::setNode(const LayoutNode &node, bool maximized)
 {
     m_nodeId = node.id;
+    // A panel that is gone is not dragged out of here any more.
+    if (!node.panels.contains(m_draggedOut))
+        m_draggedOut.clear();
     if (m_panels != node.panels) {
         m_panels = node.panels;
         m_current = node.active;
@@ -311,7 +349,7 @@ void DockTabGroup::setNode(const LayoutNode &node, bool maximized)
     } else if (m_current != node.active) {
         m_current = node.active;
         const QSignalBlocker blocker(m_tabBar);
-        m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(m_current));
+        m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(shownPanel()));
     }
     if (m_maximized != maximized) {
         m_maximized = maximized;
@@ -341,7 +379,7 @@ void DockTabGroup::updateHeader()
             m_tabBar->setTabsClosable(false);
         } else {
             groupLayout->removeWidget(m_tabBar);
-            m_titleLayout->insertWidget(0, m_tabBar, 1);
+            m_titleLayout->insertWidget(m_titleLayout->indexOf(m_titleLabel), m_tabBar, 1);
             m_tabBar->setShape(QTabBar::RoundedNorth);
             m_tabBar->setTabsClosable(true);
         }
@@ -351,7 +389,7 @@ void DockTabGroup::updateHeader()
     }
     setShown(m_tabBar, !titleMode || m_panels.size() > 1);
 
-    const DockPanel *current = m_manager->panels.value(m_current);
+    const DockPanel *current = m_manager->panels.value(shownPanel());
     QString title = current ? current->title() : QString();
     if (current && current->isDirty())
         title += QStringLiteral(" ●");
@@ -383,15 +421,48 @@ void DockTabGroup::updateHeader()
     }
 }
 
-// The current panel's own actions, each as a button, a line or the widget
-// the action brings along. Rebuilt only when the list changes.
+// The current panel's own actions in their three places, each as a button, a
+// line or the widget the action brings along. A place is rebuilt only when
+// its list changes.
 void DockTabGroup::updateTitleActions(const DockPanel *current)
 {
-    const QList<QAction *> actions = current ? current->titleActions() : QList<QAction *>();
-    if (actions == m_shownActionList)
-        return;
-    clearTitleActions();
-    m_shownActionList = actions;
+    bool widgetBusy = false;
+    for (const DockTitlePlace place :
+         {DockTitlePlace::Start, DockTitlePlace::AfterTabs, DockTitlePlace::End}) {
+        const QList<QAction *> actions = current ? current->titleActions(place) : QList<QAction *>();
+        widgetBusy = !fillActionBar(m_actionBars[size_t(place)], actions) || widgetBusy;
+    }
+
+    // With something behind the tabs, the tab bar is only as wide as its
+    // tabs, and the rest of the header is the title bar's.
+    const bool tabsFit = !m_titleMode
+        && !m_actionBars[size_t(DockTitlePlace::AfterTabs)].shown.isEmpty();
+    m_titleLayout->setStretchFactor(m_tabBar, tabsFit ? 0 : 1);
+    setShown(m_filler, tabsFit);
+
+    // An action's one widget may still be with the group the panel just left
+    // (which group hears of a change first is not defined). Ask again once
+    // that group has let go of it.
+    if (widgetBusy && !m_actionRetried) {
+        m_actionRetried = true;
+        QMetaObject::invokeMethod(this, [this] {
+            for (ActionBar &bar : m_actionBars)
+                bar.list.clear();
+            updateHeader();
+            m_area->contentLimitsChanged();
+        }, Qt::QueuedConnection);
+    } else if (!widgetBusy) {
+        m_actionRetried = false;
+    }
+}
+
+// False if the widget of an action was not to be had.
+bool DockTabGroup::fillActionBar(ActionBar &bar, const QList<QAction *> &actions)
+{
+    if (actions == bar.list)
+        return true;
+    clearActionBar(bar);
+    bar.list = actions;
     bool widgetBusy = false;
 
     const int themed = m_manager->theme.iconSize;
@@ -401,20 +472,22 @@ void DockTabGroup::updateTitleActions(const DockPanel *current)
         ShownAction shown;
         shown.action = action;
         if (auto *widgetAction = qobject_cast<QWidgetAction *>(action)) {
-            shown.widget = widgetAction->requestWidget(m_actionBar);
+            shown.widget = widgetAction->requestWidget(bar.bar);
             shown.requested = shown.widget != nullptr;
             widgetBusy = widgetBusy || (!shown.widget && widgetAction->defaultWidget());
         }
         if (!shown.widget && action->isSeparator()) {
-            auto *line = new QFrame(m_actionBar);
+            auto *line = new QFrame(bar.bar);
             line->setObjectName(QStringLiteral("dockActionSeparator"));
             line->setFrameShape(QFrame::VLine);
             line->setFrameShadow(QFrame::Plain);
             shown.widget = line;
         }
         if (!shown.widget) {
-            auto *button = new QToolButton(m_actionBar);
+            auto *button = new QToolButton(bar.bar);
             button->setObjectName(QStringLiteral("dockActionButton"));
+            // Lets a style sheet tell one action's button from another's.
+            button->setProperty("action", action->objectName());
             button->setAutoRaise(true);
             button->setFocusPolicy(Qt::NoFocus);
             button->setIconSize(QSize(iconSize, iconSize));
@@ -425,40 +498,27 @@ void DockTabGroup::updateTitleActions(const DockPanel *current)
         }
         QWidget *widget = shown.widget;
         // A separator is as high as the buttons beside it.
-        m_actionLayout->addWidget(widget, 0,
-                                  action->isSeparator() && !shown.requested ? Qt::Alignment()
-                                                                            : Qt::AlignVCenter);
+        bar.layout->addWidget(widget, 0,
+                              action->isSeparator() && !shown.requested ? Qt::Alignment()
+                                                                        : Qt::AlignVCenter);
         widget->setVisible(action->isVisible());
         connect(action, &QAction::changed, widget, [action, widget] {
             setShown(widget, action->isVisible());
         });
-        m_shownActions.append(shown);
+        bar.shown.append(shown);
     }
-    setShown(m_actionBar, !m_shownActions.isEmpty());
-
-    // An action's one widget may still be with the group the panel just left
-    // (which group hears of a change first is not defined). Ask again once
-    // that group has let go of it.
-    if (widgetBusy && !m_actionRetried) {
-        m_actionRetried = true;
-        QMetaObject::invokeMethod(this, [this] {
-            m_shownActionList.clear();
-            updateHeader();
-            m_area->contentLimitsChanged();
-        }, Qt::QueuedConnection);
-    } else if (!widgetBusy) {
-        m_actionRetried = false;
-    }
+    setShown(bar.bar, !bar.shown.isEmpty());
+    return !widgetBusy;
 }
 
-void DockTabGroup::clearTitleActions()
+void DockTabGroup::clearActionBar(ActionBar &bar)
 {
-    for (const ShownAction &shown : std::as_const(m_shownActions)) {
+    for (const ShownAction &shown : std::as_const(bar.shown)) {
         if (!shown.widget)
             continue;
         if (shown.action)
             disconnect(shown.action, nullptr, shown.widget, nullptr);
-        m_actionLayout->removeWidget(shown.widget);
+        bar.layout->removeWidget(shown.widget);
         auto *widgetAction = shown.requested ? qobject_cast<QWidgetAction *>(shown.action.data())
                                              : nullptr;
         if (widgetAction) {
@@ -469,15 +529,23 @@ void DockTabGroup::clearTitleActions()
             shown.widget->deleteLater();
         }
     }
-    m_shownActions.clear();
-    m_shownActionList.clear();
+    bar.shown.clear();
+    bar.list.clear();
+}
+
+void DockTabGroup::clearTitleActions()
+{
+    for (ActionBar &bar : m_actionBars)
+        clearActionBar(bar);
 }
 
 QWidget *DockTabGroup::widgetForAction(const QAction *action) const
 {
-    for (const ShownAction &shown : m_shownActions) {
-        if (shown.action == action)
-            return shown.widget;
+    for (const ActionBar &bar : m_actionBars) {
+        for (const ShownAction &shown : bar.shown) {
+            if (shown.action == action)
+                return shown.widget;
+        }
     }
     return nullptr;
 }
@@ -504,11 +572,82 @@ void DockTabGroup::rebuildTabs()
     while (m_tabBar->count() > 0)
         m_tabBar->removeTab(0);
     for (const PanelId &panel : std::as_const(m_panels)) {
+        if (panel == m_draggedOut)
+            continue;
         const int index = m_tabBar->addTab(QString());
         m_tabBar->setTabData(index, panel);
         updateTab(index);
     }
-    m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(m_current));
+    if (m_dropGap >= 0)
+        insertGap(qMin(m_dropGap, m_tabBar->count()));
+    m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(shownPanel()));
+}
+
+// An empty place among the tabs: a tab without a panel, a button or a picture.
+void DockTabGroup::insertGap(int index)
+{
+    // As wide as the tabs around it.
+    int width = 0;
+    for (int i = 0; i < m_tabBar->count() && width == 0; ++i)
+        width = m_tabBar->tabRect(i).width();
+    m_tabBar->setGapWidth(width);
+    const int gap = m_tabBar->insertTab(index, QString());
+    m_tabBar->setTabEnabled(gap, false);
+    for (const QTabBar::ButtonPosition side : {QTabBar::LeftSide, QTabBar::RightSide})
+        m_tabBar->setTabButton(gap, side, nullptr);
+}
+
+// --- Preview of a tab drag ---------------------------------------------------------
+
+PanelId DockTabGroup::shownPanel() const
+{
+    if (m_current != m_draggedOut || m_draggedOut.isEmpty())
+        return m_current;
+    // The tab behind the one that left, or the one before it.
+    const qsizetype index = m_panels.indexOf(m_draggedOut);
+    if (index + 1 < m_panels.size())
+        return m_panels.at(index + 1);
+    return index > 0 ? m_panels.at(index - 1) : m_current;
+}
+
+void DockTabGroup::setDraggedOut(const PanelId &panel)
+{
+    // Its last tab is not taken out of a group: there would be no header left.
+    const PanelId out = m_panels.size() > 1 && m_panels.contains(panel) ? panel : PanelId();
+    if (m_draggedOut == out)
+        return;
+    m_draggedOut = out;
+    rebuildTabs();
+    updateHeader();
+    syncContents();
+}
+
+void DockTabGroup::setDropGap(int index)
+{
+    if (m_dropGap == index)
+        return;
+    const QSignalBlocker blocker(m_tabBar);
+    const int shown = m_tabBar->gapIndex();
+    m_dropGap = index;
+    if (shown >= 0 && index >= 0) {
+        m_tabBar->moveTab(shown, qMin(index, m_tabBar->count() - 1));
+    } else if (shown >= 0) {
+        m_tabBar->removeTab(shown);
+    } else if (index >= 0) {
+        insertGap(qMin(index, m_tabBar->count()));
+    }
+    m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(shownPanel()));
+}
+
+int DockTabGroup::dropIndexAt(const QPoint &pos, int *gap) const
+{
+    // Among the tabs shown. Those behind a tab that is dragged out are one
+    // further along among the panels.
+    const int shown = m_tabBar->insertIndexAt(pos);
+    if (gap)
+        *gap = shown;
+    const int out = m_draggedOut.isEmpty() ? -1 : int(m_panels.indexOf(m_draggedOut));
+    return out >= 0 && shown > out ? shown + 1 : shown;
 }
 
 void DockTabGroup::updateTab(int index)
@@ -579,12 +718,15 @@ void DockTabGroup::refreshAppearance()
                                  : style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
     for (QToolButton *button : {m_menuButton, m_maximizeButton, m_floatButton, m_closeButton})
         button->setIconSize(QSize(small, small));
-    for (const ShownAction &shown : std::as_const(m_shownActions)) {
-        if (auto *button = qobject_cast<QToolButton *>(shown.widget.data());
-            button && !shown.requested) {
-            button->setIconSize(QSize(small, small));
+    for (const ActionBar &bar : std::as_const(m_actionBars)) {
+        for (const ShownAction &shown : bar.shown) {
+            if (auto *button = qobject_cast<QToolButton *>(shown.widget.data());
+                button && !shown.requested) {
+                button->setIconSize(QSize(small, small));
+            }
         }
     }
+    m_tabBar->setTabSizing(m_manager->theme.tabWidth, m_manager->theme.tabOverflow);
     m_closeButton->setIcon(m_manager->icon(DockIcon::Close, this));
     if (themed > 0)
         m_tabBar->setIconSize(QSize(themed, themed));
@@ -603,18 +745,19 @@ void DockTabGroup::syncContents()
 {
     if (!m_manager)
         return;
+    const PanelId shown = shownPanel();
     for (const PanelId &id : std::as_const(m_panels)) {
         DockPanel *panel = m_manager->panels.value(id);
         if (!panel)
             continue;
         // Only the visible panel forces a lazily created content into being.
-        QWidget *widget = id == m_current ? m_manager->ensureWidget(panel)
-                                          : DockManagerPrivate::get(panel)->widget.data();
+        QWidget *widget = id == shown ? m_manager->ensureWidget(panel)
+                                      : DockManagerPrivate::get(panel)->widget.data();
         if (!widget)
             continue;
         if (widget->parentWidget() != m_host)
             m_manager->reparentContent(panel, m_host);
-        if (id != m_current)
+        if (id != shown)
             widget->hide();
     }
     updateContentGeometry();
@@ -624,7 +767,7 @@ void DockTabGroup::updateContentGeometry()
 {
     if (!m_manager)
         return;
-    DockPanel *panel = m_manager->panels.value(m_current);
+    DockPanel *panel = m_manager->panels.value(shownPanel());
     QWidget *widget = panel ? DockManagerPrivate::get(panel)->widget.data() : nullptr;
     if (!widget || widget->parentWidget() != m_host)
         return;

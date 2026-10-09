@@ -148,9 +148,14 @@ public:
     DockResult moveTabGroup(const PanelId &anyPanelOfGroup, const PanelId &relativeTo,
                             DockArea area, int tabIndex = -1, double fraction = -1.0);
 
-    /// Moves the panel (or its whole tab group) into a new floating window. A
-    /// null geometry picks a default near the panel's current position. Note
-    /// that Wayland compositors ignore the position.
+    /// Moves the panel (or its whole tab group) into a new floating window; a
+    /// closed panel is shown in one. A null geometry picks a default near the
+    /// panel's current position. Note that Wayland compositors ignore the
+    /// position.
+    ///
+    /// Floating windows need no workspace: an application can consist of
+    /// them alone, every window a set of tabs that are dragged from one to
+    /// the other, and each gone with its last panel.
     DockResult floatPanel(const PanelId &id, const QRect &geometry = {});
     DockResult floatTabGroup(const PanelId &anyPanelOfGroup, const QRect &geometry = {});
     /// Puts a floating or auto-hidden panel back where it was last docked.
@@ -174,6 +179,9 @@ public:
     /// gives it keyboard focus.
     DockResult activatePanel(const PanelId &id);
     [[nodiscard]] DockPanel *activePanel() const;
+    /// The panels that share a tab group with `id`, itself included, in the
+    /// order of their tabs. Empty if the panel is not in a tab group.
+    [[nodiscard]] QStringList tabGroupPanels(const PanelId &id) const;
 
     /// Lets the panel's tab group fill its workspace (or floating window). The
     /// layout tree is left untouched, so restoring brings everything back.
@@ -237,6 +245,24 @@ public:
     /// Whether the point where a vertical and a horizontal split handle meet
     /// can be dragged to move both at once (default true).
     void setCornerResizeEnabled(bool enabled);
+    [[nodiscard]] bool isCenterDropEnabled() const;
+    /// Whether the middle of a tab group takes a dragged panel (default
+    /// true): as a new tab of that group, or, on the group the panel comes
+    /// from, to leave it where it is. Turned off, a panel becomes a tab by
+    /// the header of a group only: between two tabs, or anywhere on the title
+    /// row when the sides of the group are not open to it either
+    /// (DockPolicy::allowedAreas). The rest of the group is then no drop
+    /// target, and what is let go of there floats like anything dropped
+    /// outside every dock area: tabs are torn off by dragging them away.
+    void setCenterDropEnabled(bool enabled);
+    [[nodiscard]] bool isTabDragPreviewEnabled() const;
+    /// Whether tab bars show a tab drag as it would turn out (default
+    /// false). The tab that is dragged leaves its bar at once, the tabs
+    /// behind it closing up, and the tabs it is held over make room for it
+    /// where it would go, instead of a mark between them. This is shown
+    /// only: the layout changes when the tab is dropped, and a cancelled
+    /// drag puts everything back as it was. The last tab of a group stays.
+    void setTabDragPreviewEnabled(bool enabled);
     [[nodiscard]] bool floatsOnOutsideDrop() const;
     /// Whether dropping a dragged panel outside every dock area floats it.
     /// Defaults to true where that can be told apart from a cancelled drag

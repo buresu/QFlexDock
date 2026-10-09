@@ -15,6 +15,7 @@
 #include <QtCore/QTimer>
 #include <QtGui/QWindow>
 #include <QtTest/QSignalSpy>
+#include <QtWidgets/QLabel>
 #include <QtWidgets/QPlainTextEdit>
 
 using namespace QFlexDock;
@@ -194,6 +195,105 @@ private Q_SLOTS:
         QVERIFY(!target->overlay()->isVisible());
         // Escape must not be mistaken for "dropped outside": nothing floats.
         QCOMPARE(priv(f.manager)->floatingWindows.size(), 0);
+    }
+
+    // Windows that are rows of tabs and nothing else: a tab goes from one
+    // window into the row of another, and a tab let go of anywhere else
+    // becomes a window. No workspace is involved.
+    void tabsBetweenWindowsOfTabs()
+    {
+        DockManager manager;
+        manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        manager.setCenterDropEnabled(false);
+        QVERIFY(manager.floatsOnOutsideDrop());
+        QHash<QString, QLabel *> labels;
+        DockPolicy policy;
+        policy.allowedAreas = DockArea::Center;
+        for (const char *id : {"a", "b", "c"}) {
+            labels.insert(p(id), new QLabel(p(id)));
+            QVERIFY(manager.registerPanel(p(id), labels.value(p(id))));
+            QVERIFY(manager.setDockPolicy(p(id), policy));
+        }
+        DockManagerPrivate *d = priv(manager);
+        DockDragController *controller = d->drag;
+        QVERIFY(manager.floatPanel(p("a"), QRect(40, 60, 700, 420)));
+        QVERIFY(manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(manager.floatPanel(p("c"), QRect(820, 80, 700, 420)));
+        const auto windowOf = [&](const char *id) {
+            return qobject_cast<DockFloatingWindow *>(labels[p(id)]->window());
+        };
+        DockFloatingWindow *first = windowOf("a");
+        DockFloatingWindow *second = windowOf("c");
+        QVERIFY(first && second && first != second);
+        QVERIFY(QTest::qWaitForWindowExposed(first));
+        QVERIFY(QTest::qWaitForWindowExposed(second));
+        const auto barOf = [&](const char *id) {
+            return windowOf(id)->area()->groupOfPanel(p(id))->tabBar();
+        };
+        bool done = false;
+        const auto dragTab = [&](const char *id, const QPoint &globalTarget) {
+            DockTabBar *bar = barOf(id);
+            QWidget *window = bar->window();
+            const QPoint press = bar->tabRect(bar->indexOfPanel(p(id))).center();
+            QCursor::setPos(bar->mapToGlobal(press));
+            QTest::mousePress(bar, Qt::LeftButton, {}, press);
+            QTest::mouseMove(bar, press + QPoint(30, 30));
+            // (The pointer itself is taken along, from the press to the
+            // release: where a window lands is worked out from where it is.)
+            script(this, {
+                [window, globalTarget] { moveTo(window, globalTarget - QPoint(30, 10)); },
+                [window, globalTarget] {
+                    QCursor::setPos(globalTarget);
+                    moveTo(window, globalTarget);
+                },
+                [window, globalTarget] { releaseAt(window, globalTarget); },
+            }, &done);
+        };
+
+        // 1. From the first window onto the title row of the second, beside
+        // its one tab: a tab there.
+        const DockTabBar *target = barOf("c");
+        const QWidget *title = second->area()->groupOfPanel(p("c"))->titleBar();
+        dragTab("b", title->mapToGlobal(QPoint(target->tabRect(0).right() + 160, title->height() / 2)));
+        QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
+        QCOMPARE(describe(second->area()->tree()), p("c|b"));
+        QCOMPARE(describe(first->area()->tree()), p("a"));
+        QCOMPARE(d->floatingWindows.size(), 2);
+
+        // 2. Let go of over the content of its own window: torn off, into a
+        // window of the same size.
+        const QPoint onContent = labels[p("c")]->mapToGlobal(QPoint(200, 150));
+        dragTab("c", onContent);
+        QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
+        QCOMPARE(d->floatingWindows.size(), 3);
+        DockFloatingWindow *third = windowOf("c");
+        QVERIFY(third != second);
+        QCOMPARE(describe(second->area()->tree()), p("b"));
+        QCOMPARE(describe(third->area()->tree()), p("c"));
+        QTRY_COMPARE(third->size(), second->size());
+
+        // 3. The only tab of a window, let go of where nothing takes it: the
+        // window goes as far as the pointer went, and stays the only one.
+        QVERIFY(QTest::qWaitForWindowExposed(third));
+        const QPoint before = third->pos();
+        const DockTabBar *own = barOf("c");
+        const QPoint grip = own->mapToGlobal(own->tabRect(0).center());
+        const QPoint nowhere = grip + QPoint(-150, 260);
+        QVERIFY(!third->geometry().contains(nowhere));
+        dragTab("c", nowhere);
+        QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
+        QCOMPARE(d->floatingWindows.size(), 3);
+        QCOMPARE(windowOf("c"), third);
+        QTRY_COMPARE(third->pos(), before + QPoint(-150, 260));
+
+        // 4. Back into the first window, before its tab; its own window goes.
+        const QPointer<DockFloatingWindow> gone(third);
+        const DockTabBar *firstBar = barOf("a");
+        dragTab("c", firstBar->mapToGlobal(firstBar->tabRect(0).topLeft() + QPoint(6, 12)));
+        QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
+        QCOMPARE(describe(first->area()->tree()), p("c|a"));
+        QCOMPARE(d->floatingWindows.size(), 2);
+        QTRY_VERIFY(!gone);
     }
 
     void droppingOutsideEveryWindowFloatsThePanel()

@@ -15,7 +15,7 @@ QFlexDock has no theme of its own. Looks are decided in three layers, each overr
 | Tab group frame | `QFrame::StyledPanel` |
 | Title row buttons | `QToolButton`s with line icons in the palette's `WindowText` color; a panel's own actions as `QToolButton`s with the icons they bring |
 | Drop guide | Translucent colors derived from the palette's `Highlight` |
-| Floating windows | The platform's window frame, or with `FloatingFrame::Custom` a title row and a thin border |
+| Floating windows | The platform's window frame, or with `FloatingFrame::Custom` a title row and a thin border (`Minimal`: the border alone) |
 
 Changes to the style, palette, font or style sheet, and the system's light/dark switch, are picked up
 through Qt's change events; there is nothing to call. All sizes are device-independent pixels.
@@ -31,8 +31,8 @@ There are no sub-controls or pseudo-states beyond these.
 | `QFlexDock--DockTabGroup #dockTitleBar` | Its title row | `background`, … |
 | `#dockTitle` | The title in it (`QLabel`, with `GroupHeader::TitleBar`) | `color`, `font`, `background`, … |
 | `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton`, `QFlexDock--DockTabGroup #dockCloseButton` | Title row buttons | As `QToolButton` |
-| `#dockTitleActions` | What holds a panel's own actions (`DockPanel::setTitleActions()`) | `background`, … |
-| `#dockActionButton`, `#dockActionSeparator` | Their buttons, and the lines between them | As `QToolButton` / `background`, `margin`, `min-width` |
+| `#dockTitleActions`, `#dockTitleStartActions`, `#dockTabActions` | What holds a panel's own actions (`DockPanel::setTitleActions()`): at the end of the header, at its start, behind the tabs | `background`, … |
+| `#dockActionButton`, `#dockActionSeparator` | Their buttons, and the lines between them | As `QToolButton` / `background`, `margin`, `min-width`; a button has the object name of its action as property `action` |
 | `QFlexDock--DockTabBar` | The tab bar (`QTabBar`) | `qproperty-activeIndicatorColor`; property `activeGroup` |
 | `QFlexDock--DockTabBar::tab`, `::tab:selected`, … | Tabs, above or below the content | The same as `QTabBar::tab` |
 | `QFlexDock--DockSplitHandle` | Split handles | `background`, `border`; properties `orientation` (`1`: vertical bar, `2`: horizontal bar), `hovered`, `pressed` |
@@ -40,7 +40,7 @@ There are no sub-controls or pseudo-states beyond these.
 | `QFlexDock--DockAutoHideBar` | Auto-hide bars | `background`, …; property `edge` (`left`, `right`, `top`, `bottom`) |
 | `QFlexDock--DockAutoHidePopup` | The panel that slides out (`QFrame`) | `background`, `border`; buttons `#dockPinButton`, `#dockCloseButton` |
 | `QFlexDock--DockDropOverlay` | The drop guide | Only the `qproperty-*` below |
-| `QFlexDock--DockFloatingWindow` | Floating windows | `background`, with a custom frame also `border`; property `customFrame` |
+| `QFlexDock--DockFloatingWindow` | Floating windows | `background`, with a custom frame also `border` and `border-radius`; properties `customFrame`, `maximized` |
 | `#dockFloatingTitleBar`, `#dockFloatingTitle` | Title row and title text of a custom frame | `background`, `color`, … |
 | `#dockFloatingMaximizeButton`, `#dockFloatingCloseButton` | Its buttons | As `QToolButton` |
 
@@ -67,6 +67,12 @@ Notes:
 - A workspace is a widget: give it an object name, and `#documents QFlexDock--DockTabBar::tab { … }` styles
   its tabs differently from those of other workspaces. (Floating windows are not inside a workspace;
   `QFlexDock--DockFloatingWindow QFlexDock--DockTabBar::tab` reaches theirs.)
+- `#dockTabActions #dockActionButton[action="newTab"] { … }` styles the button of the action whose object
+  name is `newTab`, and only behind the tabs.
+- Round corners on a floating window need the theme token `floatingCornerRadius` (the window has to be
+  translucent, which a style sheet cannot ask for). A style sheet that draws the frame gives it a
+  `border-radius` to match, and may round fewer corners; `[maximized="true"]` is where to take border and
+  radius away again.
 - `qproperty-*` is applied once, when the widget is first polished (a Qt rule), and stays after the style
   sheet is removed.
 - The 2px mark on the current tab of the active group takes its color from `qproperty-activeIndicatorColor`;
@@ -97,6 +103,10 @@ theme.splitHandleHoverWidth = 8;                         // drawn this wide whil
 theme.iconSize = 18;                                     // -1: the style's size
 theme.titleButtons = QFlexDock::DockTitleButton::Float   // buttons in a group's header;
                    | QFlexDock::DockTitleButton::Close;  // the default is Menu | Maximize
+theme.tabWidth = 200;                                    // every tab this wide; -1: as wide as its title
+theme.tabOverflow = QFlexDock::DockTabOverflow::Shrink;  // tabs share a crowded bar; default: Scroll
+theme.floatingBorderWidth = 1;                           // frames drawn by QFlexDock; -1: 4 pixels
+theme.floatingCornerRadius = 10;                         // their corners; 0: square
 theme.overlay.hoverColor = QColor(255, 128, 0, 120);     // an invalid color is derived from the palette
 theme.overlay.edgeFraction = 0.25;                       // depth of the edge zones, relative to the target
 theme.overlay.outerBandWidth = 32;                       // band along the workspace border; 0 disables it
@@ -105,6 +115,15 @@ manager.setTheme(theme);                                 // at any time
 ```
 
 Icons that can be replaced: `Close`, `Maximize`, `Restore`, `Float`, `Dock`, `Pin`, `Unpin`, `Menu`.
+
+With `DockTabOverflow::Shrink` the tabs of a crowded bar get narrower together instead of scrolling. A tab
+too narrow for its close button loses it, except the current one. A border thinner than four pixels is
+still grabbed over four, across the edge of the content. `floatingBorderWidth` and `floatingCornerRadius`
+apply to the floating windows created after `setTheme()`.
+
+A tab of any shape can be drawn by the application's `QStyle` (a `QProxyStyle` handling
+`QStyle::CE_TabBarTab`), as `examples/chrome-style` does; a style sheet rule for `::tab` takes the tabs
+away from the style.
 
 ## Painting the drop guide yourself
 

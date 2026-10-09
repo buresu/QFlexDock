@@ -103,6 +103,18 @@ Q_DECLARE_OPERATORS_FOR_FLAGS(DockFeatures)
 
 inline constexpr DockFeatures AllDockFeatures = DockFeatures(0x3f);
 
+/// Where in the header of a tab group a panel's own actions are shown (see
+/// DockPanel::setTitleActions()).
+enum class DockTitlePlace {
+    /// At the end of the header, before the built-in buttons.
+    End,
+    /// At its start, before the tabs.
+    Start,
+    /// Right behind the last tab.
+    AfterTabs,
+};
+Q_ENUM_NS(DockTitlePlace)
+
 enum class DockError {
     None,
     InvalidArgument,

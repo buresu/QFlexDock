@@ -115,6 +115,11 @@ bool QmlDockController::isPanelOpen(const QString &id) const
     return p && p->isOpen();
 }
 
+QStringList QmlDockController::tabGroupPanels(const QString &id) const
+{
+    return m_manager ? m_manager->tabGroupPanels(id) : QStringList();
+}
+
 QObject *QmlDockController::panel(const QString &id) const
 {
     DockPanel *p = m_manager ? m_manager->panel(id) : nullptr;

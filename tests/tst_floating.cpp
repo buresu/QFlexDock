@@ -10,6 +10,7 @@
 #include "core/DockDragController.h"
 #include "widgets/DockDropOverlay.h"
 #include "widgets/DockFloatingWindow.h"
+#include "widgets/DockTabBar.h"
 
 #include <QtCore/QDataStream>
 #include <QtCore/QMimeData>
@@ -18,6 +19,7 @@
 #include <QtGui/QWindow>
 #include <QtTest/QSignalSpy>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QLayout>
 #include <QtWidgets/QToolButton>
 
 using namespace QFlexDock;
@@ -186,6 +188,209 @@ private Q_SLOTS:
         qApp->setStyleSheet(QString());
     }
 
+    // An application made of floating windows alone: no workspace anywhere.
+    void windowsNeedNoWorkspace()
+    {
+        DockManager manager;
+        QHash<QString, QLabel *> labels;
+        for (const char *id : {"a", "b", "c"}) {
+            labels.insert(p(id), new QLabel(p(id)));
+            QVERIFY(manager.registerPanel(p(id), labels.value(p(id))));
+        }
+        DockManagerPrivate *d = priv(manager);
+        QVERIFY(manager.workspaces().isEmpty());
+
+        // A closed panel is shown in a window of its own, which belongs to
+        // no other window.
+        QVERIFY(manager.floatPanel(p("a"), QRect(40, 40, 400, 300)));
+        const DockPanel *a = manager.panel(p("a"));
+        QVERIFY(a->isOpen());
+        QVERIFY(a->isFloating());
+        QVERIFY(!a->workspace());
+        QCOMPARE(d->floatingWindows.size(), 1);
+        auto *first = qobject_cast<DockFloatingWindow *>(labels[p("a")]->window());
+        QVERIFY(first);
+        QVERIFY(QTest::qWaitForWindowExposed(first));
+        QTRY_COMPARE(first->size(), QSize(400, 300));
+        QVERIFY(!first->windowHandle()->transientParent());
+        QCOMPARE(first->windowTitle(), p("a"));
+
+        // More tabs for it, and a second window.
+        QVERIFY(manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QCOMPARE(labels[p("b")]->window(), first);
+        QVERIFY(manager.floatPanel(p("c")));
+        auto *second = qobject_cast<DockFloatingWindow *>(labels[p("c")]->window());
+        QVERIFY(second && second != first);
+        QCOMPARE(d->floatingWindows.size(), 2);
+
+        // A tab dragged from one window to the other; its window goes with
+        // its last panel.
+        const QPointer<DockFloatingWindow> guard(second);
+        DropTarget target;
+        target.container = first->containerId();
+        target.node = first->area()->groupOfPanel(p("a"))->nodeId();
+        target.area = DockArea::Center;
+        target.tabIndex = 1;
+        QVERIFY(d->drag->begin(p("c"), false));
+        QVERIFY(d->drag->drop(target));
+        QCOMPARE(describe(first->area()->tree()), p("a|c|b"));
+        QCOMPARE(d->floatingWindows.size(), 1);
+        QTRY_VERIFY(!guard);
+
+        // Torn off again, and closed: shown once more, it has its window back.
+        QVERIFY(manager.floatPanel(p("b"), QRect(100, 100, 320, 240)));
+        QCOMPARE(d->floatingWindows.size(), 2);
+        QVERIFY(manager.hidePanel(p("b")));
+        QCOMPARE(d->floatingWindows.size(), 1);
+        QVERIFY(manager.floatPanel(p("b")));
+        QCOMPARE(d->floatingWindows.size(), 2);
+        QCOMPARE(d->state.find(d->state.locate(p("b"))->container)->geometry.size(),
+                 QSize(320, 240));
+        QVERIFY(manager.hidePanel(p("b")));
+        QVERIFY(manager.showPanel(p("b")));
+        QVERIFY(manager.panel(p("b"))->isFloating());
+
+        // Nothing is left when every panel is closed, and undo brings the
+        // windows back.
+        QVERIFY(manager.hidePanels({p("a"), p("b"), p("c")}));
+        QVERIFY(d->floatingWindows.isEmpty());
+        QVERIFY(d->state.containers.empty());
+        QVERIFY(manager.undo());
+        QCOMPARE(d->floatingWindows.size(), 2);
+        QVERIFY(manager.panel(p("a"))->isOpen());
+    }
+
+    // How wide the frame QFlexDock draws is, and how round.
+    void customFrameFollowsTheTheme()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        QVERIFY(f.manager.floatPanel(p("a"), QRect(40, 40, 300, 200)));
+        DockFloatingWindow *plain = floatingWindowOf(f, "a");
+        QCOMPARE(plain->borderWidth(), 4);
+        QCOMPARE(plain->cornerRadius(), 0);
+        QVERIFY(plain->resizeGrips().isEmpty());
+        QVERIFY(!plain->testAttribute(Qt::WA_TranslucentBackground));
+
+        DockTheme theme;
+        theme.floatingBorderWidth = 1;
+        theme.floatingCornerRadius = 10;
+        f.manager.setTheme(theme);
+        // Windows that exist keep what they were made with.
+        QCOMPARE(plain->borderWidth(), 4);
+        QVERIFY(f.manager.floatTabGroup(p("b"), QRect(80, 80, 360, 260)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QTRY_COMPARE(window->size(), QSize(360, 260));
+        QCOMPARE(window->borderWidth(), 1);
+        QCOMPARE(window->cornerRadius(), 10);
+        QCOMPARE(window->area()->geometry(), window->rect().adjusted(1, 1, -1, -1));
+
+        // Round corners: nothing in the corner itself, the hairline where
+        // the edge runs straight, the content inside.
+        QVERIFY(window->testAttribute(Qt::WA_TranslucentBackground));
+        const QImage image = window->grab().toImage();
+        QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
+        QCOMPARE(image.pixelColor(image.width() - 1, image.height() - 1).alpha(), 0);
+        QCOMPARE(image.pixelColor(0, image.height() / 2).rgb(),
+                 window->palette().color(QPalette::Mid).rgb());
+        QCOMPARE(image.pixelColor(image.width() / 2, image.height() / 2).alpha(), 255);
+        grab(window, p("floating-round-frame"));
+
+        // A border too thin to be grabbed: the window is taken hold of over
+        // the edge of the content as well.
+        QCOMPARE(window->resizeGrips().size(), 4);
+        const QPoint leftEdge(2, window->height() / 2);
+        QVERIFY(window->area()->geometry().contains(leftEdge));
+        QVERIFY(window->resizeGrips().contains(window->childAt(leftEdge)));
+        QVERIFY(window->resizeGrips().contains(window->childAt(window->width() / 2, 2)));
+        QVERIFY(!window->resizeGrips().contains(window->childAt(8, window->height() / 2)));
+        QCOMPARE(window->resizeEdgesAt(leftEdge), Qt::Edges(Qt::LeftEdge));
+        QCOMPARE(window->resizeEdgesAt(QPoint(1, 1)), Qt::Edges(Qt::LeftEdge | Qt::TopEdge));
+        QCOMPARE(window->resizeEdgesAt(QPoint(window->width() - 2, window->height() - 2)),
+                 Qt::Edges(Qt::RightEdge | Qt::BottomEdge));
+        QCOMPARE(window->resizeEdgesAt(QPoint(40, 40)), Qt::Edges());
+        QWidget *grip = window->childAt(leftEdge);
+        QMouseEvent move(QEvent::MouseMove, grip->mapFrom(window, leftEdge),
+                         window->mapToGlobal(leftEdge), Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+        QCoreApplication::sendEvent(grip, &move);
+        QCOMPARE(grip->cursor().shape(), Qt::SizeHorCursor);
+
+        // Maximized, it has neither border nor grips nor corners.
+        window->showMaximized();
+        const QSize normal(360, 260);
+        if (QTest::qWaitFor([&] { return window->isMaximized() && window->size() != normal; }, 3000)) {
+            QTRY_COMPARE(window->area()->geometry(), window->rect());
+            QVERIFY(!window->resizeGrips().constFirst()->isVisible());
+            QCOMPARE(window->resizeEdgesAt(QPoint(1, 1)), Qt::Edges());
+            QCOMPARE(window->grab().toImage().pixelColor(0, 0).alpha(), 255);
+        }
+    }
+
+    // A maximized floating window stays maximized when its layout changes.
+    void maximizedWindowKeepsItsSizeWhenTheLayoutChanges()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 420, 300)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QTRY_COMPARE(window->size(), QSize(420, 300));
+        window->showMaximized();
+        const QSize normal(420, 300);
+        if (!QTest::qWaitFor([&] { return window->isMaximized() && window->size() != normal; }, 3000))
+            QSKIP("Nothing maximizes windows here");
+        const QSize maximized = window->size();
+
+        // Another tab, a tab less, another current tab.
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Center));
+        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.activatePanel(p("b")));
+        QTest::qWait(200);
+        QVERIFY(window->isMaximized());
+        QCOMPARE(window->size(), maximized);
+        // What the state remembers is still the plain window.
+        const ContainerState *container = priv(f.manager)->state.find(window->containerId());
+        QCOMPARE(container->geometry.size(), normal);
+
+        window->showNormal();
+        QTRY_VERIFY(!window->isMaximized());
+        QTRY_COMPARE(window->size(), normal);
+    }
+
+    // Some window systems tell the size of a maximized window before they
+    // tell that it is maximized. That size is not the plain window's.
+    void sizeToldBeforeTheStateIsNotThePlainWindows()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 420, 300)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const auto remembered = [&] {
+            return priv(f.manager)->state.find(window->containerId())->geometry.size();
+        };
+        QTRY_COMPARE(remembered(), QSize(420, 300));
+        QTest::qWait(350); // the window has been like this for a while
+
+        window->resize(900, 700);
+        QTRY_COMPARE(remembered(), QSize(900, 700));
+        window->setWindowState(Qt::WindowMaximized);
+        QCOMPARE(remembered(), QSize(420, 300));
+        // And it stays so, whatever is told about the maximized window.
+        QTest::qWait(200);
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QCOMPARE(remembered(), QSize(420, 300));
+        window->showNormal();
+        QTRY_VERIFY(!window->isMaximized());
+    }
+
     void outsideDropDefaultFollowsThePlatform()
     {
         DockManager manager;
@@ -284,6 +489,9 @@ private Q_SLOTS:
         QVERIFY(ghost);
         QVERIFY(!ghost->isGhost());
         QVERIFY(!controller->isActive());
+        // (Asked at once: which window the compositor makes the active one
+        // afterwards, and with it which panel, is not the drop's doing.)
+        QCOMPARE(f.manager.activePanel(), f.manager.panel(p("b")));
         QCOMPARE(priv(f.manager)->floatingWindows.size(), 1);
         QCOMPARE(priv(f.manager)->floatingWindows.begin().value(), ghost.data());
         QCOMPARE(f.widgets[p("b")]->window(), ghost.data());
@@ -296,13 +504,136 @@ private Q_SLOTS:
         QCoreApplication::processEvents();
         QCOMPARE(ghost->size(), ghostSize);
         QTRY_COMPARE(ghost->area()->size(), groupSize);
-        QCOMPARE(f.manager.activePanel(), f.manager.panel(p("b")));
         QCOMPARE(changed.size(), 1);
 
         // From here on it is a floating window like any other.
         QVERIFY(f.manager.undo());
         QCOMPARE(describe(f.a), p("H(a, b|c)"));
         QTRY_VERIFY(!ghost);
+    }
+
+    // The ghost of one tab out of several shows the header as it will be:
+    // that tab alone, and right behind it what stands behind the tabs.
+    void ghostOfATabKeepsWhatStandsBehindTheTabs()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        f.manager.setFloatsOnOutsideDrop(true);
+        QAction add(p("+"));
+        for (const char *id : {"b", "c"})
+            f.manager.panel(p(id))->setTitleActions({&add}, DockTitlePlace::AfterTabs);
+        qApp->setStyleSheet(p("#dockTabActions #dockActionButton { background: #ff0000; border: none; "
+                              "min-width: 20px; max-width: 20px; }"));
+        QCoreApplication::processEvents();
+        const DockTabGroup *group = areaOf(f.a)->groupOfPanel(p("b"));
+        const DockTabBar *bar = group->tabBar();
+        const QWidget *button = group->widgetForAction(&add);
+        QVERIFY(button && button->isVisible());
+        // (A corner of the button: its middle has the text on it.)
+        const QPoint was = button->mapTo(group, QPoint(2, 2));
+        const int tabWidth = bar->tabRect(bar->indexOfPanel(p("b"))).width();
+        const QPoint barAt = bar->mapTo(group, QPoint(0, 0));
+
+        DockDragController *controller = priv(f.manager)->drag;
+        QVERIFY(controller->begin(p("b"), false));
+        const QPointer<DockFloatingWindow> ghost = controller->createGhost();
+        QVERIFY(ghost);
+        QVERIFY(QTest::qWaitForWindowExposed(ghost));
+        QCoreApplication::processEvents();
+        grab(ghost, p("floating-ghost-tab-actions"));
+        const QImage image = ghost->grab().toImage();
+        const QColor red(0xff, 0, 0);
+        // Behind the one tab, and no longer where it stood behind two.
+        QCOMPARE(image.pixelColor(barAt.x() + tabWidth + 2, was.y()), red);
+        QVERIFY(image.pixelColor(was) != red);
+        controller->finish(Qt::IgnoreAction, ghost, false);
+        QTRY_VERIFY(!ghost);
+
+        // A tab from further along stays where it is in the picture, under
+        // the pointer that holds it: the place of the tabs before it is empty.
+        qApp->setStyleSheet(p("#dockTabActions #dockActionButton { background: #ff0000; border: none; "
+                              "min-width: 20px; max-width: 20px; }"
+                              "QTabBar::tab { background: #0000ff; padding: 4px 12px; }"
+                              "QTabBar::tab:selected { background: #00ff00; }"));
+        QVERIFY(f.manager.activatePanel(p("c")));
+        QCoreApplication::processEvents();
+        const QRect first = bar->tabRect(0).translated(bar->mapTo(group, QPoint(0, 0)));
+        const QRect second = bar->tabRect(1).translated(bar->mapTo(group, QPoint(0, 0)));
+        const int plusLeft = button->mapTo(group, QPoint(0, 0)).x();
+        QCOMPARE(plusLeft, second.right() + 1);
+        QVERIFY(controller->begin(p("c"), false));
+        const QPointer<DockFloatingWindow> other = controller->createGhost();
+        QVERIFY(other);
+        QVERIFY(QTest::qWaitForWindowExposed(other));
+        QCoreApplication::processEvents();
+        grab(other, p("floating-ghost-tab-in-place"));
+        const QImage held = other->grab().toImage();
+        QCOMPARE(held.pixelColor(second.left() + 3, second.center().y()), QColor(0, 0xff, 0));
+        QVERIFY(held.pixelColor(first.left() + 3, first.center().y()) != QColor(0, 0, 0xff));
+        QCOMPARE(held.pixelColor(plusLeft + 2, was.y()), red);
+        // Held where the pointer is on the group: on that tab, if it is.
+        controller->finish(Qt::IgnoreAction, other, false);
+        QTRY_VERIFY(!other);
+        qApp->setStyleSheet(QString());
+    }
+
+    // The window a ghost becomes is nobody's child but the owner workspace's:
+    // not the window its tab was dragged out of, which it must be able to
+    // get behind, and to outlive.
+    void ghostDoesNotBelongToTheWindowItCameFrom()
+    {
+        {
+            // Windows of tabs, no workspace: every window stands for itself.
+            DockManager manager;
+            manager.setFloatsOnOutsideDrop(true);
+            QHash<QString, QLabel *> labels;
+            for (const char *id : {"a", "b"}) {
+                labels.insert(p(id), new QLabel(p(id)));
+                QVERIFY(manager.registerPanel(p(id), labels.value(p(id))));
+            }
+            QVERIFY(manager.floatPanel(p("a"), QRect(40, 40, 400, 300)));
+            QVERIFY(manager.movePanel(p("b"), p("a"), DockArea::Center));
+            const QPointer<QWidget> source(labels[p("a")]->window());
+            QVERIFY(QTest::qWaitForWindowExposed(source));
+            DockDragController *controller = priv(manager)->drag;
+            QVERIFY(controller->begin(p("b"), false));
+            const QPointer<DockFloatingWindow> ghost = controller->createGhost();
+            QVERIFY(ghost);
+            QVERIFY(QTest::qWaitForWindowExposed(ghost));
+            QVERIFY(!ghost->windowHandle()->transientParent());
+            controller->finish(Qt::MoveAction, ghost, false);
+            QCOMPARE(labels[p("b")]->window(), ghost.data());
+            QVERIFY(!ghost->windowHandle()->transientParent());
+
+            // The window the tab came from is closed: the other one stays.
+            QVERIFY(source->close());
+            QTRY_VERIFY(!source);
+            QVERIFY(ghost);
+            QVERIFY(ghost->isVisible());
+            QVERIFY(manager.panel(p("b"))->isOpen());
+            QVERIFY(!manager.panel(p("a"))->isOpen());
+        }
+
+        // With a workspace, floating windows stay above its window, also
+        // one that came out of another floating window.
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        f.manager.setFloatsOnOutsideDrop(true);
+        QVERIFY(f.manager.floatTabGroup(p("b"), QRect(60, 60, 360, 260)));
+        DockFloatingWindow *floating = floatingWindowOf(f, "b");
+        QVERIFY(QTest::qWaitForWindowExposed(floating));
+        QCOMPARE(floating->windowHandle()->transientParent(), f.windowA.windowHandle());
+        DockDragController *controller = priv(f.manager)->drag;
+        QVERIFY(controller->begin(p("c"), false));
+        const QPointer<DockFloatingWindow> ghost = controller->createGhost();
+        QVERIFY(ghost);
+        QVERIFY(QTest::qWaitForWindowExposed(ghost));
+        QCOMPARE(ghost->windowHandle()->transientParent(), f.windowA.windowHandle());
+        controller->finish(Qt::MoveAction, ghost, false);
+        QCOMPARE(f.widgets[p("c")]->window(), ghost.data());
+        QCOMPARE(ghost->windowHandle()->transientParent(), f.windowA.windowHandle());
     }
 
     void cancelledGhostDragLeavesNothingBehind()
