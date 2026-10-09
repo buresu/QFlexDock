@@ -156,5 +156,9 @@ int main(int argc, char *argv[])
 
     window.resize(1100, 700);
     window.show();
-    return app.exec();
+    const int result = app.exec();
+    // The window goes first, and the manager reports the layout changes that
+    // brings. By then there is no status bar left to show them in.
+    QObject::disconnect(&manager, nullptr, &window, nullptr);
+    return result;
 }
