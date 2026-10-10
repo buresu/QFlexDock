@@ -14,6 +14,8 @@
 #include <QtWidgets/QStyleOption>
 #include <QtWidgets/QToolButton>
 
+#include <utility>
+
 namespace QFlexDock {
 
 namespace {
@@ -28,6 +30,11 @@ constexpr int DefaultBorderWidth = 4;
 constexpr int GripReach = 4;
 // How much of a window shows while it is moved along with a drag.
 constexpr qreal CarriedOpacity = 0.75;
+// How long after a ghost became a window the window system may still resize
+// it for reasons of its own (to put its frame around it, or in answer to
+// what it knew of the ghost), in milliseconds, and how often that is undone.
+constexpr qint64 AdoptionTime = 500;
+constexpr int AdoptionResizes = 3;
 
 // A strip along one edge of a window whose border is too thin to be grabbed.
 // It lies over the content there and paints nothing.
@@ -109,6 +116,7 @@ DockFloatingWindow::DockFloatingWindow(DockManagerPrivate *manager, const QStrin
         titleLayout->addWidget(m_maximizeButton);
         titleLayout->addWidget(m_closeButton);
         layout->addWidget(m_titleBar);
+        m_titleBar->hide(); // until the window holds what needs it
     }
     m_area = new DockAreaWidget(manager, containerId, this);
     layout->addWidget(m_area, 1);
@@ -140,14 +148,51 @@ void DockFloatingWindow::detachFromManager()
 
 void DockFloatingWindow::setLayoutState(const ContainerState &container)
 {
+    // Before the groups hear of it: their headers go by the title row.
+    showTitleRow(wantsTitleRow(container.tree));
     m_area->setLayoutState(container);
     updateTitle();
+}
+
+// The title row is for what no header in the window stands for: more than
+// one tab group, or a panel that does without a header.
+bool DockFloatingWindow::wantsTitleRow(const LayoutTree &tree) const
+{
+    if (!m_titleBar || m_ghost || !m_manager)
+        return false;
+    const std::vector<const LayoutNode *> groups = tree.tabNodes();
+    if (groups.size() != 1)
+        return groups.size() > 1;
+    const QStringList &inside = groups.front()->panels;
+    const DockPanel *only = inside.size() == 1 ? m_manager->panels.value(inside.constFirst())
+                                               : nullptr;
+    return only && !only->isHeaderVisible();
+}
+
+// True if that changed something.
+bool DockFloatingWindow::showTitleRow(bool shown)
+{
+    if (!m_titleBar || shown == m_titleRow)
+        return false;
+    m_titleRow = shown;
+    m_titleBar->setVisible(shown);
+    return true;
+}
+
+QMargins DockFloatingWindow::customFrameMargins() const
+{
+    QMargins frame = layout()->contentsMargins();
+    if (m_titleRow)
+        frame.setTop(frame.top() + m_titleBar->sizeHint().height());
+    return frame;
 }
 
 void DockFloatingWindow::updateTitle()
 {
     if (!m_manager || m_ghost)
         return;
+    if (showTitleRow(wantsTitleRow(m_area->tree())))
+        m_area->refreshAppearance(); // the headers go by it
     // Named after the current panel of its first tab group.
     const std::vector<const LayoutNode *> groups = m_area->tree().tabNodes();
     const DockPanel *panel = groups.empty() ? nullptr : m_manager->panels.value(groups.front()->active);
@@ -202,9 +247,14 @@ void DockFloatingWindow::present(const QRect &geometry, QWidget *ownerWindow)
 
 // --- Drag ghost --------------------------------------------------------------
 
-void DockFloatingWindow::beginGhost(const QPixmap &picture, const QString &title)
+void DockFloatingWindow::beginGhost(const QPixmap &picture, const QString &title, bool bare)
 {
     m_ghost = true;
+    if (bare && !m_customFrame) {
+        m_bareGhost = true;
+        setWindowFlag(Qt::FramelessWindowHint);
+    }
+    showTitleRow(false);
     setWindowTitle(title);
     if (m_titleLabel) {
         m_titleLabel->setText(title);
@@ -216,13 +266,13 @@ void DockFloatingWindow::beginGhost(const QPixmap &picture, const QString &title
     m_ghostPicture->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
     static_cast<QVBoxLayout *>(layout())->addWidget(m_ghostPicture, 1);
     m_area->hide();
-    updateFrameMargins(); // a ghost is not resized
+    updateFrameMargins(); // a ghost has no border, and is not resized
     // Lets the ghost notice if the compositor does not carry it along with the
     // drag after all (see dragEnterEvent()).
     setAcceptDrops(true);
 }
 
-void DockFloatingWindow::adoptAs(const QString &containerId)
+void DockFloatingWindow::adoptAs(const QString &containerId, const QSize &size)
 {
     m_containerId = containerId;
     m_area->setContainerId(containerId);
@@ -232,6 +282,18 @@ void DockFloatingWindow::adoptAs(const QString &containerId)
     m_ghostPicture = nullptr;
     m_area->show();
     updateFrameMargins();
+    if (m_bareGhost) {
+        m_bareGhost = false;
+        // The frame comes to the window as it is (see setCarriedAlong()); the
+        // widget is only told.
+        overrideWindowFlags(windowFlags() & ~Qt::FramelessWindowHint);
+        if (QWindow *handle = windowHandle())
+            handle->setFlag(Qt::FramelessWindowHint, false);
+    }
+    // What was torn off keeps its size, also if the window system takes the
+    // room for its frame from the window: see resizeEvent().
+    m_sizeToKeep = size;
+    m_sizeKept = 0;
     m_clock.start();
     m_reported = {Reported{0, this->geometry()}};
 }
@@ -357,6 +419,16 @@ void DockFloatingWindow::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     updateFrameMargins(); // the grips follow the edges
+    if (m_sizeToKeep.isValid()) {
+        if (m_clock.elapsed() >= AdoptionTime || !isPlain() || m_sizeKept >= AdoptionResizes) {
+            m_sizeToKeep = QSize();
+        } else if (event->size() != m_sizeToKeep) {
+            ++m_sizeKept;
+            QMetaObject::invokeMethod(this, [this, size = m_sizeToKeep] { resize(size); },
+                                      Qt::QueuedConnection);
+            return;
+        }
+    }
     reportGeometry();
 }
 
@@ -369,6 +441,8 @@ void DockFloatingWindow::changeEvent(QEvent *event)
             settlePlainGeometry();
         updateFrameMargins();
         refreshAppearance();
+        if (headerIsTitle())
+            m_area->refreshAppearance(); // its maximize button is the window's
         // For style sheet rules that go by the `maximized` property.
         style()->unpolish(this);
         style()->polish(this);
@@ -424,7 +498,7 @@ void DockFloatingWindow::updateFrameMargins()
 {
     if (!m_customFrame)
         return;
-    const bool framed = !isMaximized() && !isFullScreen();
+    const bool framed = !isMaximized() && !isFullScreen() && !m_ghost;
     const int margin = framed ? m_borderWidth : 0;
     if (layout()->contentsMargins() != QMargins(margin, margin, margin, margin))
         layout()->setContentsMargins(margin, margin, margin, margin);
@@ -439,7 +513,7 @@ void DockFloatingWindow::updateFrameMargins()
     for (int i = 0; i < 4; ++i) {
         QWidget *grip = m_grips.at(i);
         grip->setGeometry(edges[i]);
-        grip->setVisible(framed && !m_ghost);
+        grip->setVisible(framed);
         grip->raise();
     }
 }

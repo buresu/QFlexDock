@@ -157,10 +157,20 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     connect(m_tabBar, &DockTabBar::groupDragStarted, this, &DockTabGroup::startGroupDrag);
     connect(m_tabBar, &DockTabBar::panelMenuRequested, this, &DockTabGroup::showPanelMenu);
     connect(m_tabBar, &DockTabBar::barDoubleClicked, this, &DockTabGroup::headerDoubleClicked);
-    connect(m_maximizeButton, &QToolButton::clicked, this, &DockTabGroup::toggleMaximized);
+    connect(m_maximizeButton, &QToolButton::clicked, this, [this] {
+        if (DockFloatingWindow *floating = m_windowTitle ? floatingWindow() : nullptr)
+            floating->toggleMaximized();
+        else
+            toggleMaximized();
+    });
     connect(m_menuButton, &QToolButton::clicked, this, &DockTabGroup::showGroupMenu);
     connect(m_floatButton, &QToolButton::clicked, this, &DockTabGroup::toggleFloating);
-    connect(m_closeButton, &QToolButton::clicked, this, [this] { closeByUser(m_current); });
+    connect(m_closeButton, &QToolButton::clicked, this, [this] {
+        if (DockFloatingWindow *floating = m_windowTitle ? floatingWindow() : nullptr)
+            floating->close();
+        else
+            closeByUser(m_current);
+    });
 
     // Standard "next/previous tab" keys while focus is inside the group.
     const auto cycle = [this](int step) {
@@ -213,15 +223,24 @@ void DockTabGroup::toggleMaximized()
         (void)m_manager->setMaximized(m_current, !m_maximized);
 }
 
+// The floating window whose dock area the group is in, if it is in one.
+DockFloatingWindow *DockTabGroup::floatingWindow() const
+{
+    auto *floating = qobject_cast<DockFloatingWindow *>(window());
+    return floating && floating->area() == m_area ? floating : nullptr;
+}
+
 // In a floating window without a title row, the header of its one group
 // stands in for it: a double click beside the tabs maximizes the window.
 void DockTabGroup::headerDoubleClicked(bool onTab)
 {
-    auto *floating = qobject_cast<DockFloatingWindow *>(window());
-    if (!onTab && floating && floating->hasMinimalFrame() && m_area->tree().tabNodes().size() == 1)
+    DockFloatingWindow *floating = floatingWindow();
+    if (!onTab && floating && floating->isMovedByHeaders()
+        && m_area->tree().tabNodes().size() == 1) {
         floating->toggleMaximized();
-    else
+    } else {
         toggleMaximized();
+    }
 }
 
 void DockTabGroup::toggleFloating()
@@ -246,8 +265,8 @@ void DockTabGroup::toggleFloating()
 // such a window does not have, and the window system moves a window better.
 bool DockTabGroup::moveWindowInstead(qsizetype draggedPanels, bool byHeader)
 {
-    const auto *floating = qobject_cast<const DockFloatingWindow *>(window());
-    if (!floating || !floating->hasMinimalFrame() || !floating->windowHandle()
+    const DockFloatingWindow *floating = floatingWindow();
+    if (!floating || !floating->isMovedByHeaders() || !floating->windowHandle()
         || m_area->tree().panels().size() != draggedPanels) {
         return false;
     }
@@ -328,7 +347,7 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
     case QEvent::MouseButtonDblClick:
         if (static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
             m_titlePressed = false;
-            if (m_titleMode)
+            if (m_manager->groupHeader == DockManager::GroupHeader::TitleBar)
                 toggleFloating();
             else
                 headerDoubleClicked(false);
@@ -376,7 +395,11 @@ void DockTabGroup::updateHeader()
 {
     if (!m_manager)
         return;
-    const bool titleMode = m_manager->groupHeader == DockManager::GroupHeader::TitleBar;
+    // The title of a floating window names its one panel, and needs no tab.
+    const DockFloatingWindow *floating = floatingWindow();
+    m_windowTitle = floating && floating->headerIsTitle();
+    const bool titleMode = m_manager->groupHeader == DockManager::GroupHeader::TitleBar
+        || (m_windowTitle && m_panels.size() == 1);
     if (titleMode != m_titleMode) {
         m_titleMode = titleMode;
         auto *groupLayout = static_cast<QVBoxLayout *>(layout());
@@ -409,14 +432,21 @@ void DockTabGroup::updateHeader()
     const DockTitleButtons buttons = m_manager->theme.titleButtons;
     const DockFeatures features = current ? current->features() : DockFeatures();
     setShown(m_menuButton, buttons.testFlag(DockTitleButton::Menu));
-    setShown(m_maximizeButton, buttons.testFlag(DockTitleButton::Maximize));
+    // (A window's title has the buttons of a window, whatever the theme.)
+    setShown(m_maximizeButton, m_windowTitle || buttons.testFlag(DockTitleButton::Maximize));
     setShown(m_floatButton, buttons.testFlag(DockTitleButton::Float)
                                 && features.testFlag(DockFeature::Floatable));
-    setShown(m_closeButton, buttons.testFlag(DockTitleButton::Close)
-                                && features.testFlag(DockFeature::Closable));
-    const bool floating = current && current->isFloating();
-    m_floatButton->setIcon(m_manager->icon(floating ? DockIcon::Dock : DockIcon::Float, this));
-    const QString floatTip = floating ? tr("Dock") : tr("Float");
+    setShown(m_closeButton, m_windowTitle || (buttons.testFlag(DockTitleButton::Close)
+                                              && features.testFlag(DockFeature::Closable)));
+    const bool maximized = m_windowTitle ? floating->isMaximized() : m_maximized;
+    m_maximizeButton->setIcon(
+        m_manager->icon(maximized ? DockIcon::Restore : DockIcon::Maximize, this));
+    const QString maximizeTip = maximized ? tr("Restore") : tr("Maximize");
+    m_maximizeButton->setToolTip(maximizeTip);
+    m_maximizeButton->setAccessibleName(maximizeTip);
+    const bool floats = current && current->isFloating();
+    m_floatButton->setIcon(m_manager->icon(floats ? DockIcon::Dock : DockIcon::Float, this));
+    const QString floatTip = floats ? tr("Dock") : tr("Float");
     m_floatButton->setToolTip(floatTip);
     m_floatButton->setAccessibleName(floatTip);
 
@@ -742,11 +772,6 @@ void DockTabGroup::refreshAppearance()
     if (themed > 0)
         m_tabBar->setIconSize(QSize(themed, themed));
     m_menuButton->setIcon(m_manager->icon(DockIcon::Menu, this));
-    m_maximizeButton->setIcon(
-        m_manager->icon(m_maximized ? DockIcon::Restore : DockIcon::Maximize, this));
-    const QString tip = m_maximized ? tr("Restore") : tr("Maximize");
-    m_maximizeButton->setToolTip(tip);
-    m_maximizeButton->setAccessibleName(tip);
     for (int i = 0; i < m_tabBar->count(); ++i)
         updateTab(i);
     updateHeader();

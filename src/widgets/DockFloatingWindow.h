@@ -27,6 +27,11 @@ class DockAreaWidget;
 /// groups inside are what moves it. Moving and resizing are still done by the
 /// window system (QWindow::startSystemMove() / startSystemResize()).
 ///
+/// The title row of the Custom frame is only there for what no header in the
+/// window stands for. A window holding one tab group leaves it to the header
+/// of that group, which then is the title: it names the panel, if there is
+/// one, or holds the tabs, and has the buttons of the window.
+///
 /// How wide that frame is and how round its corners are is up to the theme
 /// (DockTheme::floatingBorderWidth, floatingCornerRadius).
 ///
@@ -54,6 +59,16 @@ public:
     /// A custom frame without a title row (FloatingFrame::Minimal).
     [[nodiscard]] bool hasMinimalFrame() const { return m_customFrame && !m_titleBar; }
     [[nodiscard]] QWidget *titleBar() const { return m_titleBar; }
+    /// Whether the title row of the Custom frame is there at the moment.
+    [[nodiscard]] bool hasTitleRow() const { return m_titleRow; }
+    /// The header of the window's one tab group is its title (Custom frame).
+    [[nodiscard]] bool headerIsTitle() const { return m_titleBar && !m_titleRow && !m_ghost; }
+    /// No title row to move the window by: the headers of its groups do
+    /// that (Minimal frame, and Custom while a header is the title).
+    [[nodiscard]] bool isMovedByHeaders() const { return m_customFrame && !m_titleRow; }
+    /// What the frame drawn here takes around the dock area: its border and
+    /// the title row, if that is there.
+    [[nodiscard]] QMargins customFrameMargins() const;
     [[nodiscard]] QToolButton *closeButton() const { return m_closeButton; }
     [[nodiscard]] QToolButton *maximizeButton() const { return m_maximizeButton; }
     /// Width of the border the custom frame puts around the content.
@@ -78,11 +93,15 @@ public:
     void toggleMaximized();
 
     // --- Drag ghost ------------------------------------------------------------
-    /// Turns the (not yet presented) window into the ghost of a drag.
-    void beginGhost(const QPixmap &picture, const QString &title);
+    /// Turns the (not yet presented) window into the ghost of a drag: the
+    /// picture and nothing around it, so that the pointer holds what is
+    /// dragged where it took it. The frame comes when the ghost becomes the
+    /// real window. `bare`: that goes for the window system's frame too.
+    void beginGhost(const QPixmap &picture, const QString &title, bool bare = false);
     [[nodiscard]] bool isGhost() const { return m_ghost; }
-    /// The ghost becomes the real window of container `containerId`.
-    void adoptAs(const QString &containerId);
+    /// The ghost becomes the real window of container `containerId`, of
+    /// `size`: what it pictured, and the frame that now comes around it.
+    void adoptAs(const QString &containerId, const QSize &size);
     /// For a window that is kept at the pointer during a drag by moving it
     /// (DockDragController::movesCarriedWindows()): the pointer goes through
     /// it, so that the drag finds what is underneath, and so does a little
@@ -118,6 +137,8 @@ private:
     [[nodiscard]] bool isPlain() const;
     void ghostDragMoved();
     void updateFrameMargins();
+    [[nodiscard]] bool wantsTitleRow(const LayoutTree &tree) const;
+    bool showTitleRow(bool shown);
 
     DockManagerPrivate *m_manager;
     QString m_containerId;
@@ -136,11 +157,17 @@ private:
     QElapsedTimer m_clock;
     bool m_presented = false;
     bool m_ghost = false;
+    bool m_bareGhost = false;
+    /// The size a ghost is to have as the window it became, for as long as
+    /// the window system may still say otherwise, and how often it did.
+    QSize m_sizeToKeep;
+    int m_sizeKept = 0;
     bool m_carriedAlong = false;
     bool m_takesDrops = false;
 
     // Custom frame only.
     QWidget *m_titleBar = nullptr;
+    bool m_titleRow = false;
     QLabel *m_titleIcon = nullptr;
     QLabel *m_titleLabel = nullptr;
     QToolButton *m_maximizeButton = nullptr;

@@ -124,12 +124,12 @@ int main(int argc, char *argv[])
     QObject::connect(&manager, &DockManager::presetsChanged, &window, rebuildPresets);
     rebuildPresets();
     layoutMenu->addSeparator();
-    QAction *customFrame = layoutMenu->addAction(QStringLiteral("Custom Frame for Floating Windows"));
-    customFrame->setCheckable(true);
-    QObject::connect(customFrame, &QAction::toggled, &manager, [&manager](bool custom) {
+    QAction *nativeFrame = layoutMenu->addAction(QStringLiteral("Native Frame for Floating Windows"));
+    nativeFrame->setCheckable(true);
+    QObject::connect(nativeFrame, &QAction::toggled, &manager, [&manager](bool native) {
         // Applies to floating windows created from now on.
-        manager.setFloatingWindowFrame(custom ? DockManager::FloatingFrame::Custom
-                                              : DockManager::FloatingFrame::Native);
+        manager.setFloatingWindowFrame(native ? DockManager::FloatingFrame::Native
+                                              : DockManager::FloatingFrame::Custom);
     });
     QAction *tools = layoutMenu->addAction(QStringLiteral("Floating Windows Stay Above This One"));
     tools->setCheckable(true);

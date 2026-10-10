@@ -75,10 +75,13 @@ public:
     enum class FloatingFrame {
         /// The window system: its title bar, buttons, borders and behaviour.
         Native,
-        /// QFlexDock: a frameless window with a title row and resizable
-        /// edges of its own, styled like the rest of the dock UI. Where the
+        /// QFlexDock (the default): a frameless window with a title row and
+        /// resizable edges of its own, styled like the rest of the dock UI.
+        /// A window holding one tab group has no title row beside the header
+        /// of that group, which is its title: one panel is named there
+        /// without a tab, and the tabs of several are in it. Where the
         /// platform allows it (see docs/platform-notes.md) such a window can
-        /// be docked by dragging its title row onto a dock area.
+        /// be docked by dragging its title onto a dock area.
         Custom,
         /// QFlexDock, without a title row: just a resizable border around
         /// the content. The headers of the tab groups inside are what the
@@ -285,7 +288,7 @@ public:
     void setFloatsOnOutsideDrop(bool enabled);
 
     [[nodiscard]] FloatingFrame floatingWindowFrame() const;
-    /// Frame of floating windows created from now on (default Native).
+    /// Frame of floating windows created from now on (default Custom).
     /// Existing floating windows keep theirs.
     void setFloatingWindowFrame(FloatingFrame frame);
     [[nodiscard]] FloatingWindowType floatingWindowType() const;

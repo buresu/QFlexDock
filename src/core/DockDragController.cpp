@@ -8,9 +8,11 @@
 
 #include <QtCore/QDataStream>
 #include <QtCore/QIODevice>
+#include <QtCore/QLibraryInfo>
 #include <QtCore/QMimeData>
 #include <QtCore/QTimer>
 #include <QtCore/QUuid>
+#include <QtCore/QVersionNumber>
 #include <QtGui/QCursor>
 #include <QtGui/QDrag>
 #include <QtGui/QKeyEvent>
@@ -61,6 +63,15 @@ bool onWindows()
 bool onMac()
 {
     return QGuiApplication::platformName() == QLatin1String("cocoa");
+}
+
+// Whether the ghost of a window with the window system's frame goes without
+// that frame. On Wayland the ghost is the window it becomes, so the frame has
+// to come to a window that is shown, which Qt's platform plugin can only have
+// it do from 6.11 on.
+bool ghostsGoBare()
+{
+    return !onWayland() || QLibraryInfo::version() >= QVersionNumber(6, 11);
 }
 
 // Whether the button a drag was held by is still down now that the drag is
@@ -293,12 +304,7 @@ DockFloatingWindow *DockDragController::createGhost()
     }
     const DockPanel *primary = m_manager->panels.value(m_session->primary);
     auto *ghost = new DockFloatingWindow(m_manager, QString(), m_manager->floatingFrame);
-    ghost->beginGhost(picture, primary ? primary->title() : QString());
-    // A custom frame comes around the picture, and shifts where it is held.
-    const QMargins frame = ghost->layout()->contentsMargins();
-    const int titleHeight = ghost->titleBar() ? ghost->titleBar()->sizeHint().height() : 0;
-    size += QSize(frame.left() + frame.right(), frame.top() + frame.bottom() + titleHeight);
-    m_ghostGrip += QPoint(frame.left(), frame.top() + titleHeight);
+    ghost->beginGhost(picture, primary ? primary->title() : QString(), ghostsGoBare());
     // Where to is the compositor's business, or else known here.
     QPoint position(0, 0);
     if (movesCarriedWindows()) {
@@ -637,9 +643,14 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
     bool frameToAdd = false;
     if (ghost) {
         // The ghost is where the user dropped it (only the compositor knows
-        // where that is) and already has the right size: it simply stops
-        // being a picture.
+        // where that is) and has the size of what was dragged: it simply
+        // stops being a picture. The border of a frame of ours comes around
+        // what it pictured.
         geometry = ghost->geometry();
+        if (ghost->hasCustomFrame()) {
+            const int border = ghost->borderWidth();
+            geometry = geometry.marginsAdded(QMargins(border, border, border, border));
+        }
     } else if (const DockFloatingWindow *whole = windowDraggedWhole(); whole && m_dragStart) {
         // A floating window dragged by all it holds, where nothing carries
         // it along: it goes as far as the pointer went.
@@ -668,10 +679,7 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
         DockFloatingWindow *window =
             location ? m_manager->floatingWindows.value(location->container) : nullptr;
         if (window && window->hasCustomFrame()) {
-            const QMargins frame = window->layout()->contentsMargins();
-            const int title = window->titleBar() ? window->titleBar()->sizeHint().height() : 0;
-            window->resize(geometry.size() + QSize(frame.left() + frame.right(),
-                                                   frame.top() + frame.bottom() + title));
+            window->resize(geometry.marginsAdded(window->customFrameMargins()).size());
         }
     }
     (void)m_manager->activate(session.primary, true);

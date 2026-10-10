@@ -658,7 +658,7 @@ private Q_SLOTS:
         QCOMPARE(group->titleLabel()->text(), f.manager.panel(p("b"))->title());
         grab(window, p("header-minimal-frame"));
 
-        // A ghost for such a window is the picture of the group plus that border.
+        // A ghost for such a window is the picture of the group alone.
         QVERIFY(f.manager.dockPanel(p("b")));
         QTRY_VERIFY(!onlyFloatingWindow(f.manager));
         const QSize groupSize = areaOf(f.a)->groupOfPanel(p("b"))->size();
@@ -667,8 +667,7 @@ private Q_SLOTS:
         const QPointer<DockFloatingWindow> ghost = controller->createGhost();
         QVERIFY(ghost);
         QVERIFY(ghost->hasMinimalFrame());
-        QTRY_COMPARE(ghost->size(), groupSize + QSize(margins.left() + margins.right(),
-                                                     margins.top() + margins.bottom()));
+        QTRY_COMPARE(ghost->size(), groupSize);
         controller->finish(Qt::IgnoreAction, ghost, false);
         QTRY_VERIFY(!ghost);
     }

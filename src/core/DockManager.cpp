@@ -440,7 +440,7 @@ DockResult DockManagerPrivate::floatPanels(const PanelId &panel, bool wholeGroup
     // here): it becomes the view of the new container instead of a new one.
     const QString id = floating.id;
     floatingWindows.insert(id, adopt);
-    adopt->adoptAs(id);
+    adopt->adoptAs(id, geometry.size());
     const DockResult result = apply(std::move(next), true);
     if (!result)
         floatingWindows.remove(id);

@@ -18,6 +18,7 @@ QT_END_NAMESPACE
 namespace QFlexDock {
 
 class DockAreaWidget;
+class DockFloatingWindow;
 class DockManagerPrivate;
 class DockPanel;
 class DockTabBar;
@@ -29,6 +30,11 @@ class DockTabBar;
 /// the content, and only show when there is more than one), followed by the
 /// group's buttons. A panel can do without a header altogether
 /// (DockPanel::setHeaderVisible()).
+///
+/// The only group of a floating window that has no title row for it
+/// (DockFloatingWindow::headerIsTitle()) is that window's title: one panel
+/// is named as by GroupHeader::TitleBar, without a tab, and the maximize and
+/// close buttons are there and act on the window.
 ///
 /// A group mirrors its LayoutNode and never decides anything itself: clicks
 /// and drags are turned into requests to the manager, and what is shown
@@ -135,6 +141,7 @@ private:
     void startPanelDrag(const PanelId &panel, const QPixmap &pixmap);
     void startGroupDrag();
     [[nodiscard]] bool moveWindowInstead(qsizetype draggedPanels, bool byHeader);
+    [[nodiscard]] DockFloatingWindow *floatingWindow() const;
     void toggleMaximized();
     void toggleFloating();
     void closeByUser(const PanelId &panel);
@@ -150,8 +157,10 @@ private:
     bool m_active = false;
     bool m_maximized = false;
     bool m_headerVisible = true;
-    /// GroupHeader::TitleBar is in effect.
+    /// The header names the current panel, as with GroupHeader::TitleBar.
     bool m_titleMode = false;
+    /// The header is the title of the floating window the group is alone in.
+    bool m_windowTitle = false;
 
     // Null until the constructor gets to them: the event filter is asked
     // about the parts created first while the later ones do not exist yet.

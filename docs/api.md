@@ -96,7 +96,7 @@ Features: `Movable`, `Closable`, `Floatable`, `Tabbable` (both the dragged and t
 floating window are none.
 
 **Behaviour and looks** — `setLinkedSplittersEnabled()`, `setCornerResizeEnabled()`, `setFloatsOnOutsideDrop()`,
-`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setFloatingWindowFrame(FloatingFrame::Native | Custom | Minimal)`,
+`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setFloatingWindowFrame(FloatingFrame::Custom | Minimal | Native)`,
 `setFloatingWindowType(FloatingWindowType::Window | Tool)`,
 `setDragGhostEnabled()`, `setTheme()`, `setOverlayPainter()`. See [styling.md](styling.md) and
 [platform-notes.md](platform-notes.md).
@@ -141,7 +141,8 @@ changes; the layout changes with the drop, and Esc puts everything back.
 | `TitleBar` | A title bar naming the current panel; drag it to move that panel, double click to float it or dock it again. Tabs appear below the content once a group holds more than one panel |
 
 Which built-in buttons the header has is a theme token (`DockTheme::titleButtons`); a panel adds its own
-with `DockPanel::setTitleActions()`.
+with `DockPanel::setTitleActions()`. A header that is the title of a floating window
+([platform-notes.md](platform-notes.md)) always has maximize and close, which there act on the window.
 
 **Signals** — `layoutAboutToChange()` / `layoutChanged()`, `panelAboutToMove()` / `panelMoved()`,
 `panelOpenChanged()`, `panelWindowChanged()`, `activePanelChanged()`, `panelRegistered()` /

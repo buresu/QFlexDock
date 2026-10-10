@@ -13,7 +13,9 @@
 #include "widgets/DockTabBar.h"
 
 #include <QtCore/QDataStream>
+#include <QtCore/QLibraryInfo>
 #include <QtCore/QMimeData>
+#include <QtCore/QVersionNumber>
 #include <QtGui/QDragEnterEvent>
 #include <QtGui/QMouseEvent>
 #include <QtGui/QWindow>
@@ -54,11 +56,139 @@ class tst_Floating : public QObject
     Q_OBJECT
 
 private Q_SLOTS:
-    void nativeFrameIsTheDefault()
+    void customFrameIsTheDefault()
     {
         TwoWindows f;
         f.show();
         buildLayout(f);
+        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingFrame::Custom);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(window);
+        QVERIFY(window->hasCustomFrame());
+        QVERIFY(!window->hasMinimalFrame());
+        QVERIFY(window->windowFlags().testFlag(Qt::FramelessWindowHint));
+        QVERIFY(window->titleBar());
+    }
+
+    // A window holding one tab group has no title row: the header of that
+    // group is its title.
+    void oneGroupIsTheTitleOfItsWindow()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 360, 260)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const QMargins border = window->layout()->contentsMargins();
+        QVERIFY(border.top() > 0);
+
+        // One panel: named in the header, without a tab, right under the
+        // border. The header has the buttons of a window.
+        QVERIFY(!window->hasTitleRow());
+        QVERIFY(window->headerIsTitle());
+        QVERIFY(window->titleBar()->isHidden());
+        QCOMPARE(window->customFrameMargins(), border);
+        QTRY_COMPARE(window->area()->geometry(), window->rect().marginsRemoved(border));
+        const DockTabGroup *group = window->area()->groupOfPanel(p("b"));
+        QVERIFY(group->titleBar()->isVisible());
+        QVERIFY(group->tabBar()->isHidden());
+        QVERIFY(group->titleLabel()->isVisible());
+        QCOMPARE(group->titleLabel()->text(), p("b"));
+        QVERIFY(group->maximizeButton()->isVisible());
+        QVERIFY(group->closeButton()->isVisible());
+        grab(window, p("floating-title-one-panel"));
+        // The same panel docked has its tab, and the buttons the theme says.
+        const DockTabGroup *docked = areaOf(f.a)->groupOfPanel(p("a"));
+        QVERIFY(docked->tabBar()->isVisible());
+        QVERIFY(docked->titleLabel()->isHidden());
+        QVERIFY(docked->closeButton()->isHidden());
+
+        // A second panel: the tabs come, where tabs are, and are the title.
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QVERIFY(!window->hasTitleRow());
+        QVERIFY(group->tabBar()->isVisible());
+        QCOMPARE(group->tabBar()->parentWidget(), group->titleBar());
+        QCOMPARE(group->tabBar()->count(), 2);
+        QVERIFY(group->titleLabel()->isHidden());
+        QVERIFY(group->closeButton()->isVisible());
+        grab(window, p("floating-title-tabs"));
+
+        // The maximize button is the window's. (Wait for the window system
+        // to have really done it before asking for the opposite.)
+        const QString maximizeTip = group->maximizeButton()->toolTip();
+        const QSize normalSize = window->size();
+        QTest::mouseClick(group->maximizeButton(), Qt::LeftButton);
+        QVERIFY(f.manager.maximizedPanel().isEmpty());
+        if (QTest::qWaitFor([&] { return window->isMaximized() && window->size() != normalSize; }, 3000)) {
+            QVERIFY(group->maximizeButton()->toolTip() != maximizeTip);
+            QTest::qWait(100);
+            QTest::mouseClick(group->maximizeButton(), Qt::LeftButton);
+            QTRY_VERIFY(!window->isMaximized());
+            QCOMPARE(group->maximizeButton()->toolTip(), maximizeTip);
+            QTRY_COMPARE(window->size(), normalSize);
+        }
+
+        // A second group: no header stands for the window any more, and it
+        // gets its title row. The headers are those of groups again.
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Right));
+        QVERIFY(window->hasTitleRow());
+        QVERIFY(!window->headerIsTitle());
+        QVERIFY(window->titleBar()->isVisible());
+        QVERIFY(window->customFrameMargins().top() > border.top());
+        QVERIFY(group->closeButton()->isHidden());
+        const DockTabGroup *second = window->area()->groupOfPanel(p("d"));
+        QVERIFY(second->tabBar()->isVisible());
+        QVERIFY(second->titleLabel()->isHidden());
+        QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Center));
+        QVERIFY(!window->hasTitleRow());
+        QVERIFY(group->closeButton()->isVisible());
+
+        // The close button closes the window: its panels, subject to their
+        // policy.
+        f.manager.panel(p("c"))->setFeatures(AllDockFeatures & ~DockFeatures(DockFeature::Closable));
+        QTest::mouseClick(group->closeButton(), Qt::LeftButton);
+        QVERIFY(window->isVisible());
+        QVERIFY(f.manager.panel(p("b"))->isOpen());
+        f.manager.panel(p("c"))->setFeatures(AllDockFeatures);
+        const QPointer<DockFloatingWindow> guard(window);
+        QTest::mouseClick(group->closeButton(), Qt::LeftButton);
+        QVERIFY(!f.manager.panel(p("b"))->isOpen());
+        QVERIFY(!f.manager.panel(p("c"))->isOpen());
+        QTRY_VERIFY(!guard);
+
+        // A panel that does without a header leaves the window its title row.
+        f.manager.panel(p("e"))->setHeaderVisible(false);
+        QVERIFY(f.manager.floatPanel(p("e"), QRect(80, 80, 300, 200)));
+        DockFloatingWindow *bare = floatingWindowOf(f, "e");
+        QVERIFY(bare && bare->hasTitleRow());
+        QVERIFY(bare->titleBar()->isVisible());
+        f.manager.panel(p("e"))->setHeaderVisible(true);
+        QVERIFY(!bare->hasTitleRow());
+        QVERIFY(bare->area()->groupOfPanel(p("e"))->titleLabel()->isVisible());
+
+        // The other frames have no title row to leave to a header: a tab is a tab.
+        for (const auto frame : {DockManager::FloatingFrame::Minimal, DockManager::FloatingFrame::Native}) {
+            f.manager.setFloatingWindowFrame(frame);
+            QVERIFY(f.manager.dockPanel(p("a")));
+            QVERIFY(f.manager.floatPanel(p("a"), QRect(100, 100, 300, 200)));
+            const DockFloatingWindow *other = floatingWindowOf(f, "a");
+            QVERIFY(other && !other->headerIsTitle());
+            const DockTabGroup *plain = other->area()->groupOfPanel(p("a"));
+            QVERIFY(plain->tabBar()->isVisible());
+            QVERIFY(plain->titleLabel()->isHidden());
+            QVERIFY(plain->closeButton()->isHidden());
+        }
+    }
+
+    void nativeFrameIsTheWindowSystems()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
         QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingFrame::Native);
         QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
         DockFloatingWindow *window = floatingWindowOf(f, "b");
@@ -93,12 +223,11 @@ private Q_SLOTS:
         QCOMPARE(window->windowHandle()->transientParent(), f.windowA.windowHandle());
         QTRY_COMPARE(window->size(), QSize(360, 260));
         // The frame is another matter.
-        QVERIFY(!window->windowFlags().testFlag(Qt::FramelessWindowHint));
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Custom);
+        QVERIFY(window->windowFlags().testFlag(Qt::FramelessWindowHint));
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
         QVERIFY(f.manager.floatPanel(p("c"), QRect(120, 120, 300, 200)));
         QCOMPARE(floatingWindowOf(f, "c")->windowType(), Qt::Tool);
-        QVERIFY(floatingWindowOf(f, "c")->windowFlags().testFlag(Qt::FramelessWindowHint));
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
+        QVERIFY(!floatingWindowOf(f, "c")->windowFlags().testFlag(Qt::FramelessWindowHint));
 
         // The ghost of a drag is what it may become.
         QVERIFY(f.manager.dockPanel(p("b")));
@@ -125,19 +254,22 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildLayout(f);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
         QVERIFY(f.manager.floatPanel(p("a"), QRect(40, 40, 300, 200)));
         f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Custom);
         QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingFrame::Custom);
         // Windows that exist keep the frame they were created with.
         QVERIFY(!floatingWindowOf(f, "a")->hasCustomFrame());
 
-        QVERIFY(f.manager.floatTabGroup(p("b"), QRect(80, 80, 360, 260)));
+        // (Two tab groups: one would be the title itself.)
+        QVERIFY(f.manager.floatTabGroup(p("b"), QRect(80, 80, 480, 260)));
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Right));
         DockFloatingWindow *window = floatingWindowOf(f, "b");
         QVERIFY(window);
         QVERIFY(QTest::qWaitForWindowExposed(window));
         QVERIFY(window->hasCustomFrame());
         QVERIFY(window->windowFlags().testFlag(Qt::FramelessWindowHint));
-        QTRY_COMPARE(window->size(), QSize(360, 260));
+        QTRY_COMPARE(window->size(), QSize(480, 260));
 
         // A title row above the dock area, inside a border that can be grabbed.
         QWidget *titleBar = window->titleBar();
@@ -198,6 +330,7 @@ private Q_SLOTS:
         QTest::mouseClick(window->closeButton(), Qt::LeftButton);
         QVERIFY(!f.manager.panel(p("b"))->isOpen());
         QVERIFY(!f.manager.panel(p("c"))->isOpen());
+        QVERIFY(!f.manager.panel(p("d"))->isOpen());
         QTRY_VERIFY(!guard);
 
         // Shown again, they come back in a window with the frame now in force.
@@ -214,8 +347,10 @@ private Q_SLOTS:
         buildLayout(f);
         f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Custom);
         QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Right)); // for the title row
         DockFloatingWindow *window = floatingWindowOf(f, "b");
         QVERIFY(QTest::qWaitForWindowExposed(window));
+        QVERIFY(window->titleBar()->isVisible());
         const auto pixel = [](QWidget *widget, const QPoint &pos) {
             return widget->grab().toImage().pixelColor(pos);
         };
@@ -491,8 +626,11 @@ private Q_SLOTS:
         const DockFloatingWindow *window = floatingWindowOf(f, "b");
         QVERIFY(window && window != ghost.data() && !window->isGhost());
         QVERIFY(!window->windowFlags().testFlag(Qt::WindowTransparentForInput));
-        QCOMPARE(priv(f.manager)->state.find(window->containerId())->geometry, put);
-        QTRY_COMPARE(window->size(), put.size());
+        // What the ghost pictured is where it was; the frame is around it.
+        const QRect framed = put.marginsAdded(window->customFrameMargins());
+        QVERIFY(framed != put);
+        QCOMPARE(priv(f.manager)->state.find(window->containerId())->geometry, framed);
+        QTRY_COMPARE(window->size(), framed.size());
         QVERIFY(!ghost || !ghost->isVisible());
         QTRY_VERIFY(!ghost);
 
@@ -615,7 +753,8 @@ private Q_SLOTS:
         QCOMPARE(priv(f.manager)->floatingWindows.size(), 1);
         const DockFloatingWindow *window = floatingWindowOf(f, "b");
         QVERIFY(window && window != ghost.data() && !window->isGhost());
-        QCOMPARE(priv(f.manager)->state.find(window->containerId())->geometry, put);
+        QCOMPARE(priv(f.manager)->state.find(window->containerId())->geometry,
+                 put.marginsAdded(window->customFrameMargins()));
         QTRY_VERIFY(!ghost);
 
         // That is forgotten with the drag: the next one that comes back
@@ -722,8 +861,12 @@ private Q_SLOTS:
         f.show();
         buildLayout(f);
         f.manager.setFloatsOnOutsideDrop(true);
-        if (customFrame)
-            f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Custom);
+        f.manager.setFloatingWindowFrame(customFrame ? DockManager::FloatingFrame::Custom
+                                                     : DockManager::FloatingFrame::Native);
+        // The window system's frame is left off for as long as the window is
+        // a ghost, where it can be had afterwards (on Wayland: from Qt 6.11).
+        const bool bare = !customFrame
+            && (!onWayland() || QLibraryInfo::version() >= QVersionNumber(6, 11));
         DockDragController *controller = priv(f.manager)->drag;
         const QSize groupSize = areaOf(f.a)->groupOfPanel(p("b"))->size();
         QSignalSpy changed(&f.manager, &DockManager::layoutChanged);
@@ -735,16 +878,17 @@ private Q_SLOTS:
         QVERIFY(QTest::qWaitForWindowExposed(ghost));
         QVERIFY(ghost->isGhost());
         QCOMPARE(ghost->hasCustomFrame(), customFrame);
+        QCOMPARE(ghost->windowFlags().testFlag(Qt::FramelessWindowHint), customFrame || bare);
+        QCOMPARE(ghost->windowHandle()->flags().testFlag(Qt::FramelessWindowHint),
+                 customFrame || bare);
         QCOMPARE(ghost->windowTitle(), p("b"));
-        // It pictures the group at its actual size (a custom frame goes
-        // around that), so the tab group seems to come off in one piece.
+        // It pictures the group at its actual size and nothing else, so the
+        // tab group seems to come off in one piece.
+        const QPointer<QWindow> ghostHandle(ghost->windowHandle());
         const QSize ghostSize = ghost->size();
-        if (customFrame) {
-            QVERIFY(ghostSize.width() > groupSize.width() && ghostSize.height() > groupSize.height());
-            QVERIFY(ghostSize.width() <= groupSize.width() + 16);
-        } else {
-            QCOMPARE(ghostSize, groupSize);
-        }
+        QCOMPARE(ghostSize, groupSize);
+        QCOMPARE(ghost->layout()->contentsMargins(), QMargins());
+        QVERIFY(!ghost->titleBar() || ghost->titleBar()->isHidden());
         // Held somewhere on it, not outside.
         QVERIFY(QRect(QPoint(0, 0), ghostSize).contains(controller->ghostGrip()));
         QVERIFY(!ghost->area()->isVisible());
@@ -756,11 +900,16 @@ private Q_SLOTS:
 
         // Dropped where no dock area takes it (Qt reports that as accepted
         // when a window is carried): the ghost itself is now the floating
-        // window. Nothing about its size changes at that moment.
+        // window. What it pictured keeps its size at that moment: a frame
+        // of QFlexDock's comes around it.
         controller->finish(Qt::MoveAction, ghost, false);
         QVERIFY(ghost);
         QVERIFY(!ghost->isGhost());
         QVERIFY(!controller->isActive());
+        // It is the window it was, now with the frame of one.
+        QCOMPARE(ghost->windowHandle(), ghostHandle.data());
+        QCOMPARE(ghost->windowFlags().testFlag(Qt::FramelessWindowHint), customFrame);
+        QCOMPARE(ghostHandle->flags().testFlag(Qt::FramelessWindowHint), customFrame);
         // (Asked at once: which window the compositor makes the active one
         // afterwards, and with it which panel, is not the drop's doing.)
         QCOMPARE(f.manager.activePanel(), f.manager.panel(p("b")));
@@ -774,8 +923,24 @@ private Q_SLOTS:
         QVERIFY(ghost->area()->isVisible());
         QVERIFY(f.widgets[p("b")]->isVisible());
         QCoreApplication::processEvents();
-        QCOMPARE(ghost->size(), ghostSize);
+        // (A compositor that now puts its frame around the window may take
+        // the room for it from the window, which then asks for it back.)
+        const bool frameComes = bare && onWayland();
+        const QMargins frame = customFrame ? ghost->customFrameMargins() : QMargins();
+        QCOMPARE(frame.isNull(), !customFrame);
+        const QSize windowSize = ghostSize.grownBy(frame);
+        if (!frameComes)
+            QTRY_COMPARE(ghost->size(), windowSize);
         QTRY_COMPARE(ghost->area()->size(), groupSize);
+        if (frameComes) {
+            QTest::qWait(300);
+            QTRY_COMPARE(ghost->size(), windowSize);
+        }
+        // One panel alone is named in the header that is the window's title.
+        if (customFrame) {
+            QVERIFY(ghost->headerIsTitle());
+            QVERIFY(ghost->area()->groupOfPanel(p("b"))->tabBar()->isHidden());
+        }
         QCOMPARE(changed.size(), 1);
 
         // From here on it is a floating window like any other.
@@ -792,6 +957,8 @@ private Q_SLOTS:
         f.show();
         buildLayout(f);
         f.manager.setFloatsOnOutsideDrop(true);
+        // (The picture alone: places in the ghost are places in the group.)
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
         QAction add(p("+"));
         for (const char *id : {"b", "c"})
             f.manager.panel(p(id))->setTitleActions({&add}, DockTitlePlace::AfterTabs);

@@ -31,7 +31,8 @@ compositor can, however, move a window as part of a drag (`xdg-toplevel-drag-v1`
 - **Dragging a tab** carries a ghost, held where it was grabbed. One tab out of several keeps its place in
   the ghost's row of tabs, so that the pointer stays on it; in the window it becomes it is the first tab.
   Dropped on a dock area it docks and the ghost disappears; dropped elsewhere the ghost itself becomes the
-  floating window; Esc just removes it.
+  floating window; Esc just removes it. The ghost is what is dragged and nothing else: the frame of
+  the window, whichever it is, comes when it is dropped (on Windows and macOS too, **not verified** there).
 - **Dragging everything a floating window contains** (its only tab or only tab group) carries that window
   itself: no second window appears.
 - **A floating window with a custom frame** can be dragged by its title row and dropped onto a dock area.
@@ -45,6 +46,12 @@ Things to know:
   in advance, so QFlexDock watches: a window that really is carried keeps the pointer at the same spot. If
   the pointer travels across it instead, carrying is given up for the rest of the process.
 - The ghost is opaque, so it hides the part of the drop guide below and to the right of the pointer.
+- **The `Native` frame on KWin.** KWin (6.7) holds a carried window by its frame, not by its content, so
+  under KWin's title bar the pointer is off by the height of that bar. The ghost has no frame and is held
+  where it was grabbed; dropped, it gets the frame and its content moves down by the title bar (seen with
+  Qt 6.12). This needs Qt 6.11 and `xdg-decoration` version 2; with an older Qt the ghost keeps the frame
+  and is off, as is a `Native` floating window dragged by its only tab with any Qt. `Custom` and `Minimal`
+  windows are held exactly.
 - `DockManager::setDragGhostEnabled(false)` turns all of this off. Outside drops then do nothing on
   Wayland, because they cannot be told apart from a cancelled drag.
 
@@ -104,19 +111,25 @@ accepts whatever is dragged onto it (`QQuickWidget` does). Other drags reach the
 
 `DockManager::setFloatingWindowFrame()` chooses the frame of floating windows created from then on.
 
-| | `Native` (default) | `Custom` | `Minimal` |
+| | `Custom` (default) | `Minimal` | `Native` |
 |---|---|---|---|
-| Title bar and border | The window system's | A title row and border drawn by QFlexDock | Only a border; the headers of the groups inside serve as the title |
-| Move and resize | The window system | Requested with `QWindow::startSystemMove()` / `startSystemResize()` | Resize as `Custom`; moved by dragging a header (below) |
-| Snapping, tiling, window menu | Yes | Up to the window system | Up to the window system |
-| Re-dock by dragging the title | No (drag a tab instead) | On Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag (on Windows and macOS: a tab only) |
+| Title bar and border | A border and one title drawn by QFlexDock (below) | Only a border; the headers of the groups inside serve as the title | The window system's |
+| Move and resize | Requested with `QWindow::startSystemMove()` / `startSystemResize()` | Resize as `Custom`; moved by dragging a header (below) | The window system |
+| Snapping, tiling, window menu | Up to the window system | Up to the window system | Yes |
+| Re-dock by dragging the title | A header that is the title: as `Minimal`. The title row: on Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag (on Windows and macOS: a tab only) | No (drag a tab instead) |
 
-A `Minimal` window is moved by a dock drag of what it contains: on Wayland, Windows and macOS the window
-follows the pointer, on X11 a picture does and the window then moves by as much as the pointer did. (On
-Windows and macOS that is so for its only tab; the header beside the tabs moves the window and nothing
-else.) Where outside drops do not float (they were turned off, and nothing carries a window), the drag
-just moves the window and docking is left to the float button.
-A double click on the header of its one tab group, beside the tabs, maximizes such a window.
+**The title of a `Custom` window** is the header of its tab group, as long as it holds one: a single panel
+is named there without a tab, several have their tabs there, and the maximize and close buttons in it are
+the window's. A window that holds more than one tab group, or a panel without a header, has a title row of
+its own above them.
+
+A window without a title row (`Minimal`, and `Custom` with one tab group) is moved by a dock drag of what
+it contains: on Wayland, Windows and macOS the window follows the pointer, on X11 a picture does and the
+window then moves by as much as the pointer did. (On Windows and macOS that is so for its only tab or its
+title; the header beside the tabs moves the window and nothing else.) Where outside drops do not float
+(they were turned off, and nothing carries a window), the drag just moves the window and docking is left to
+the float button. A double click on the header of its one tab group, beside the tabs, maximizes such a
+window. A `Minimal` window that holds more than one tab group has nothing to move it by as a whole.
 
 Frames drawn by QFlexDock can have round corners (`DockTheme::floatingCornerRadius`). The window is then
 translucent, which needs a compositor: without one (a bare X server) the corners are black. QFlexDock
@@ -216,8 +229,9 @@ What the tests cannot drive, to be tried with the examples:
 - **Window-carrying drags (Wayland)**, `qflexdock-basic` — a dragged tab comes off as a ghost of the same
   size; the guide still shows on the window below; dropping on a dock area docks; dropping elsewhere leaves
   a floating window of the same size; Esc changes nothing; dragging the only tab of a floating window moves
-  that window without creating another; re-docking and floating again works repeatedly; with the custom
-  frame, the title row moves the window and re-docks it, and the border resizes it.
+  that window without creating another; re-docking and floating again works repeatedly; the title of a
+  window (the header of its one group, or its title row once it is split) moves and re-docks it, and the
+  border resizes it.
 - **Drags (Windows, macOS)**, `qflexdock-multi-window` — the five zones and the outer band appear and
   highlight; every zone docks as shown; dropping on a tab inserts there; drops work across windows; Esc
   changes nothing; the empty part of a tab bar drags the whole group. On both also: a dragged tab comes

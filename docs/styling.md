@@ -15,7 +15,7 @@ QFlexDock has no theme of its own. Looks are decided in three layers, each overr
 | Tab group frame | `QFrame::StyledPanel` |
 | Title row buttons | `QToolButton`s with line icons in the palette's `WindowText` color; a panel's own actions as `QToolButton`s with the icons they bring |
 | Drop guide | Translucent colors derived from the palette's `Highlight` |
-| Floating windows | The platform's window frame, or with `FloatingFrame::Custom` a title row and a thin border (`Minimal`: the border alone) |
+| Floating windows | A thin border, and a title row once the window holds more than one tab group (`FloatingFrame::Minimal`: the border alone), or with `FloatingFrame::Native` the platform's window frame |
 
 Changes to the style, palette, font or style sheet, and the system's light/dark switch, are picked up
 through Qt's change events; there is nothing to call. All sizes are device-independent pixels.
@@ -41,7 +41,7 @@ There are no sub-controls or pseudo-states beyond these.
 | `QFlexDock--DockAutoHidePopup` | The panel that slides out (`QFrame`) | `background`, `border`; buttons `#dockPinButton`, `#dockCloseButton` |
 | `QFlexDock--DockDropOverlay` | The drop guide | Only the `qproperty-*` below |
 | `QFlexDock--DockFloatingWindow` | Floating windows | `background`, with a custom frame also `border` and `border-radius`; properties `customFrame`, `maximized` |
-| `#dockFloatingTitleBar`, `#dockFloatingTitle` | Title row and title text of a custom frame | `background`, `color`, … |
+| `#dockFloatingTitleBar`, `#dockFloatingTitle` | Title row and title text of a custom frame (a window holding one tab group has none: its title is that group's `#dockTitleBar`) | `background`, `color`, … |
 | `#dockFloatingMaximizeButton`, `#dockFloatingCloseButton` | Its buttons | As `QToolButton` |
 
 ```css
