@@ -23,6 +23,8 @@ class QFLEXDOCK_EXPORT DockWorkspace : public QWidget
 {
     Q_OBJECT
     Q_PROPERTY(QString workspaceId READ workspaceId CONSTANT)
+    Q_PROPERTY(QString currentPanel READ currentPanel WRITE setCurrentPanel
+               NOTIFY currentPanelChanged)
     Q_PROPERTY(bool columnDocking READ isColumnDocking WRITE setColumnDocking)
     Q_PROPERTY(QFlexDock::DockGroupHeader groupHeader READ groupHeader WRITE setGroupHeader
                RESET unsetGroupHeader)
@@ -45,6 +47,30 @@ public:
     /// Panels docked in this workspace, in layout order. Floating and
     /// auto-hidden panels are not included.
     [[nodiscard]] QStringList panels() const;
+    /// The panel of this workspace that is being worked in, or was last: the
+    /// one that would be the active panel if the workspace had the user's
+    /// attention. That is the tab in front of the tab group in which a panel
+    /// was active last, in the workspace or a floating window it owns; before
+    /// any was, or once that group is gone, the tab in front of its first
+    /// group. Empty while the workspace shows no panel.
+    ///
+    /// The document that the rest of an application is about, where the
+    /// documents have a workspace to themselves: it stays the same while the
+    /// user works in a panel elsewhere.
+    [[nodiscard]] PanelId currentPanel() const;
+    /// Makes a panel of this workspace its current one: the tab in front of
+    /// its group, and that group the one worked in last. The active panel
+    /// and keyboard focus stay where they are. A panel that is not in this
+    /// workspace, or in a floating window it owns, is ignored.
+    void setCurrentPanel(const PanelId &id);
+
+    /// A widget shown in place of the panels while none is docked in the
+    /// workspace: a start page, a hint, a picture. It fills the workspace,
+    /// which goes on taking dragged panels as an empty one does. The
+    /// workspace takes ownership; the widget set before is destroyed.
+    [[nodiscard]] QWidget *placeholderWidget() const;
+    void setPlaceholderWidget(QWidget *widget);
+
     /// The panel whose tab group fills this workspace (see
     /// DockManager::maximizePanel()), or an empty id.
     [[nodiscard]] PanelId maximizedPanel() const;
@@ -85,6 +111,9 @@ public:
     [[nodiscard]] bool isCenterDropEnabled() const;
     void setCenterDropEnabled(bool enabled);
     void unsetCenterDropEnabled();
+
+Q_SIGNALS:
+    void currentPanelChanged(const QString &id);
 
 private:
     friend class DockManager;

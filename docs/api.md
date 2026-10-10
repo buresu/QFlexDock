@@ -61,7 +61,7 @@ Registering does not show a panel.
 | `moveTabGroup(anyPanel, …)` | The same for a whole tab group |
 | `floatPanel(id, geometry)`, `floatTabGroup(anyPanel, geometry)` | Into a new floating window; a closed panel is shown in one |
 | `dockPanel(id)` | From floating or auto-hide back to where it was docked last |
-| `openPanel(id)`, `closePanel(id)`, `togglePanel(id)` | Reopen a closed panel in its old place / close it (it stays registered) |
+| `openPanel(id)`, `closePanel(id)`, `togglePanel(id)` | Reopen a closed panel in its old place, or with none remembered at its default placement / close it (it stays registered) |
 | `openPanels(ids)`, `closePanels(ids)` | The same for several panels as one change and one undo step |
 | `activatePanel(id)`, `activePanel()` | Bring the tab to the front, raise the window, give focus |
 | `raisePanel(id)` | Bring the tab to the front and nothing else: the active panel and keyboard focus stay where they are |
@@ -79,6 +79,22 @@ can put them away as well, by pushing a split handle against them, and pull them
 
 A panel that leaves a split leaves the room it shows as: where a size limit held it narrower than its
 share (a palette of fixed width docked at a quarter of the window), what goes to its neighbour is that width.
+
+**Where a panel goes unasked.** `DockPanel::setDefaultPlacement(placement)` says where a panel is put when
+it is to be shown and nothing says where: `openPanel()` of a panel no place is remembered for (without a
+default placement: a tab in the first workspace), and a layout put in place as a whole that knows nothing
+of the panel (see [persistence.md](persistence.md)). A `DockPlacement` is what `movePanel()` takes:
+`relativeTo` and an area to dock against that panel's tab group, or `workspace` (an id) and an area to dock
+against a workspace; with both, the workspace is used while the panel named is not in a tab group.
+
+```cpp
+QFlexDock::DockPlacement placement;
+placement.relativeTo = "console";                 // among the tabs of the console...
+placement.workspace = "main";                     // ...or, while that is closed, in this workspace
+placement.area = QFlexDock::DockArea::Center;
+manager.registerPanel("problems", view, "Problems")->setDefaultPlacement(placement);
+manager.openPanels({"console", "problems"});      // in this order: one may be placed beside another
+```
 
 **Policies** — `DockPanel::setPolicy(policy)`, `setDropFilter(filter)` (called for every drop; return `false` to
 refuse). The request names the panels, the target and its area, and for a drop on a header the position
@@ -112,6 +128,17 @@ the floating windows it owns: `setColumnDocking()`, and three that take the plac
 for all of them, `setGroupHeader()`, `setTitleButtons()` and `setCenterDropEnabled()`. Each of the three is
 the manager's again after `unsetGroupHeader()`, `unsetTitleButtons()`, `unsetCenterDropEnabled()`.
 `maximizedPanel()` and `panels()` tell what the workspace holds.
+
+`currentPanel()` is the panel of a workspace that is being worked in, or was last: the tab in front of the
+group in which a panel was active last, in the workspace or a floating window it owns (before any was: of
+its first group). Where the documents have a workspace to themselves it is the document the rest of the
+application is about, and it stays the same while the user works in a panel elsewhere.
+`currentPanelChanged(id)` tells of another one. `setCurrentPanel(id)` makes a panel of the workspace the
+current one without activating it: its tab comes to the front, and keyboard focus stays where it is.
+
+`setPlaceholderWidget(widget)` gives a workspace something to show while no panel is docked in it: a start
+page, a hint. The widget fills the workspace, which owns it, and the workspace takes dragged panels as an
+empty one does (as long as the widget does not accept drops itself).
 
 A panel that is put away at a border (`setPanelAutoHide()`) comes out when its name in the bar is chosen,
 and goes back with a click elsewhere. `AutoHideReveal::Over` (the default) shows it over the dock area.
@@ -234,7 +261,7 @@ allows it into the auto-hide bar of the nearest border, as one change. A header 
 ([platform-notes.md](platform-notes.md)) always has maximize and close, which there act on the window.
 
 **Signals** — `layoutAboutToChange()` / `layoutChanged()`, `panelAboutToMove()` / `panelMoved()`,
-`panelOpenChanged()`, `panelWindowChanged()`, `activePanelChanged()`, `panelRegistered()` /
+`panelOpenChanged()`, `panelCloseRequested()`, `panelWindowChanged()`, `activePanelChanged()`, `panelRegistered()` /
 `panelAboutToBeUnregistered()`, `workspaceAdded()` / `workspaceRemoved()`, `undoStateChanged()`,
 `presetsChanged()`, `themeChanged()`, and `panelContextMenuRequested(panel, menu)` to add items to a tab's menu.
 
@@ -245,7 +272,21 @@ Title, icon, tool tip, policy, and state (`isOpen()`, `isActive()`, `isCurrent()
 in front of its group, one in every group; `isActive()` for the one panel the user works in. `setDirty()`, `setPinnedTab()` and `setPreviewTab()`
 only change how the tab is drawn; the application supplies the state. `setTabCloseButton(false)` leaves
 the tab of a panel that may be closed without a button for it: it is closed from its menu, with the
-middle button, or with the window it floats in.
+middle button, or with the window it floats in. (`DockTheme::tabCloseButtons` does so for every tab.)
+
+**Closing.** When the user asks for a panel to be closed (its tab button, the header's, the middle mouse
+button, its menu, the floating window it is in), `closeRequested()` tells of it, and the panel is closed.
+With `setClosesOnRequest(false)` the signal is all that happens, and the application decides: a document
+with unsaved changes asks first, one that is gone once closed is unregistered. `closePanel()` and a layout
+that is restored close a panel without a request. A floating window stays open while a panel in it does.
+
+```cpp
+panel->setClosesOnRequest(false);
+QObject::connect(panel, &QFlexDock::DockPanel::closeRequested, &window, [&manager, panel] {
+    if (!panel->isDirty() || confirmDiscard(panel))
+        manager.unregisterPanel(panel->id());     // or panel->close(), to keep it for later
+});
+```
 
 **A menu of panels.** `toggleViewAction()` is a checkable action that shows the panel and closes it: its
 text is the title, and it is checked while the panel is open. The panel owns it.

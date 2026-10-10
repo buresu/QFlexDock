@@ -300,7 +300,7 @@ DockAutoHideContainer::DockAutoHideContainer(DockManagerPrivate *manager, DockWo
     });
     connect(m_popup->closeButton(), &QToolButton::clicked, this, [this] {
         if (m_manager && m_manager->userMay(m_expanded, DockFeature::Closable))
-            (void)m_manager->closePanels({m_expanded});
+            (void)m_manager->closeByUser({m_expanded});
     });
     area->installEventFilter(this);
     workspace->installEventFilter(this);

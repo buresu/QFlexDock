@@ -109,7 +109,6 @@ private:
     QList<File> m_files;
     QHash<PanelId, CodeEditor *> m_codeEditors;
     PanelId m_preview;
-    PanelId m_document;
     QToolButton *m_position = nullptr;
     QToolButton *m_language = nullptr;
 };
@@ -526,15 +525,9 @@ void Workbench::openFile(const QString &path, bool preview)
 // The document worked in last, also while a view has the focus.
 PanelId Workbench::currentDocument()
 {
-    const DockPanel *active = m_manager.activePanel();
-    if (active && m_codeEditors.contains(active->id()))
-        m_document = active->id();
-    const DockPanel *document = m_manager.panel(m_document);
-    if (!document || !document->isOpen()) {
-        // It was closed: whatever is in front in the middle now.
-        m_document = m_manager.currentPanel(m_editors->panels().value(0));
-    }
-    return m_document;
+    // The documents have a workspace to themselves: its current panel is the
+    // one that is worked in, or was before a view was.
+    return m_editors->currentPanel();
 }
 
 void Workbench::closeDocument()
@@ -601,7 +594,7 @@ void Workbench::syncStatus()
     const QTextCursor cursor = editor->textCursor();
     m_position->setText(u"Ln %1, Col %2"_s.arg(cursor.blockNumber() + 1)
                             .arg(cursor.positionInBlock() + 1));
-    const QString path = m_document;
+    const QString path = currentDocument();
     m_language->setText(path.endsWith(".txt"_L1)  ? u"CMake"_s
                         : path.endsWith(".md"_L1) ? u"Markdown"_s
                         : path.endsWith(".h"_L1) || path.endsWith(".cpp"_L1) ? u"C++"_s

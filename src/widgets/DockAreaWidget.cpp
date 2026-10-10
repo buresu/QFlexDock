@@ -98,6 +98,19 @@ void DockAreaWidget::detachFromManager()
         strip->detachFromManager();
 }
 
+void DockAreaWidget::setPlaceholder(QWidget *widget)
+{
+    if (m_placeholder == widget)
+        return;
+    delete m_placeholder.data();
+    m_placeholder = widget;
+    if (widget) {
+        widget->setParent(this);
+        widget->hide();
+    }
+    relayout();
+}
+
 DockTabGroup *DockAreaWidget::groupOfPanel(const PanelId &panel) const
 {
     const LayoutNode *node = m_tree.findPanel(panel);
@@ -422,6 +435,17 @@ void DockAreaWidget::placeWidgets()
 
     updateCorners();
     placeFlyout();
+
+    // Under everything else, which is the drop guide alone while it shows.
+    if (m_placeholder) {
+        const bool empty = !m_tree.root();
+        if (empty) {
+            m_placeholder->setGeometry(rect());
+            m_placeholder->lower();
+        }
+        if (m_placeholder->isHidden() == empty)
+            m_placeholder->setVisible(empty);
+    }
 
     m_overlay->setGeometry(rect());
     if (m_overlay->isVisible())

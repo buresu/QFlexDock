@@ -45,6 +45,8 @@ struct DockPanel::Private
     bool headerVisible = true;
     bool tabCloseButton = true;
     bool collapsible = false;
+    bool closesOnRequest = true;
+    DockPlacement defaultPlacement;
     /// Indexed by DockTitlePlace.
     std::array<QList<QPointer<QAction>>, 3> titleActions;
     QAction *toggleViewAction = nullptr;
@@ -126,6 +128,8 @@ struct DockWorkspace::Private
     std::optional<DockTitleButtons> titleButtons;
     bool columnDocking = false;
     std::optional<bool> centerDrop;
+    /// What currentPanelChanged() last told of.
+    PanelId reportedCurrent;
 
     void settingChanged() const;
 };
@@ -174,7 +178,21 @@ public:
     DockResult autoHidePanels(const QStringList &panels, DockArea edge);
     DockResult setMaximized(const PanelId &panel, bool maximized);
     DockResult closePanels(const QStringList &panels);
+    /// The user asks for panels to be closed: each is told, and those that
+    /// close on request are.
+    DockResult closeByUser(const QStringList &panels);
     DockResult openPanels(const QStringList &panels);
+    /// Puts absent panels into `next`: where each is remembered, or with no
+    /// place remembered at its default placement, or else as a tab in the
+    /// first workspace.
+    DockResult reattach(LayoutState &next, const QStringList &panels) const;
+    /// Puts an absent panel into `next` at its default placement. False if
+    /// it has none.
+    bool placeByDefault(LayoutState &next, const PanelId &panel) const;
+    /// For a layout that is about to be put in place as a whole: the panels
+    /// it knows nothing of. Those of them that are open now and have a
+    /// default placement are placed there in `next`.
+    QStringList keepUnknownPanels(LayoutState &next) const;
     /// `reveal` false: a panel of an iconified column is made the current
     /// one of its group there, and stays out of view.
     DockResult activate(const PanelId &panel, Activation how, bool reveal = true);
@@ -248,6 +266,14 @@ public:
 
     // --- Workspaces ----------------------------------------------------------
     void workspaceDestroyed(DockWorkspace *workspace);
+    [[nodiscard]] PanelId currentPanelOf(const QString &workspace) const;
+    DockResult setCurrentPanel(const QString &workspace, const PanelId &panel);
+    /// Tells of every workspace whose current panel is another one now.
+    void updateCurrentPanels();
+    /// Before `next` replaces the state: where the panel that stands for the
+    /// tab group a workspace was worked in last leaves that group, another
+    /// panel of the group stands for it.
+    void keepCurrentGroups(const LayoutState &next);
     [[nodiscard]] DockAreaWidget *areaFor(const QString &container) const;
     /// The workspace a container belongs to (the owner, for a floating one).
     [[nodiscard]] DockWorkspace *workspaceFor(const QString &container) const;
@@ -317,6 +343,9 @@ public:
     /// Group of each container the user last worked in; where a plain
     /// "add to this workspace" tabs into.
     QHash<QString, PanelId> lastActiveIn;
+    /// A panel of the tab group each workspace was worked in last, floating
+    /// windows it owns included (DockWorkspace::currentPanel()).
+    QHash<QString, PanelId> currentIn;
     quint64 lastPressTimestamp = 0;
 
     bool dragInProgress = false;

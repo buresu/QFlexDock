@@ -37,9 +37,10 @@ struct QFLEXDOCK_EXPORT DockRestoreReport
     QStringList missingPanels;
     /// Registered panels the layout knows nothing of: it neither places them
     /// nor remembers a place for them, as it does for a panel that was closed
-    /// when it was saved. Like every panel the layout does not place they end
-    /// up closed; these are the ones that are new to it (a panel added to the
-    /// application since), which the application may want to show somewhere.
+    /// when it was saved. These are the ones that are new to it (a panel
+    /// added to the application since). One that was open and has a default
+    /// placement (DockPanel::setDefaultPlacement()) is shown there; any other
+    /// ends up closed, like every panel the layout does not place.
     QStringList unknownPanels;
     /// Workspaces in the layout that do not exist; their panels are closed.
     QStringList unknownWorkspaces;
@@ -209,8 +210,8 @@ public:
     /// Puts a floating or auto-hidden panel back where it was last docked.
     DockResult dockPanel(const PanelId &id);
 
-    /// Shows a closed panel where it last was (or in the first workspace) and
-    /// activates it.
+    /// Shows a closed panel where it last was (or, with no place remembered,
+    /// at its default placement) and activates it.
     DockResult openPanel(const PanelId &id);
     /// Closes the panel: it leaves the layout but stays registered, and its
     /// position is remembered for openPanel().
@@ -406,6 +407,8 @@ Q_SIGNALS:
     void panelAboutToMove(QFlexDock::DockPanel *panel);
     void panelMoved(QFlexDock::DockPanel *panel);
     void panelOpenChanged(QFlexDock::DockPanel *panel, bool open);
+    /// The user asks for the panel to be closed (DockPanel::closeRequested()).
+    void panelCloseRequested(QFlexDock::DockPanel *panel);
     /// The panel's content ended up in a different top-level window.
     void panelWindowChanged(QFlexDock::DockPanel *panel, QWidget *topLevel);
     void activePanelChanged(QFlexDock::DockPanel *panel);

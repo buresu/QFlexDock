@@ -114,7 +114,7 @@ content, and the tabs are below it. A group with one of these set no longer draw
 `background` of its own, and keeps one pixel around the pane for the line. Tabs and title row have to be
 transparent and the tabs without a margin, as above; the content shows the pane where it paints no
 background. A group that is to be no pane (`[headerVisible="false"]`, say) gets `transparent` for all
-three colors.
+three colors: it then keeps no room for the line either, and its content fills it.
 
 Content that paints every pixel of its rectangle (a `QQuickWidget`, a video, a widget that fills its
 background) covers the corners of the pane. `paneCornerColor` names the color behind the group, and the
@@ -151,6 +151,7 @@ theme.iconSize = 18;                                     // -1: the style's size
 theme.titleButtons = QFlexDock::DockTitleButton::Float   // buttons in a group's header (also:
                    | QFlexDock::DockTitleButton::Close;  // AutoHide); the default is Menu | Maximize
 theme.tabIcons = false;                                  // tabs are titles only; default: with the panel's icon
+theme.tabCloseButtons = false;                           // no close button on any tab; default: where a panel may be closed
 theme.tabWidth = 200;                                    // every tab this wide; -1: as wide as its title
 theme.tabOverflow = QFlexDock::DockTabOverflow::Shrink;  // tabs share a crowded bar; default: Scroll
 theme.floatingBorderWidth = 1;                           // frames drawn by QFlexDock; -1: 4 pixels

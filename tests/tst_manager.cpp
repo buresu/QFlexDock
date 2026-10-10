@@ -687,6 +687,273 @@ private Q_SLOTS:
 
     // One middle click closes one tab, also when the next one moves up
     // under the pointer.
+    // The panel of a workspace that is worked in, or was last: the tab in
+    // front of the group a panel was active in last.
+    void workspaceHasACurrentPanel()
+    {
+        TwoWindows f;
+        f.show();
+        QCOMPARE(f.a->currentPanel(), PanelId());
+        QSignalSpy changed(f.a, &DockWorkspace::currentPanelChanged);
+        const auto told = [&changed] { return changed.last().at(0).toString(); };
+
+        // Before any panel was active: the tab in front of the first group.
+        QVERIFY(f.a->addPanel(p("a")));
+        QCOMPARE(f.a->currentPanel(), p("a"));
+        QCOMPARE(told(), p("a"));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Right));
+        QVERIFY(f.b->addPanel(p("d")));
+        QCOMPARE(f.a->currentPanel(), f.manager.currentPanel(p("a")));
+        QCOMPARE(f.b->currentPanel(), p("d"));
+
+        // The panel that is worked in, and still when the work is elsewhere.
+        QVERIFY(f.manager.activatePanel(p("c")));
+        QCOMPARE(f.a->currentPanel(), p("c"));
+        QCOMPARE(told(), p("c"));
+        QVERIFY(f.manager.activatePanel(p("d")));
+        QCOMPARE(f.a->currentPanel(), p("c"));
+        // A tab brought to the front of another group changes nothing...
+        QVERIFY(f.manager.raisePanel(p("a")));
+        QCOMPARE(f.a->currentPanel(), p("c"));
+
+        // ...unless it is made the current panel, which neither activates
+        // it nor takes the focus.
+        const int before = int(changed.size());
+        f.a->setCurrentPanel(p("b"));
+        QCOMPARE(f.a->currentPanel(), p("b"));
+        QCOMPARE(f.manager.currentPanel(p("a")), p("b"));
+        QCOMPARE(changed.size(), before + 1);
+        QCOMPARE(told(), p("b"));
+        QCOMPARE(f.manager.activePanel(), f.manager.panel(p("d")));
+        f.a->setCurrentPanel(p("d"));    // of another workspace: ignored
+        f.a->setCurrentPanel(p("nope"));
+        QCOMPARE(f.a->currentPanel(), p("b"));
+        QCOMPARE(changed.size(), before + 1);
+        // It is the tab in front of that group, whichever that is.
+        QVERIFY(f.manager.raisePanel(p("a")));
+        QCOMPARE(f.a->currentPanel(), p("a"));
+
+        // Closed, the tab that takes its place is the current one; with the
+        // group gone, the one in front of the first group that is left.
+        QVERIFY(f.manager.closePanel(p("a")));
+        QCOMPARE(f.a->currentPanel(), p("b"));
+        QVERIFY(f.manager.closePanel(p("b")));
+        QCOMPARE(f.a->currentPanel(), p("c"));
+        // A floating window belongs to its workspace.
+        QVERIFY(f.manager.floatPanel(p("c"), QRect(60, 60, 320, 240)));
+        QCOMPARE(describe(f.a), p("<empty>"));
+        QCOMPARE(f.a->currentPanel(), p("c"));
+        QVERIFY(f.manager.closePanel(p("c")));
+        QCOMPARE(f.a->currentPanel(), PanelId());
+        QCOMPARE(told(), PanelId());
+        QCOMPARE(f.b->currentPanel(), p("d"));
+    }
+
+    // A request of the user to close a panel is told of, and is all that
+    // happens to a panel that does not close on request.
+    void closeRequestsCanBeLeftToTheApplication()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        DockPanel *a = f.manager.panel(p("a"));
+        DockPanel *b = f.manager.panel(p("b"));
+        DockPanel *c = f.manager.panel(p("c"));
+        QSignalSpy askedA(a, &DockPanel::closeRequested);
+        QSignalSpy askedB(b, &DockPanel::closeRequested);
+        QSignalSpy asked(&f.manager, &DockManager::panelCloseRequested);
+        DockTabBar *bar = areaOf(f.a)->groupOfPanel(p("a"))->tabBar();
+        const auto middleClick = [bar](const char *panel) {
+            QTest::mouseClick(bar, Qt::MiddleButton, {},
+                              bar->tabRect(bar->indexOfPanel(p(panel))).center());
+        };
+
+        // By default the panel is closed, and told first.
+        QVERIFY(a->closesOnRequest());
+        middleClick("a");
+        QCOMPARE(askedA.size(), 1);
+        QCOMPARE(asked.size(), 1);
+        QCOMPARE(asked.last().at(0).value<DockPanel *>(), a);
+        QVERIFY(!a->isOpen());
+
+        // One that does not close on request stays...
+        b->setClosesOnRequest(false);
+        QVERIFY(!b->closesOnRequest());
+        middleClick("b");
+        QCOMPARE(askedB.size(), 1);
+        QVERIFY(b->isOpen());
+        // ...for the menu as well...
+        std::unique_ptr<QMenu> menu(priv(f.manager)->createPanelMenu(b, nullptr));
+        menu->findChild<QAction *>(QStringLiteral("dockActionClose"))->trigger();
+        QCOMPARE(askedB.size(), 2);
+        QVERIFY(b->isOpen());
+        // ...until the application closes it, which is no request.
+        QVERIFY(f.manager.closePanel(p("b")));
+        QVERIFY(!b->isOpen());
+        QCOMPARE(askedB.size(), 2);
+
+        // What is asked may do away with the panel there and then.
+        c->setClosesOnRequest(false);
+        connect(c, &DockPanel::closeRequested, this,
+                [&f] { QVERIFY(f.manager.unregisterPanel(p("c"))); });
+        middleClick("c");
+        QVERIFY(!f.manager.hasPanel(p("c")));
+        QCOMPARE(describe(f.a), p("<empty>"));
+
+        // A floating window stays for as long as a panel in it does.
+        DockPanel *d = f.manager.panel(p("d"));
+        QSignalSpy askedD(d, &DockPanel::closeRequested);
+        d->setClosesOnRequest(false);
+        QVERIFY(f.manager.floatPanel(p("d"), QRect(60, 60, 320, 240)));
+        const QPointer<DockFloatingWindow> window =
+            priv(f.manager)->floatingWindows.begin().value();
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QVERIFY(!window->close());
+        QCOMPARE(askedD.size(), 1);
+        QVERIFY(d->isOpen());
+        QVERIFY(window->isVisible());
+        d->setClosesOnRequest(true);
+        QVERIFY(window->close());
+        QCOMPARE(askedD.size(), 2);
+        QVERIFY(!d->isOpen());
+    }
+
+    // Where a panel goes when it is to be shown and nothing says where.
+    void defaultPlacementIsWhereAPanelGoesUnasked()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        DockPanel *c = f.manager.panel(p("c"));
+        QVERIFY(!c->defaultPlacement().isValid());
+
+        // Without one: a tab in the first workspace.
+        QVERIFY(f.manager.openPanel(p("b")));
+        QCOMPARE(describe(f.a), p("a|b"));
+
+        // Beside another panel.
+        DockPlacement below;
+        below.relativeTo = p("a");
+        below.area = DockArea::Bottom;
+        below.fraction = 0.25;
+        c->setDefaultPlacement(below);
+        QCOMPARE(c->defaultPlacement(), below);
+        QVERIFY(f.manager.openPanel(p("c")));
+        QCOMPARE(describe(f.a), p("V(a|b, c)"));
+        QVERIFY(qAbs(areaOf(f.a)->tree().findPanel(p("c"))->weight - 0.25) < 1e-9);
+
+        // Against a workspace as a whole, and several at once in the order
+        // given: the second among the tabs of the first.
+        DockPlacement inB;
+        inB.workspace = p("B");
+        inB.area = DockArea::Center;
+        f.manager.panel(p("d"))->setDefaultPlacement(inB);
+        DockPlacement withD;
+        withD.relativeTo = p("d");
+        withD.area = DockArea::Center;
+        f.manager.panel(p("e"))->setDefaultPlacement(withD);
+        QVERIFY(f.manager.openPanels({p("d"), p("e")}));
+        QCOMPARE(describe(f.b), p("d|e"));
+
+        // The workspace, where the panel that is named is not there.
+        DockPlacement fallback;
+        fallback.relativeTo = p("nowhere");
+        fallback.workspace = p("B");
+        fallback.area = DockArea::Right;
+        f.manager.panel(p("f"))->setDefaultPlacement(fallback);
+        QVERIFY(f.manager.openPanel(p("f")));
+        QCOMPARE(describe(f.b), p("H(d|e, f)"));
+
+        // A place that is remembered comes first.
+        QVERIFY(f.manager.closePanel(p("c")));
+        c->setDefaultPlacement(inB);
+        QVERIFY(f.manager.openPanel(p("c")));
+        QCOMPARE(describe(f.a), p("V(a|b, c)"));
+    }
+
+    // A layout put in place as a whole decides about the panels it knows. One
+    // it knows nothing of, with a default placement, stays as it is.
+    void aLayoutLeavesPanelsItDoesNotKnowAsTheyAre()
+    {
+        TwoWindows f(2);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        const QByteArray saved = f.manager.saveLayout();
+        QVERIFY(f.manager.savePreset(p("two")));
+        f.manager.saveDefaultLayout();
+
+        // Three panels that came later: one open, one closed, and one open
+        // that has no default placement.
+        DockPlacement withA;
+        withA.relativeTo = p("a");
+        withA.area = DockArea::Center;
+        f.manager.registerPanel(p("c"), new QLabel(p("C")))->setDefaultPlacement(withA);
+        f.manager.registerPanel(p("d"), new QLabel(p("D")))->setDefaultPlacement(withA);
+        f.manager.registerPanel(p("e"), new QLabel(p("E")));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom));
+        QVERIFY(f.a->addPanel(p("e"), DockArea::Top));
+
+        const auto check = [&f] {
+            QCOMPARE(describe(f.a), p("H(a|c, b)"));
+            QVERIFY(!f.manager.panel(p("d"))->isOpen());
+            QVERIFY(!f.manager.panel(p("e"))->isOpen());
+        };
+        DockRestoreReport report;
+        QVERIFY(f.manager.restoreLayout(saved, &report));
+        QCOMPARE(report.unknownPanels, QStringList({p("c"), p("d"), p("e")}));
+        check();
+
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom));
+        QVERIFY(f.manager.applyPreset(p("two")));
+        check();
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom));
+        QVERIFY(f.manager.resetLayout());
+        check();
+    }
+
+    // A widget in place of the panels while none is docked in a workspace.
+    void placeholderIsShownWhileNoPanelIsDocked()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(!f.a->placeholderWidget());
+        const QPointer<QLabel> start = new QLabel(p("start"));
+        f.a->setPlaceholderWidget(start);
+        QCOMPARE(f.a->placeholderWidget(), start.data());
+        QCoreApplication::processEvents();
+        DockAreaWidget *area = areaOf(f.a);
+        QVERIFY(start->isVisible());
+        QCOMPARE(start->parentWidget(), area);
+        QCOMPARE(start->geometry(), area->rect());
+        f.windowA.resize(f.windowA.width() + 60, f.windowA.height() + 40);
+        QCoreApplication::processEvents();
+        QCOMPARE(start->geometry(), area->rect());
+
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(!start->isVisible());
+        // Only what is docked counts.
+        QVERIFY(f.manager.floatPanel(p("a"), QRect(60, 60, 320, 240)));
+        QVERIFY(start->isVisible());
+        QVERIFY(f.manager.dockPanel(p("a")));
+        QVERIFY(!start->isVisible());
+        QVERIFY(f.manager.closePanel(p("a")));
+        QVERIFY(start->isVisible());
+
+        // The workspace owns it: another takes its place.
+        const QPointer<QLabel> other = new QLabel(p("other"));
+        f.a->setPlaceholderWidget(other);
+        QVERIFY(!start);
+        QCoreApplication::processEvents();
+        QVERIFY(other->isVisible());
+        f.a->setPlaceholderWidget(nullptr);
+        QVERIFY(!other);
+        QVERIFY(!f.a->placeholderWidget());
+    }
+
     void middleClickClosesOneTab()
     {
         TwoWindows f;
@@ -1308,6 +1575,15 @@ private Q_SLOTS:
         QVERIFY(a->features().testFlag(DockFeature::Closable));
         a->setTabCloseButton(true);
         QTRY_VERIFY(bar->tabButton(0, side));
+        // The theme takes the buttons off all the tabs.
+        DockTheme plain = f.manager.theme();
+        plain.tabCloseButtons = false;
+        f.manager.setTheme(plain);
+        QVERIFY(!bar->tabButton(0, side));
+        QVERIFY(!bar->tabButton(1, side));
+        plain.tabCloseButtons = true;
+        f.manager.setTheme(plain);
+        QTRY_VERIFY(bar->tabButton(0, side) && bar->tabButton(1, side));
 
         a->setPreviewTab(true);
         QVERIFY(a->isPreviewTab());

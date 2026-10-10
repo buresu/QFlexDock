@@ -401,6 +401,34 @@ private Q_SLOTS:
         QCOMPARE(describe(f.b), p("a"));
     }
 
+    // What a workspace shows while it is empty does not keep panels out.
+    void emptyWorkspaceWithAPlaceholderTakesTheDrop()
+    {
+        TwoWindows f;
+        auto *start = new QLabel(p("start"));
+        f.b->setPlaceholderWidget(start);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        DockAreaWidget *target = areaOf(f.b);
+        QVERIFY(start->isVisible());
+        // A drag goes to the first widget under the pointer that takes
+        // drops: the area, as long as the placeholder does not.
+        QVERIFY(!start->acceptDrops());
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("a"));
+        QVERIFY(drag.enter(target, target->rect().center()));
+        QCOMPARE(target->overlay()->scene().zones.size(), 1);
+        // The guide is above it.
+        QVERIFY(target->overlay()->isVisible());
+        QVERIFY(target->children().indexOf(target->overlay())
+                > target->children().indexOf(start));
+        QVERIFY(drag.drop(target, QPoint(5, 5)));
+        QCOMPARE(describe(f.b), p("a"));
+        QVERIFY(!start->isVisible());
+    }
+
     void cancelledDragLeavesEverythingAsItWas()
     {
         TwoWindows f;

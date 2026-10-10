@@ -73,6 +73,27 @@ QStringList DockWorkspace::panels() const
     return d->area->tree().panels();
 }
 
+PanelId DockWorkspace::currentPanel() const
+{
+    return d->manager ? DockManagerPrivate::get(d->manager)->currentPanelOf(d->id) : PanelId();
+}
+
+void DockWorkspace::setCurrentPanel(const PanelId &id)
+{
+    if (d->manager)
+        (void)DockManagerPrivate::get(d->manager)->setCurrentPanel(d->id, id);
+}
+
+QWidget *DockWorkspace::placeholderWidget() const
+{
+    return d->area->placeholder();
+}
+
+void DockWorkspace::setPlaceholderWidget(QWidget *widget)
+{
+    d->area->setPlaceholder(widget);
+}
+
 PanelId DockWorkspace::maximizedPanel() const
 {
     if (!d->manager)

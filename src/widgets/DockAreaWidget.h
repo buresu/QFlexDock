@@ -91,6 +91,10 @@ public:
     [[nodiscard]] QList<DockSplitCorner *> visibleCorners() const;
     [[nodiscard]] QList<DockEdgeHandle *> visibleEdgeHandles() const;
     [[nodiscard]] DockDropOverlay *overlay() const { return m_overlay; }
+    /// Shown in place of the tab groups while there is none
+    /// (DockWorkspace::setPlaceholderWidget()). Owned by the area.
+    [[nodiscard]] QWidget *placeholder() const { return m_placeholder; }
+    void setPlaceholder(QWidget *widget);
 
     // --- Columns ---------------------------------------------------------------
     /// The bars above the columns shown, where the container docks in columns.
@@ -261,6 +265,7 @@ private:
     /// beside it (and was before); 0 when that is not known.
     int m_stripWidth = 0;
     DockDropOverlay *m_overlay;
+    QPointer<QWidget> m_placeholder;
     Layout *m_layout;
     /// A row of tabs that is never shown, for its height.
     mutable QPointer<DockTabBar> m_headerProbe;

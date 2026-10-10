@@ -219,6 +219,26 @@ void DockPanel::setCollapsible(bool collapsible)
     d->collapsible = collapsible;
 }
 
+bool DockPanel::closesOnRequest() const
+{
+    return d->closesOnRequest;
+}
+
+void DockPanel::setClosesOnRequest(bool closes)
+{
+    d->closesOnRequest = closes;
+}
+
+DockPlacement DockPanel::defaultPlacement() const
+{
+    return d->defaultPlacement;
+}
+
+void DockPanel::setDefaultPlacement(const DockPlacement &placement)
+{
+    d->defaultPlacement = placement;
+}
+
 QWidget *DockPanel::compactWidget() const
 {
     return d->compactWidget;

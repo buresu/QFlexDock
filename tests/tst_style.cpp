@@ -1075,6 +1075,8 @@ private Q_SLOTS:
         DockTabGroup *bare = area->groupOfPanel(p("c"));
         QVERIFY(!bare->isHeaderVisible());
         QVERIFY(untouched(pixel(bare, QPoint(0, bare->height() / 2))));
+        // It shows nothing, and keeps no room for a line either.
+        QCOMPARE(bare->contentsMargins(), QMargins());
 
         // With a title bar: that is part of the pane, and the tabs are below.
         f.manager.setGroupHeader(DockGroupHeader::TitleBar);

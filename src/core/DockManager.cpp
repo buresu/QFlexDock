@@ -151,6 +151,7 @@ DockResult DockManagerPrivate::apply(LayoutState next, bool recordUndo)
     if (recordUndo)
         pushUndo(state);
     const QPointer<QWidget> focusBefore = QApplication::focusWidget();
+    keepCurrentGroups(next);
     state = std::move(next);
     syncViews();
     committing = false;
@@ -763,6 +764,23 @@ DockResult DockManagerPrivate::closePanels(const QStringList &ids)
     return leaving.isEmpty() ? DockResult::success() : apply(std::move(next), true);
 }
 
+DockResult DockManagerPrivate::closeByUser(const QStringList &ids)
+{
+    QStringList closing;
+    for (const PanelId &id : ids) {
+        const QPointer<DockPanel> panel = panels.value(id);
+        if (!panel)
+            continue;
+        Q_EMIT panel->closeRequested();
+        if (panel && panels.value(id) == panel)
+            Q_EMIT q->panelCloseRequested(panel);
+        // (Whoever was told may have closed the panel, or unregistered it.)
+        if (panel && panels.value(id) == panel && get(panel)->closesOnRequest)
+            closing << id;
+    }
+    return closePanels(closing);
+}
+
 DockResult DockManagerPrivate::openPanels(const QStringList &ids)
 {
     for (const PanelId &id : ids) {
@@ -770,9 +788,87 @@ DockResult DockManagerPrivate::openPanels(const QStringList &ids)
             return unknownPanel(id);
     }
     LayoutState next = state;
-    if (DockResult r = next.reattachAll(ids, defaultWorkspaceId()); !r)
+    if (DockResult r = reattach(next, ids); !r)
         return r;
     return apply(std::move(next), true);
+}
+
+DockResult DockManagerPrivate::reattach(LayoutState &next, const QStringList &ids) const
+{
+    // Those a place is remembered for go back to it first: one of the others
+    // may be placed beside them.
+    QStringList remembered;
+    QStringList fresh;
+    for (const PanelId &id : ids) {
+        if (!next.isPlaced(id) && !remembered.contains(id) && !fresh.contains(id))
+            (next.memory.contains(id) ? remembered : fresh).append(id);
+    }
+    if (!remembered.isEmpty()) {
+        if (DockResult r = next.reattachAll(remembered, defaultWorkspaceId()); !r)
+            return r;
+    }
+    QStringList anywhere;
+    for (const PanelId &id : std::as_const(fresh)) {
+        if (!placeByDefault(next, id))
+            anywhere.append(id);
+    }
+    return anywhere.isEmpty() ? DockResult::success()
+                              : next.reattachAll(anywhere, defaultWorkspaceId());
+}
+
+bool DockManagerPrivate::placeByDefault(LayoutState &next, const PanelId &id) const
+{
+    DockPanel *panel = panels.value(id);
+    if (!panel || next.isPlaced(id))
+        return false;
+    const DockPlacement &placement = get(panel)->defaultPlacement;
+    if (!placement.isValid())
+        return false;
+
+    // Beside the panel it names, or among its tabs, while that is in a group.
+    if (const std::optional<PanelLocation> beside = next.locate(placement.relativeTo);
+        beside && !beside->isAutoHidden()) {
+        const double fraction = placement.fraction > 0.0 ? placement.fraction
+                                                         : DefaultGroupEdgeFraction;
+        return next.attach(id, beside->container, beside->node, placement.area, -1, fraction).ok();
+    }
+
+    const ContainerState *named = next.find(placement.workspace);
+    ContainerState *container = named && named->kind == ContainerKind::Workspace
+        ? next.find(placement.workspace) : next.find(defaultWorkspaceId());
+    if (!container)
+        return false;
+    // As a tab: of the group the user last worked in there.
+    NodeId node;
+    if (placement.area == DockArea::Center) {
+        if (const LayoutNode *group = container->tree.findPanel(lastActiveIn.value(container->id)))
+            node = group->id;
+    }
+    const double fraction = placement.fraction > 0.0 ? placement.fraction
+                                                     : DefaultWorkspaceEdgeFraction;
+    return next.attach(id, container->id, node, placement.area, -1, fraction).ok();
+}
+
+QStringList DockManagerPrivate::keepUnknownPanels(LayoutState &next) const
+{
+    reconcile(next);
+    QStringList unknown;
+    for (const PanelId &id : panelOrder) {
+        if (!next.isPlaced(id) && !next.memory.contains(id))
+            unknown << id;
+    }
+    // Twice: one of them may be placed beside another that comes later.
+    for (int pass = 0; pass < 2; ++pass) {
+        for (const PanelId &id : std::as_const(unknown)) {
+            if (!state.isPlaced(id) || next.isPlaced(id))
+                continue;
+            const DockPlacement &placement = get(panels.value(id))->defaultPlacement;
+            if (pass == 0 && !placement.relativeTo.isEmpty() && !next.isPlaced(placement.relativeTo))
+                continue;
+            (void)placeByDefault(next, id);
+        }
+    }
+    return unknown;
 }
 
 DockResult DockManagerPrivate::activate(const PanelId &id, Activation how, bool reveal)
@@ -1248,7 +1344,9 @@ bool DockManagerPrivate::closeFloatingByUser(const QString &containerId)
         if (!userMay(panel, DockFeature::Closable))
             return false;
     }
-    return closePanels(inside).ok();
+    // The window is gone once its panels are; one that is asked and stays
+    // open keeps it.
+    return closeByUser(inside).ok() && !state.find(containerId);
 }
 
 // --- Panels ------------------------------------------------------------------
@@ -1424,11 +1522,16 @@ DockPanel *DockManagerPrivate::panelContaining(QWidget *widget) const
 void DockManagerPrivate::setActivePanel(DockPanel *panel)
 {
     if (panel) {
-        if (const std::optional<PanelLocation> location = state.locate(panel->id()))
+        if (const std::optional<PanelLocation> location = state.locate(panel->id())) {
             lastActiveIn.insert(location->container, panel->id());
+            if (const QString workspace = workspaceIdFor(location->container); !workspace.isEmpty())
+                currentIn.insert(workspace, panel->id());
+        }
     }
-    if (activePanel == panel)
+    if (activePanel == panel) {
+        updateCurrentPanels();
         return;
+    }
     const QPointer<DockPanel> previous = activePanel;
     activePanel = panel;
     if (previous) {
@@ -1441,6 +1544,7 @@ void DockManagerPrivate::setActivePanel(DockPanel *panel)
     }
     refreshActiveMarks();
     Q_EMIT q->activePanelChanged(panel);
+    updateCurrentPanels();
 }
 
 void DockManagerPrivate::updatePanelStates(bool emitSignals)
@@ -1494,6 +1598,7 @@ void DockManagerPrivate::updatePanelStates(bool emitSignals)
         if (panel)
             Q_EMIT panel->currentChanged(true);
     }
+    updateCurrentPanels();
 }
 
 void DockManagerPrivate::panelAppearanceChanged(DockPanel *panel)
@@ -1569,7 +1674,107 @@ void DockManagerPrivate::workspaceDestroyed(DockWorkspace *workspace)
     // reconcile() drops the container and closes (but remembers) its panels.
     (void)apply(state, false);
     lastActiveIn.remove(id);
+    currentIn.remove(id);
     Q_EMIT q->workspaceRemoved(id);
+}
+
+namespace {
+
+// The workspace a container of `layout` belongs to: itself, or its owner.
+QString workspaceOf(const LayoutState &layout, const QString &containerId)
+{
+    const ContainerState *container = layout.find(containerId);
+    if (!container)
+        return {};
+    return container->kind == ContainerKind::Floating ? container->owner : container->id;
+}
+
+} // namespace
+
+PanelId DockManagerPrivate::currentPanelOf(const QString &workspaceId) const
+{
+    // The tab in front of the group worked in last, while that group is
+    // still one of this workspace's.
+    const PanelId last = currentIn.value(workspaceId);
+    if (const std::optional<PanelLocation> location = state.locate(last);
+        location && workspaceIdFor(location->container) == workspaceId) {
+        if (!location->isAutoHidden())
+            return state.find(location->container)->tree.findNode(location->node)->active;
+        // (One that slid out of an auto-hide bar, for as long as it is worked in.)
+        if (activePanel && activePanel->id() == last)
+            return last;
+    }
+    const auto front = [](const ContainerState &container) {
+        const std::vector<const LayoutNode *> groups = container.tree.tabNodes();
+        return groups.empty() ? PanelId() : groups.front()->active;
+    };
+    if (const ContainerState *own = state.find(workspaceId)) {
+        if (const PanelId panel = front(*own); !panel.isEmpty())
+            return panel;
+    }
+    for (const ContainerState &container : state.containers) {
+        if (container.kind != ContainerKind::Floating || container.owner != workspaceId)
+            continue;
+        if (const PanelId panel = front(container); !panel.isEmpty())
+            return panel;
+    }
+    return {};
+}
+
+DockResult DockManagerPrivate::setCurrentPanel(const QString &workspaceId, const PanelId &id)
+{
+    if (!panels.contains(id))
+        return unknownPanel(id);
+    const std::optional<PanelLocation> location = state.locate(id);
+    if (!location || workspaceIdFor(location->container) != workspaceId) {
+        return fail(DockError::NotPlaced,
+                    QStringLiteral("panel '%1' is not in workspace '%2'").arg(id, workspaceId));
+    }
+    currentIn.insert(workspaceId, id);
+    const DockResult raised = activate(id, Activation::Raise);
+    updateCurrentPanels();
+    return raised;
+}
+
+void DockManagerPrivate::updateCurrentPanels()
+{
+    if (committing || destroying)
+        return;
+    const QList<DockWorkspace *> all = workspaces;
+    for (DockWorkspace *workspace : all) {
+        if (!workspaces.contains(workspace))
+            continue; // destroyed by whoever was told before
+        const PanelId current = currentPanelOf(workspace->workspaceId());
+        if (get(workspace)->reportedCurrent == current)
+            continue;
+        get(workspace)->reportedCurrent = current;
+        Q_EMIT workspace->currentPanelChanged(current);
+    }
+}
+
+void DockManagerPrivate::keepCurrentGroups(const LayoutState &next)
+{
+    for (auto it = currentIn.begin(); it != currentIn.end(); ++it) {
+        const std::optional<PanelLocation> before = state.locate(it.value());
+        if (!before || before->isAutoHidden())
+            continue;
+        const auto stays = [&](const PanelId &panel) {
+            const std::optional<PanelLocation> after = next.locate(panel);
+            return after && !after->isAutoHidden()
+                && workspaceOf(next, after->container) == it.key();
+        };
+        if (stays(it.value()))
+            continue;
+        const LayoutNode *group = state.find(before->container)->tree.findNode(before->node);
+        // The one that comes to the front in its place, if the layout says:
+        // otherwise any of them.
+        for (const PanelId &sibling : group->panels) {
+            if (sibling != it.value() && stays(sibling)) {
+                it.value() = sibling;
+                break;
+            }
+        }
+    }
 }
 
 DockAreaWidget *DockManagerPrivate::areaFor(const QString &containerId) const
@@ -1686,7 +1891,7 @@ QMenu *DockManagerPrivate::createPanelMenu(DockPanel *panel, QWidget *parent)
 
     add("dockActionClose", DockManager::tr("Close"),
         location.has_value() && features.testFlag(DockFeature::Closable),
-        [this, id] { (void)closePanels({id}); });
+        [this, id] { (void)closeByUser({id}); });
 
     QStringList others;
     for (const PanelId &other : groupPanels(id)) {
@@ -1694,7 +1899,7 @@ QMenu *DockManagerPrivate::createPanelMenu(DockPanel *panel, QWidget *parent)
             others << other;
     }
     add("dockActionCloseOthers", DockManager::tr("Close Others"), !others.isEmpty(),
-        [this, others] { (void)closePanels(others); });
+        [this, others] { (void)closeByUser(others); });
 
     menu->addSeparator();
     if (location && location->isDocked()) {
@@ -2014,7 +2219,7 @@ DockResult DockManager::openPanel(const PanelId &id)
         return unknownPanel(id);
     if (!d->state.isPlaced(id)) {
         LayoutState next = d->state;
-        if (DockResult r = next.reattach(id, d->defaultWorkspaceId()); !r)
+        if (DockResult r = d->reattach(next, {id}); !r)
             return r;
         if (DockResult r = d->apply(std::move(next), true); !r)
             return r;
@@ -2158,10 +2363,7 @@ DockResult DockManager::restoreLayout(const QByteArray &json, DockRestoreReport 
     DockRestoreReport collected;
     collected.warnings = warnings;
     d->reconcile(document.state, &collected);
-    for (const PanelId &id : std::as_const(d->panelOrder)) {
-        if (!document.state.isPlaced(id) && !document.state.memory.contains(id))
-            collected.unknownPanels << id;
-    }
+    collected.unknownPanels = d->keepUnknownPanels(document.state);
 
     // Windows must not come back on a monitor that is no longer there.
     const QList<QRect> screens = screenGeometries();
@@ -2229,7 +2431,9 @@ DockResult DockManager::applyPreset(const QString &name)
     const auto it = d->presets.constFind(name);
     if (it == d->presets.constEnd())
         return fail(DockError::InvalidArgument, QStringLiteral("no preset '%1'").arg(name));
-    return d->apply(*it, true);
+    LayoutState next = *it;
+    (void)d->keepUnknownPanels(next);
+    return d->apply(std::move(next), true);
 }
 
 DockResult DockManager::removePreset(const QString &name)
@@ -2297,7 +2501,9 @@ DockResult DockManager::resetLayout()
         return fail(DockError::InvalidArgument,
                     QStringLiteral("no default layout has been saved"));
     }
-    return d->apply(*d->defaultLayout, true);
+    LayoutState next = *d->defaultLayout;
+    (void)d->keepUnknownPanels(next);
+    return d->apply(std::move(next), true);
 }
 
 // --- Undo / redo -------------------------------------------------------------

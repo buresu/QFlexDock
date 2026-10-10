@@ -104,6 +104,11 @@ struct QFLEXDOCK_EXPORT DockTheme
     /// it, the icon is for where a panel has no title to show: the button of
     /// an iconified column, the title of a floating window.
     bool tabIcons = true;
+    /// Whether tabs have a button to close their panel, where the panel may
+    /// be closed and wants one (DockPanel::setTabCloseButton()). Without
+    /// them every tab keeps one width, and a panel is closed by the header's
+    /// button (DockTitleButton::Close), its menu or the middle mouse button.
+    bool tabCloseButtons = true;
     /// Width of a tab while there is room for it; -1 makes each as wide as
     /// its icon and title need.
     int tabWidth = -1;

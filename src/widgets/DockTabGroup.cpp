@@ -254,7 +254,7 @@ void DockTabGroup::detachFromManager()
 void DockTabGroup::closeByUser(const PanelId &panel)
 {
     if (m_manager && m_manager->userMay(panel, DockFeature::Closable))
-        (void)m_manager->closePanels({panel});
+        (void)m_manager->closeByUser({panel});
 }
 
 void DockTabGroup::toggleMaximized()
@@ -811,8 +811,8 @@ void DockTabGroup::updateTab(int index)
     QWidget *button = m_tabBar->tabButton(index, side);
     // (Tabs below the content are plain: see updateHeader().)
     const bool wantsPin = !m_titleMode && panel->isPinnedTab();
-    const bool wantsClose = !m_titleMode && !wantsPin && panel->hasTabCloseButton()
-        && panel->features().testFlag(DockFeature::Closable);
+    const bool wantsClose = !m_titleMode && !wantsPin && m_manager->theme.tabCloseButtons
+        && panel->hasTabCloseButton() && panel->features().testFlag(DockFeature::Closable);
     const bool hasPin = button && button->objectName() == QLatin1String("dockTabPin");
     if (wantsPin) {
         if (!hasPin) {
@@ -1031,11 +1031,15 @@ void DockTabGroup::setPaneCornerColor(const QColor &color)
 }
 
 // A pane has a line of its own around it, which the frame makes room for
-// without drawing anything.
+// without drawing anything. One that shows nothing (every color transparent:
+// a group that is to be no pane) has no frame at all.
 void DockTabGroup::paneChanged()
 {
-    const int style = drawsPane() ? int(QFrame::Box) | int(QFrame::Plain)
-                                  : int(QFrame::StyledPanel) | int(QFrame::Plain);
+    const auto shows = [](const QColor &color) { return color.isValid() && color.alpha() > 0; };
+    const bool shown = shows(m_paneColor) || shows(m_paneBorderColor)
+        || shows(m_paneActiveBorderColor);
+    const int style = !drawsPane() ? int(QFrame::StyledPanel) | int(QFrame::Plain)
+        : shown ? int(QFrame::Box) | int(QFrame::Plain) : int(QFrame::NoFrame);
     if (frameStyle() != style) {
         setFrameStyle(style);
         setLineWidth(1);

@@ -20,6 +20,29 @@ class DockManager;
 class DockManagerPrivate;
 class DockWorkspace;
 
+/// A place for a panel, the way DockManager::movePanel() takes one: beside or
+/// among the tabs of another panel, or against a workspace as a whole.
+struct QFLEXDOCK_EXPORT DockPlacement
+{
+    /// The panel whose tab group is docked onto: an edge area splits that
+    /// group, Center joins its tabs. Used while that panel is in a tab group;
+    /// otherwise, and when empty, `workspace` is.
+    PanelId relativeTo;
+    /// The workspace (by id) docked onto as a whole: an edge area along the
+    /// outside of everything in it, Center as a tab of the group used last.
+    /// Empty, or not there: the first workspace.
+    QString workspace;
+    /// None: no place at all.
+    DockArea area = DockArea::None;
+    /// The share of the space taken (edge areas only); negative picks the
+    /// default.
+    double fraction = -1.0;
+
+    [[nodiscard]] bool isValid() const { return area != DockArea::None; }
+
+    friend bool operator==(const DockPlacement &, const DockPlacement &) = default;
+};
+
 /// A dockable panel: the logical identity (stable id, title, icon, policy)
 /// of one content widget.
 ///
@@ -98,6 +121,26 @@ public:
     [[nodiscard]] bool hasTabCloseButton() const;
     void setTabCloseButton(bool shown);
 
+    /// Whether the panel is closed when the user asks for it (default true):
+    /// with its tab button, the close button of its header, the middle mouse
+    /// button, its menu, or by closing the floating window it is in. Either
+    /// way closeRequested() tells of it first. With false that is all that
+    /// happens, and the application decides: it asks about unsaved changes,
+    /// say, and then calls close(), or unregisters the panel, or leaves it
+    /// open. Calls of DockManager::closePanel() close the panel regardless.
+    [[nodiscard]] bool closesOnRequest() const;
+    void setClosesOnRequest(bool closes);
+
+    /// Where the panel goes when it is to be shown and nothing says where:
+    /// DockManager::openPanel() of a panel no place is remembered for, and a
+    /// layout put in place as a whole (a restored one, a preset, the default)
+    /// that knows nothing of the panel. Such a layout leaves a panel with a
+    /// default placement as it is: closed if it was closed, and shown at this
+    /// place if it was open. (One without is closed by it.) Not set, the
+    /// default: openPanel() makes the panel a tab in the first workspace.
+    [[nodiscard]] DockPlacement defaultPlacement() const;
+    void setDefaultPlacement(const DockPlacement &placement);
+
     /// Whether the tab group shows a header while this panel is alone in it
     /// (default true). Without one there is nothing to drag, close or float
     /// the panel by, which is the point: together with setFeatures({}) it
@@ -169,6 +212,9 @@ Q_SIGNALS:
     void policyChanged();
     void metadataChanged();
     void openChanged(bool open);
+    /// The user asks for the panel to be closed (see setClosesOnRequest()).
+    /// Not emitted when the application closes it, or a layout does.
+    void closeRequested();
     void activeChanged(bool active);
     void currentChanged(bool current);
     void floatingChanged(bool floating);
