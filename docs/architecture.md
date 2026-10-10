@@ -17,7 +17,7 @@
 | Model | `LayoutNode`, `LayoutTree`, `LayoutState` | No |
 | Geometry | `LayoutSolver`, `SplitterCoordinator`, `DropZoneLayout` | No |
 | Controller | `DockManager`, `DockPanel`, `DockDragController` | Yes |
-| View | `DockWorkspace`, `DockAreaWidget`, `DockTabGroup`, `DockTabBar`, `DockSplitHandle`, `DockFloatingWindow`, `DockDropOverlay`, `DockAutoHide*` | Yes |
+| View | `DockWorkspace`, `DockAreaWidget`, `DockTabGroup`, `DockTabBar`, `DockSplitHandle`, `DockFloatingWindow`, `DockDropOverlay`, `DockAutoHide*`, `DockColumnBar`, `DockIconStrip` | Yes |
 | Persistence | `LayoutSerializer`, `LayoutMigration` | No |
 | Optional | `QFlexDock::Quick`, `NativeWindowAdapter` | Yes |
 
@@ -32,11 +32,19 @@ node to its widget across changes, and are not saved.
 Every mutating function leaves the tree in normal form, or unchanged if it fails:
 
 - no empty tab group, no split with fewer than two children;
-- no split directly inside a split of the same orientation;
+- no split directly inside a split of the same orientation, unless it is an iconified column;
+- no iconified node inside an iconified node;
 - sibling weights are positive and sum to 1;
 - a tab group's active panel is one of its panels;
 - node ids are unique, and a panel id appears once;
 - depth is at most `LayoutTree::MaxDepth` (128).
+
+A node can be **iconified**: a column that is shown as a strip of buttons instead of its panels. It is one
+thing to everything that lays the tree out, whatever is in it. `LayoutTree::columnOf()` says what the
+column of a node is: the iconified node it is or lies in; else, for a tab group among tab groups that are
+stacked above one another and nothing else, the vertical split holding them; else the node itself.
+Docking above or below a node joins its column, iconified if that is; only beside a column does a node
+keep being iconified itself.
 
 `LayoutState` adds: a panel is in **one place across all containers** (a tree or an auto-hide bar), floating
 containers are not empty, a maximized panel is in its container. It also remembers, for every panel that is
@@ -111,6 +119,16 @@ beside them, set to the pointer's distance from the edge. So the squeezing above
 stay out of view until half of their minimum fits, and go again if pushed back. If that is how the drag
 ends, or with Escape, the state from before is put back; otherwise that state becomes the one undo step.
 
+**Columns.** Where a container docks in columns (`DockManager::setColumnDocking()`), the area puts a
+`DockColumnBar` above every column its user may move. The solver knows nothing of it: the node at the top
+of a column is asked for that much more height, and its widget is placed below the bar. An iconified node
+gets a `DockIconStrip` in place of the tab groups in it, whose content waits in the parking widget. The
+one group that may be out beside its strip is an ordinary `DockTabGroup` that the area places itself, over
+its other widgets: view state, like the popup of an auto-hide bar, so opening and closing it is no
+transaction. An area that is nothing but one strip has no room beside it: the strip keeps its width at
+the side and the group has the rest, and a floating window is made as large as the two
+(`DockFloatingWindow::fitIconified()`, once a change is applied and when a group comes out or goes).
+
 **Grab margins.** A handle follows the style's `PM_SplitterWidth`, which may be a single pixel — too thin to
 aim at, and not hit-tested at all by Qt 6.12. Handles are therefore at least 7px wide to the mouse, with the
 extra margin masked out of painting. The mask is also what lets a hovered handle be drawn wider than its
@@ -141,7 +159,15 @@ for its candidate as well (`resolveDrag()`), if that takes what is dragged: the 
 buttons for the group that holds the inner one around the inner cross (a second ring) and shows its own
 guide. A button of the inner area wins, then one of the outer area, then a header.
 
-Two things change this for windows that are rows of tabs. Where a group has no edge zone to offer (the
+In a container that docks in columns, a hit on the left or right area of a group is aimed at
+`columnOf()` that group: a split, where the column is several groups. Such a target may be gone once what
+is dragged has left it (a column of two groups, one of them dragged beside it), so it is found again by a
+panel that stays (`retarget()` in DockManager.cpp). A strip of buttons is hit like the groups it stands
+for, each by its buttons. A drag of a whole column (`DockDragController::beginColumn()`) has a split for
+its source node, as a drag of a whole floating window has.
+
+Two things change this for windows that are rows of tabs (or for one workspace of them, by
+`setCenterDropEnabled(workspace, false)`). Where a group has no edge zone to offer (the
 dragged panels allow `Center` only), its whole title row counts as its tabs. And with
 `DockManager::setCenterDropEnabled(false)` there is no center zone, not even the "leave it here" one: what
 is not dropped on a header is dropped nowhere, which `finish()` treats like a drop outside every window.
@@ -179,9 +205,13 @@ nobody took returns late there.) What happens after a drag is all in
   window system intends, with the least custom code to get wrong.
 - **The window-carrying drag relies on an undocumented Qt behaviour.** It is the one exception to "public
   Qt API only", accepted because everything falls back cleanly when it is absent.
-- **A handle does not push further neighbours** when the one next to it reaches its minimum size.
+- **A handle does not push further neighbours** when the one next to it reaches its minimum size, unless
+  asked to (`DockManager::setSplitterPushEnabled()`): `SplitterCoordinator` then hands what the nearest
+  child cannot give or take to the ones behind it, in order.
 - **A node that leaves a split gives its share to one neighbour** (the one before it; after it for the
-  first), instead of spreading it over all of them. The memory of a closed panel holds the share it had, and
+  first), instead of spreading it over all of them. Where a size limit held the node at another size
+  than its share, the share is first made what it showed as (`DockManagerPrivate::settleShare()`): the
+  neighbour gets the room there was, not the room there would have been. The memory of a closed panel holds the share it had, and
   putting it back takes that share out of the neighbour again. So areas that are closed and reopened, in any
   order, come back at their sizes, as long as the window has not been resized in between: sizes are shares,
   not pixels.

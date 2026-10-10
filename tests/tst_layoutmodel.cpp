@@ -336,7 +336,17 @@ private Q_SLOTS:
                     return groups[size_t(rng.bounded(int(groups.size())))]->id;
                 };
                 DockResult result;
-                switch (rng.bounded(7)) {
+                switch (rng.bounded(8)) {
+                case 7: { // iconify the column of a random group, or show it again
+                    if (groups.empty())
+                        continue;
+                    const LayoutNode *column =
+                        tree.columnOf(groups[size_t(rng.bounded(int(groups.size())))]->id);
+                    QVERIFY(column);
+                    result = tree.setIconified(column->id, !column->iconified);
+                    QVERIFY(result);
+                    break;
+                }
                 case 0:
                 case 1: { // add a new panel
                     const QString panel = QStringLiteral("p%1").arg(nextPanel++);
@@ -412,6 +422,133 @@ private Q_SLOTS:
                 QCOMPARE(actual, expected);
             }
         }
+    }
+
+    // --- Columns -------------------------------------------------------------
+
+    void theColumnOfAGroupIsWhatStandsAboveAndBelowIt()
+    {
+        // H(a, V(b, c), V(d, H(e, f)))
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Bottom));
+        QVERIFY(tree.insertPanel(p("d"), {}, DockArea::Right));
+        QVERIFY(tree.insertPanel(p("e"), groupOf(tree, "d"), DockArea::Bottom));
+        QVERIFY(tree.insertPanel(p("f"), groupOf(tree, "e"), DockArea::Right));
+        QCOMPARE(describe(tree), p("H(a, V(b, c), V(d, H(e, f)))"));
+
+        // A group on its own is its own column.
+        QCOMPARE(tree.columnOf(groupOf(tree, "a"))->id, groupOf(tree, "a"));
+        // Groups above one another are one.
+        const LayoutNode *stack = tree.parentOf(groupOf(tree, "b"));
+        QCOMPARE(tree.columnOf(groupOf(tree, "b")), stack);
+        QCOMPARE(tree.columnOf(groupOf(tree, "c")), stack);
+        QCOMPARE(tree.columnOf(stack->id), stack);
+        // Not where something else than tab groups is stacked.
+        QCOMPARE(tree.columnOf(groupOf(tree, "d"))->id, groupOf(tree, "d"));
+        QCOMPARE(tree.columnOf(groupOf(tree, "e"))->id, groupOf(tree, "e"));
+        QVERIFY(!tree.columnOf(NodeId::create()));
+    }
+
+    void anIconifiedColumnStaysOneNode()
+    {
+        // H(a, V(b, c)) with the column of b and c iconified.
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Bottom));
+        const NodeId column = tree.columnOf(groupOf(tree, "b"))->id;
+        QVERIFY(tree.setIconified(column, true));
+        QVERIFY(tree.findNode(column)->iconified);
+        QVERIFY(tree.validate());
+        QCOMPARE(tree.columnOf(groupOf(tree, "c"))->id, column);
+        QVERIFY(!tree.setIconified(NodeId::create(), true));
+
+        // Something above everything: the column is not taken apart for it.
+        QVERIFY(tree.insertPanel(p("x"), {}, DockArea::Top));
+        QVERIFY(tree.removePanel(p("a")));
+        QCOMPARE(describe(tree), p("V(x, V(b, c))"));
+        QVERIFY(tree.validate());
+        QVERIFY(tree.findNode(column)->iconified);
+
+        // Shown again, it is tab groups among the others.
+        QVERIFY(tree.setIconified(column, false));
+        QCOMPARE(describe(tree), p("V(x, b, c)"));
+        QVERIFY(tree.validate());
+    }
+
+    void whatIsLeftOfAnIconifiedColumnIsIconified()
+    {
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Bottom));
+        QVERIFY(tree.setIconified(tree.columnOf(groupOf(tree, "b"))->id, true));
+        QVERIFY(tree.removePanel(p("c")));
+        QCOMPARE(describe(tree), p("H(a, b)"));
+        QVERIFY(tree.findPanel(p("b"))->iconified);
+        QVERIFY(!tree.findPanel(p("a"))->iconified);
+        QVERIFY(tree.validate());
+    }
+
+    void dockingAboveOrBelowJoinsAnIconifiedColumn()
+    {
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        QVERIFY(tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.setIconified(groupOf(tree, "b"), true));
+
+        // Below the one group it is: the two are the column now.
+        QVERIFY(tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Bottom));
+        QCOMPARE(describe(tree), p("H(a, V(b, c))"));
+        const LayoutNode *column = tree.parentOf(groupOf(tree, "b"));
+        QVERIFY(column->iconified);
+        QVERIFY(!tree.findPanel(p("b"))->iconified);
+        QVERIFY(tree.validate());
+
+        // Above all of it, and between two of its groups.
+        QVERIFY(tree.insertPanel(p("d"), column->id, DockArea::Top));
+        QVERIFY(tree.insertPanel(p("e"), groupOf(tree, "b"), DockArea::Bottom));
+        QCOMPARE(describe(tree), p("H(a, V(d, b, e, c))"));
+        QVERIFY(tree.parentOf(groupOf(tree, "e"))->iconified);
+        QVERIFY(tree.validate());
+
+        // Beside it is not in it.
+        QVERIFY(tree.insertPanel(p("f"), tree.columnOf(groupOf(tree, "b"))->id, DockArea::Left));
+        QCOMPARE(describe(tree), p("H(a, f, V(d, b, e, c))"));
+        QVERIFY(!tree.findPanel(p("f"))->iconified);
+        QCOMPARE(tree.columnOf(groupOf(tree, "f"))->id, groupOf(tree, "f"));
+    }
+
+    void anIconifiedNodeKeepsThatBesideAColumnOnly()
+    {
+        LayoutTree tree;
+        QVERIFY(tree.insertPanel(p("a"), {}, DockArea::Center));
+        LayoutNode strip = LayoutNode::makeTabs({p("b")});
+        strip.iconified = true;
+        QVERIFY(tree.insertNode(strip, groupOf(tree, "a"), DockArea::Right));
+        QVERIFY(tree.findPanel(p("b"))->iconified);
+
+        // Docked below a group that is open, it is open as well.
+        LayoutNode other = LayoutNode::makeTabs({p("c")});
+        other.iconified = true;
+        QVERIFY(tree.insertNode(other, groupOf(tree, "a"), DockArea::Bottom));
+        QCOMPARE(describe(tree), p("H(V(a, c), b)"));
+        QVERIFY(!tree.findPanel(p("c"))->iconified);
+        QVERIFY(tree.validate());
+    }
+
+    void nothingIsIconifiedInsideAnIconifiedNode()
+    {
+        LayoutNode inner = LayoutNode::makeTabs({p("b")});
+        inner.iconified = true;
+        LayoutNode column = LayoutNode::makeSplit(Qt::Vertical, {LayoutNode::makeTabs({p("a")}), inner});
+        column.iconified = true;
+        const LayoutTree tree(column);
+        QVERIFY(tree.validate());
+        QVERIFY(tree.root()->iconified);
+        QVERIFY(!tree.findPanel(p("b"))->iconified);
     }
 };
 

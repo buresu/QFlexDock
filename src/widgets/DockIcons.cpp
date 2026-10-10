@@ -78,6 +78,17 @@ public:
             painter->drawLine(QPointF(8, 8.5), QPointF(8, 13));
             break;
         }
+        case DockIcon::IconifyLeft:
+        case DockIcon::IconifyRight: {
+            // Two chevrons, one behind the other.
+            const qreal tip = m_which == DockIcon::IconifyLeft ? -3.0 : 3.0;
+            for (const qreal x : {5.0, 9.0}) {
+                const qreal back = m_which == DockIcon::IconifyLeft ? x + 3 : x - 1;
+                painter->drawPolyline(QPolygonF({QPointF(back, 4.5), QPointF(back + tip, 8),
+                                                 QPointF(back, 11.5)}));
+            }
+            break;
+        }
         case DockIcon::Menu: {
             QPainterPath chevron;
             chevron.moveTo(4.5, 6.5);

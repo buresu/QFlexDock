@@ -2,6 +2,7 @@
 #include "core/SplitterCoordinator.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <iterator>
 
 namespace QFlexDock {
@@ -151,7 +152,7 @@ SplitterCoordinator::squeezed(const LayoutTree &tree, const SolvedLayout &layout
         // Moving by +d shrinks `after`, by -d `before`.
         const LayoutNode &shrinking = delta > 0 ? after : before;
         const LayoutNode &growing = delta > 0 ? before : after;
-        if (!shrinking.isTabs() || !mayGo(shrinking))
+        if (!shrinking.isTabs() || shrinking.iconified || !mayGo(shrinking))
             continue;
         const Qt::Orientation o = handle.orientation;
         const int left = extentAlong(layout.rects.value(shrinking.id), o) - std::abs(delta);
@@ -162,9 +163,55 @@ SplitterCoordinator::squeezed(const LayoutTree &tree, const SolvedLayout &layout
     return result;
 }
 
+namespace {
+
+// The children of a split on one side of a handle, nearest first, with how
+// much each can give and take along the split.
+struct Side
+{
+    std::vector<int> index;
+    std::vector<int> shrink;
+    std::vector<int> grow;
+    qint64 canShrink = 0;
+    qint64 canGrow = 0;
+};
+
+Side sideOf(const LayoutNode &split, const SolvedLayout &layout, int handle, bool before,
+            Qt::Orientation o, bool push)
+{
+    Side side;
+    const int count = int(split.children.size());
+    const int first = before ? handle : handle + 1;
+    const int last = push ? (before ? 0 : count - 1) : first;
+    for (int i = first; before ? i >= last : i <= last; before ? --i : ++i) {
+        const LayoutNode &child = split.children[size_t(i)];
+        const int size = extentAlong(layout.rects.value(child.id), o);
+        const SizeLimits limits = layout.limits.value(child.id);
+        side.index.push_back(i);
+        side.shrink.push_back(std::max(0, size - limitAlong(limits.min, o)));
+        side.grow.push_back(std::max(0, limitAlong(limits.max, o) - size));
+        side.canShrink += side.shrink.back();
+        side.canGrow += side.grow.back();
+    }
+    return side;
+}
+
+// Hands `amount` pixels out over `sizes`, in the order of `side`: taken from
+// each as far as it can give (`grow` false), or given as far as it can take.
+void spread(std::vector<double> &sizes, const Side &side, int amount, bool grow)
+{
+    for (size_t k = 0; k < side.index.size() && amount > 0; ++k) {
+        const int part = std::min(amount, grow ? side.grow[k] : side.shrink[k]);
+        sizes[size_t(side.index[k])] += grow ? part : -part;
+        amount -= part;
+    }
+}
+
+} // namespace
+
 std::pair<int, int> SplitterCoordinator::deltaRange(const LayoutTree &tree,
                                                     const SolvedLayout &layout,
-                                                    const std::vector<int> &group)
+                                                    const std::vector<int> &group, bool push)
 {
     int lowest = -UnboundedSize;
     int highest = UnboundedSize;
@@ -176,18 +223,12 @@ std::pair<int, int> SplitterCoordinator::deltaRange(const LayoutTree &tree,
         if (!split || handle.index + 1 >= int(split->children.size()))
             return {0, 0};
         const Qt::Orientation o = handle.orientation;
-        const LayoutNode &before = split->children[size_t(handle.index)];
-        const LayoutNode &after = split->children[size_t(handle.index) + 1];
-        const int beforeSize = extentAlong(layout.rects.value(before.id), o);
-        const int afterSize = extentAlong(layout.rects.value(after.id), o);
-        const SizeLimits beforeLimits = layout.limits.value(before.id);
-        const SizeLimits afterLimits = layout.limits.value(after.id);
+        const Side before = sideOf(*split, layout, handle.index, true, o, push);
+        const Side after = sideOf(*split, layout, handle.index, false, o, push);
 
-        // Moving by +d grows `before` and shrinks `after`.
-        lowest = std::max({lowest, limitAlong(beforeLimits.min, o) - beforeSize,
-                           afterSize - limitAlong(afterLimits.max, o)});
-        highest = std::min({highest, limitAlong(beforeLimits.max, o) - beforeSize,
-                            afterSize - limitAlong(afterLimits.min, o)});
+        // Moving by +d grows what is before the handle and shrinks what is after.
+        lowest = int(std::max<qint64>({lowest, -before.canShrink, -after.canGrow}));
+        highest = int(std::min<qint64>({highest, before.canGrow, after.canShrink}));
     }
     // A layout already squeezed below its minimums must not be able to move
     // further into the violation, but must stay put-able.
@@ -198,9 +239,9 @@ std::pair<int, int> SplitterCoordinator::deltaRange(const LayoutTree &tree,
 
 std::vector<SplitterCoordinator::WeightUpdate>
 SplitterCoordinator::moveHandles(const LayoutTree &tree, const SolvedLayout &layout,
-                                 const std::vector<int> &group, int delta)
+                                 const std::vector<int> &group, int delta, bool push)
 {
-    const auto [lowest, highest] = deltaRange(tree, layout, group);
+    const auto [lowest, highest] = deltaRange(tree, layout, group, push);
     delta = std::clamp(delta, lowest, highest);
 
     std::vector<WeightUpdate> updates;
@@ -216,8 +257,15 @@ SplitterCoordinator::moveHandles(const LayoutTree &tree, const SolvedLayout &lay
         update.split = split->id;
         for (const auto &child : split->children)
             update.weights.push_back(extentAlong(layout.rects.value(child.id), handle.orientation));
-        update.weights[size_t(handle.index)] += delta;
-        update.weights[size_t(handle.index) + 1] -= delta;
+        if (push) {
+            const Side before = sideOf(*split, layout, handle.index, true, handle.orientation, true);
+            const Side after = sideOf(*split, layout, handle.index, false, handle.orientation, true);
+            spread(update.weights, delta > 0 ? before : after, std::abs(delta), true);
+            spread(update.weights, delta > 0 ? after : before, std::abs(delta), false);
+        } else {
+            update.weights[size_t(handle.index)] += delta;
+            update.weights[size_t(handle.index) + 1] -= delta;
+        }
         // Weights must stay positive even for a child squeezed to zero pixels.
         for (double &w : update.weights)
             w = std::max(w, 0.01);

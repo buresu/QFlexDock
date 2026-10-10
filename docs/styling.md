@@ -40,8 +40,14 @@ There are no sub-controls or pseudo-states beyond these.
 | `QFlexDock--DockAutoHideBar` | Auto-hide bars | `background`, …; property `edge` (`left`, `right`, `top`, `bottom`) |
 | `QFlexDock--DockAutoHidePopup` | The panel that slides out (`QFrame`) | `background`, `border`; buttons `#dockPinButton`, `#dockCloseButton` |
 | `#dockAutoHideBody` | Its title and content (`QFrame`): all of it but the grip it is resized by | `background`, `border`, `border-radius`; with one, the grip is a gap in the background of the whole |
+| `QFlexDock--DockTabGroup[flyout="true"]`, `#dockFlyoutButton` | The tab group that is out beside the strip of its iconified column, and the button that puts it away | `border`, … / as `QToolButton` |
+| `QFlexDock--DockColumnBar` | The bar above a column (`DockManager::setColumnDocking()`) | `background`, …; property `iconified` |
+| `#dockIconifyButton`, `#dockColumnCloseButton` | Its buttons: iconify the column or show it again, close the floating window the bar stands for | As `QToolButton` |
+| `QFlexDock--DockIconStrip` | An iconified column | `background`; property `labelled` (wide enough for the titles) |
+| `QFlexDock--DockIconGrip` | The grip above the buttons of one tab group in it | `background` |
+| `QFlexDock--DockIconButton`, `:checked` | The button of a panel there (`QToolButton`), checked while the panel is out | As `QToolButton` |
 | `QFlexDock--DockDropOverlay` | The drop guide | Only the `qproperty-*` below |
-| `QFlexDock--DockFloatingWindow` | Floating windows | `background`, with a custom frame also `border` and `border-radius`; properties `customFrame`, `maximized` |
+| `QFlexDock--DockFloatingWindow` | Floating windows | `background`, with a custom frame also `border` and `border-radius`; properties `customFrame`, `maximized`, `owner` (the id of the workspace the window belongs to) |
 | `#dockFloatingTitleBar`, `#dockFloatingTitle` | Title row and title text of a custom frame (a window holding one tab group has none: its title is that group's `#dockTitleBar`) | `background`, `color`, … |
 | `#dockFloatingMaximizeButton`, `#dockFloatingCloseButton` | Its buttons | As `QToolButton` |
 
@@ -67,7 +73,8 @@ Notes:
   one pixel line that lights up four pixels wide, say. The layout does not change.
 - A workspace is a widget: give it an object name, and `#documents QFlexDock--DockTabBar::tab { … }` styles
   its tabs differently from those of other workspaces. (Floating windows are not inside a workspace;
-  `QFlexDock--DockFloatingWindow QFlexDock--DockTabBar::tab` reaches theirs.)
+  `QFlexDock--DockFloatingWindow QFlexDock--DockTabBar::tab` reaches theirs, and
+  `QFlexDock--DockFloatingWindow[owner="documents"]` those of the windows one workspace owns.)
 - `#dockTabActions #dockActionButton[action="newTab"] { … }` styles the button of the action whose object
   name is `newTab`, and only behind the tabs.
 - Round corners on a floating window need the theme token `floatingCornerRadius` (the window has to be
@@ -136,20 +143,26 @@ theme.splitHandleHoverWidth = 8;                         // drawn this wide whil
 theme.iconSize = 18;                                     // -1: the style's size
 theme.titleButtons = QFlexDock::DockTitleButton::Float   // buttons in a group's header (also:
                    | QFlexDock::DockTitleButton::Close;  // AutoHide); the default is Menu | Maximize
+theme.tabIcons = false;                                  // tabs are titles only; default: with the panel's icon
 theme.tabWidth = 200;                                    // every tab this wide; -1: as wide as its title
 theme.tabOverflow = QFlexDock::DockTabOverflow::Shrink;  // tabs share a crowded bar; default: Scroll
 theme.floatingBorderWidth = 1;                           // frames drawn by QFlexDock; -1: 4 pixels
 theme.floatingCornerRadius = 10;                         // their corners; 0: square
+theme.columnBarHeight = 12;                              // the bar above a column; -1: 14 pixels
 theme.overlay.guide = QFlexDock::DockGuide::Buttons;     // small buttons; default: Zones
 theme.overlay.buttonSize = 40;                           // their side
 theme.overlay.hoverColor = QColor(255, 128, 0, 120);     // an invalid color is derived from the palette
 theme.overlay.edgeFraction = 0.25;                       // depth of the edge zones, relative to the target
+theme.overlay.edgeExtent = 10;                           // or in pixels, the same on every target; -1: the fraction
 theme.overlay.outerBandWidth = 32;                       // band along the workspace border; 0 disables it
 theme.icons.insert(QFlexDock::DockIcon::Maximize, QIcon(":/icons/maximize.svg"));
 manager.setTheme(theme);                                 // at any time
 ```
 
-Icons that can be replaced: `Close`, `Maximize`, `Restore`, `Float`, `Dock`, `Pin`, `Unpin`, `Menu`.
+Icons that can be replaced: `Close`, `Maximize`, `Restore`, `Float`, `Dock`, `Pin`, `Unpin`, `Menu`, and
+`IconifyLeft` and `IconifyRight`: the mark on the button of a column bar, which points to the side its
+column is on while the column is open and away from it while it is iconified, and on the button of the
+group that is out, which points back at its strip.
 
 With `DockTabOverflow::Shrink` the tabs of a crowded bar get narrower together instead of scrolling. A tab
 too narrow for its close button loses it, except the current one. A border thinner than four pixels is
@@ -183,6 +196,13 @@ manager.setOverlayPainter(std::make_shared<MyOverlayPainter>());
 `style` has all three layers resolved, so every color is valid. `scene.preview` (the area the panel would
 take) is always filled in, whatever `showPreview` says, and `scene.tabIndicator` marks an insertion between tabs.
 With `DockGuide::Buttons` (`style.guide`) the shape of a zone is the square of its button.
+
+For a guide that shows a drop by what it does, the scene also says what the drop is about: `scene.target`
+is all of what it is aimed at (a tab group, a column, the dock area), whatever part of that `preview` is;
+`scene.header` is the header of the group that would take one more tab; `scene.tabGap` is the place kept
+open among the tabs where they show a drag as it would turn out; and `scene.ownGroup` tells that the
+panel would stay in the group it comes from. `examples/photoshop-style` draws an outline around the
+target and its new tab from these, and a bar along the edge where something would be put in between.
 
 The auto-hide button of a header shows `DockIcon::Unpin`, the pin of the panel that slid out `DockIcon::Pin`.
 The names in an auto-hide bar are drawn by the application's `QStyle` as tabs (`QStyle::CE_TabBarTab`, for

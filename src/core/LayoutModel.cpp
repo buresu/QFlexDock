@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <utility>
 
 namespace QFlexDock {
 
@@ -83,6 +84,35 @@ int depthOf(const LayoutNode &node)
     return deepest + 1;
 }
 
+void clearIconified(LayoutNode &node)
+{
+    node.iconified = false;
+    for (auto &child : node.children)
+        clearIconified(child);
+}
+
+// Tab groups stacked above one another, and nothing else: a column.
+bool isStack(const LayoutNode &node)
+{
+    return node.isSplit() && node.orientation == Qt::Vertical
+        && std::all_of(node.children.begin(), node.children.end(), [](const LayoutNode &child) {
+               return child.isTabs() && !child.iconified;
+           });
+}
+
+bool pathTo(const LayoutNode &node, NodeId id, std::vector<const LayoutNode *> &path)
+{
+    path.push_back(&node);
+    if (node.id == id)
+        return true;
+    for (const auto &child : node.children) {
+        if (pathTo(child, id, path))
+            return true;
+    }
+    path.pop_back();
+    return false;
+}
+
 // Brings `node` into normal form. Returns false when nothing is left of it.
 bool normalizeNode(LayoutNode &node)
 {
@@ -98,6 +128,11 @@ bool normalizeNode(LayoutNode &node)
 
     node.panels.clear();
     node.active.clear();
+    // What is iconified is so as a whole.
+    if (node.iconified) {
+        for (auto &child : node.children)
+            clearIconified(child);
+    }
 
     // A child with nothing left in it leaves its share to the neighbour before
     // it (after it, for the first one). The other children keep theirs, so
@@ -122,9 +157,10 @@ bool normalizeNode(LayoutNode &node)
     std::vector<LayoutNode> kept;
     kept.reserve(alive.size());
     for (auto &child : alive) {
-        if (child.isSplit() && child.orientation == node.orientation) {
+        if (child.isSplit() && child.orientation == node.orientation && !child.iconified) {
             // Same direction as us: adopt the grandchildren, each keeping its
-            // share of the space the child had.
+            // share of the space the child had. (An iconified column stays
+            // the one thing it is.)
             double sum = 0.0;
             for (const auto &grandchild : child.children)
                 sum += grandchild.weight;
@@ -143,6 +179,10 @@ bool normalizeNode(LayoutNode &node)
     if (node.children.size() == 1) {
         LayoutNode only = std::move(node.children.front());
         only.weight = node.weight;
+        if (node.iconified) {
+            clearIconified(only);
+            only.iconified = true;
+        }
         node = std::move(only);
         return true;
     }
@@ -161,8 +201,12 @@ struct ValidationState
     QSet<PanelId> panels;
 };
 
-DockResult validateNode(const LayoutNode &node, int depth, ValidationState &state)
+DockResult validateNode(const LayoutNode &node, int depth, ValidationState &state,
+                        bool insideIconified = false)
 {
+    if (node.iconified && insideIconified)
+        return fail(DockError::InvalidLayout, QStringLiteral("iconified node inside another"));
+    insideIconified = insideIconified || node.iconified;
     if (depth > LayoutTree::MaxDepth)
         return fail(DockError::InvalidLayout, QStringLiteral("layout tree is too deep"));
     if (node.id.isNull())
@@ -199,10 +243,10 @@ DockResult validateNode(const LayoutNode &node, int depth, ValidationState &stat
         return fail(DockError::InvalidLayout, QStringLiteral("split with fewer than two children"));
     double sum = 0.0;
     for (const auto &child : node.children) {
-        if (child.isSplit() && child.orientation == node.orientation)
+        if (child.isSplit() && child.orientation == node.orientation && !child.iconified)
             return fail(DockError::InvalidLayout,
                         QStringLiteral("nested split of the same orientation"));
-        if (DockResult r = validateNode(child, depth + 1, state); !r)
+        if (DockResult r = validateNode(child, depth + 1, state, insideIconified); !r)
             return r;
         sum += child.weight;
     }
@@ -360,6 +404,9 @@ DockResult LayoutTree::insertNode(LayoutNode node, NodeId target, DockArea area,
             return fail(DockError::UnknownNode, QStringLiteral("target node does not exist"));
         const Qt::Orientation orientation = splitOrientation(area);
         const bool before = area == DockArea::Left || area == DockArea::Top;
+        // Above or below: into the column of the anchor, as that column is.
+        if (orientation == Qt::Vertical)
+            node.iconified = false;
 
         if (anchor->isSplit() && anchor->orientation == orientation) {
             // Along the outside of a split running the same way: become its
@@ -384,6 +431,8 @@ DockResult LayoutTree::insertNode(LayoutNode node, NodeId target, DockArea area,
             LayoutNode old = std::move(*anchor);
             LayoutNode split = LayoutNode::makeSplit(orientation, {});
             split.weight = old.weight;
+            if (orientation == Qt::Vertical)
+                split.iconified = std::exchange(old.iconified, false);
             old.weight = 1.0 - fraction;
             node.weight = fraction;
             if (before) {
@@ -470,6 +519,30 @@ DockResult LayoutTree::moveTab(const PanelId &panel, int index)
     if (index < 0 || index >= group->panels.size())
         return fail(DockError::InvalidArgument, QStringLiteral("tab index out of range"));
     group->panels.move(group->panels.indexOf(panel), index);
+    return DockResult::success();
+}
+
+const LayoutNode *LayoutTree::columnOf(NodeId id) const
+{
+    std::vector<const LayoutNode *> path;
+    if (!m_root || !pathTo(*m_root, id, path))
+        return nullptr;
+    for (const LayoutNode *node : path) {
+        if (node->iconified)
+            return node;
+    }
+    const LayoutNode *node = path.back();
+    const LayoutNode *parent = path.size() > 1 ? path[path.size() - 2] : nullptr;
+    return node->isTabs() && parent && isStack(*parent) ? parent : node;
+}
+
+DockResult LayoutTree::setIconified(NodeId id, bool iconified)
+{
+    LayoutNode *node = findNodeMutable(id);
+    if (!node)
+        return fail(DockError::UnknownNode, QStringLiteral("no such node"));
+    node->iconified = iconified;
+    normalize();
     return DockResult::success();
 }
 

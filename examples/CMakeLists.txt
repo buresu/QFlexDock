@@ -10,6 +10,7 @@ qflexdock_add_example(qflexdock-obs-style obs-style/main.cpp)
 qflexdock_add_example(qflexdock-vscode-style vscode-style/main.cpp)
 qflexdock_add_example(qflexdock-chrome-style chrome-style/main.cpp)
 qflexdock_add_example(qflexdock-vs-style vs-style/main.cpp)
+qflexdock_add_example(qflexdock-photoshop-style photoshop-style/main.cpp)
 
 if(TARGET QFlexDockQuick)
     qflexdock_add_example(qflexdock-quick-panel quick-panel/main.cpp)

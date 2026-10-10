@@ -37,6 +37,8 @@ target_sources(QFlexDock
         widgets/DockAreaWidget.h
         widgets/DockAutoHide.cpp
         widgets/DockAutoHide.h
+        widgets/DockColumn.cpp
+        widgets/DockColumn.h
         widgets/DockDropOverlay.cpp
         widgets/DockDropOverlay.h
         widgets/DockFloatingWindow.cpp

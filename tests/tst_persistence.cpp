@@ -162,6 +162,43 @@ private Q_SLOTS:
         QVERIFY(!f.manager.panel(p("b"))->isOpen());
     }
 
+    void iconifiedColumnsAreSavedAndRestored()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
+        QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Left));
+        QVERIFY(f.manager.setColumnIconified(p("b"), true));
+        QVERIFY(f.manager.setColumnIconified(p("d"), true));
+        const QByteArray saved = f.manager.saveLayout();
+        QVERIFY(saved.contains("\"iconified\": true"));
+        QCOMPARE(saved.count("iconified"), 2); // only where it is
+
+        QVERIFY(f.manager.setColumnIconified(p("b"), false));
+        QVERIFY(f.manager.hidePanel(p("d")));
+        DockRestoreReport report;
+        QVERIFY(f.manager.restoreLayout(saved, &report));
+        QVERIFY(report.warnings.isEmpty());
+        QCOMPARE(describe(f.a), p("H(d, a, V(b, c))"));
+        QVERIFY(f.manager.isColumnIconified(p("b")));
+        QVERIFY(f.manager.isColumnIconified(p("c")));
+        QVERIFY(f.manager.isColumnIconified(p("d")));
+        QVERIFY(!f.manager.isColumnIconified(p("a")));
+        QCOMPARE(areaOf(f.a)->iconStrips().size(), 2);
+        QVERIFY(!f.widgets[p("b")]->isVisible());
+        QCOMPARE(f.manager.saveLayout(), saved);
+
+        // A column that is iconified inside another one is repaired.
+        QByteArray nested = saved;
+        nested.replace("\"active\": \"b\",", "\"active\": \"b\", \"iconified\": true,");
+        QVERIFY(nested != saved);
+        QVERIFY(f.manager.restoreLayout(nested));
+        QVERIFY(f.manager.isColumnIconified(p("c")));
+        QCOMPARE(f.manager.saveLayout(), saved);
+    }
+
     void restoreIntoAFreshApplication()
     {
         QByteArray saved;

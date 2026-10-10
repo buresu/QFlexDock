@@ -11,10 +11,13 @@
 
 namespace QFlexDock {
 
+class DockColumnBar;
 class DockDropOverlay;
 class DockEdgeHandle;
+class DockIconStrip;
 class DockSplitCorner;
 class DockSplitHandle;
+class DockTabBar;
 class DockTabGroup;
 
 /// What a drag hovering over a dock area would do, and what to show for it.
@@ -46,6 +49,14 @@ struct DropCandidate
     /// The header of the group takes the drop (its tabs, or its title bar),
     /// not an area of the guide.
     bool byHeader = false;
+    /// All of what the drop is aimed at: a group, a column, the area.
+    QRect aimedAt;
+    /// For a drop that joins a group: the header of that group.
+    QRect header;
+    /// The drop leaves the panel in the group it comes from.
+    bool ownGroup = false;
+    /// It leaves it where it is, even: `tabGap` is the place it left.
+    bool stays = false;
 };
 
 /// Shows one layout tree: a tab group widget per tab node, a handle per split
@@ -80,6 +91,43 @@ public:
     [[nodiscard]] QList<DockSplitCorner *> visibleCorners() const;
     [[nodiscard]] QList<DockEdgeHandle *> visibleEdgeHandles() const;
     [[nodiscard]] DockDropOverlay *overlay() const { return m_overlay; }
+
+    // --- Columns ---------------------------------------------------------------
+    /// The bars above the columns shown, where the container docks in columns.
+    [[nodiscard]] QList<DockColumnBar *> columnBars() const;
+    [[nodiscard]] DockColumnBar *columnBar(NodeId column) const { return m_bars.value(column); }
+    /// The strips of buttons that iconified columns are shown as.
+    [[nodiscard]] QList<DockIconStrip *> iconStrips() const { return m_strips.values(); }
+    [[nodiscard]] DockIconStrip *iconStrip(NodeId column) const { return m_strips.value(column); }
+    /// Whether tab group `node` is in an iconified column.
+    [[nodiscard]] bool isIconified(NodeId node) const { return m_iconifiedOf.contains(node); }
+    /// The tab group of an iconified column that is out beside its strip.
+    /// Which one is view state, like the panel that slid out of an auto-hide
+    /// bar: the layout says nothing about it.
+    [[nodiscard]] NodeId flyout() const { return m_flyout; }
+    /// Brings tab group `node` out beside the strip of its column; null puts
+    /// away the one that is out.
+    void showFlyout(NodeId node);
+    /// Where a node of the layout is shown: a tab group or a strip without
+    /// the bar above it, a split with everything in it.
+    [[nodiscard]] QRect nodeRect(NodeId node) const;
+    /// What a drag of `session` took hold of in this area: a tab group, or
+    /// the buttons of one in a strip. For picturing it.
+    [[nodiscard]] QWidget *dragSource(const DragSession &session) const;
+    /// The size of a window that holds an iconified column and nothing else,
+    /// with the tab group that is out beside its strip, if one is; invalid
+    /// if this area holds something else.
+    [[nodiscard]] QSize iconifiedSizeHint() const;
+    void refreshPanel(const PanelId &panel);
+    // Requests of bars and strips.
+    void iconButtonClicked(NodeId group, const PanelId &panel);
+    void startIconDrag(const PanelId &panel, bool wholeGroup, QWidget *pictured);
+    void startColumnDrag(NodeId column);
+    void toggleColumnIconified(NodeId column);
+    /// Whether a drag of `draggedPanels` panels is all that is in a floating
+    /// window that its headers move, and has the window system move that
+    /// window instead. `byHeader`: by what stands for all of it, not a tab.
+    [[nodiscard]] bool moveWindowInstead(qsizetype draggedPanels, bool byHeader);
 
     void relayout();
     /// A dock area inside one of this area's panels laid itself out anew.
@@ -153,6 +201,24 @@ private:
         std::vector<CornerPart> parts;
     };
 
+    /// A column that has a bar above it, and the node at its top.
+    struct Column
+    {
+        NodeId node;
+        NodeId top;
+        bool iconified = false;
+    };
+    [[nodiscard]] std::vector<Column> columnsOf(const LayoutTree &tree) const;
+    [[nodiscard]] LimitsProvider limitsProvider(const std::vector<Column> &columns) const;
+    void placeColumns();
+    void placeFlyout();
+    /// The area is one iconified column, with a tab group of it out: there
+    /// is no room beside the strip but what the area makes for it.
+    [[nodiscard]] bool flyoutSharesTheArea() const;
+    [[nodiscard]] QSize flyoutSize() const;
+    [[nodiscard]] QStringList panelsOf(NodeId node) const;
+
+    [[nodiscard]] int headerHeight() const;
     void handleDrag(QDragMoveEvent *event);
     [[nodiscard]] std::vector<int> linkedGroup(int handleIndex, bool linked) const;
     [[nodiscard]] std::vector<int> linkedGroup(const std::vector<int> &handles, bool linked) const;
@@ -180,8 +246,24 @@ private:
     QList<DockSplitCorner *> m_cornerWidgets;
     QList<DockEdgeHandle *> m_edgeHandles;
     int m_edgeCount = 0;
+    /// The columns of the layout as it is shown, with their bars.
+    std::vector<Column> m_columns;
+    QHash<NodeId, DockColumnBar *> m_bars;
+    /// By the iconified node each stands for.
+    QHash<NodeId, DockIconStrip *> m_strips;
+    /// Tab groups that are in an iconified column, and that column.
+    QHash<NodeId, NodeId> m_iconifiedOf;
+    NodeId m_flyout;
+    /// The size tab groups had before their column was iconified: what they
+    /// come out with.
+    QHash<NodeId, QSize> m_expandedSizes;
+    /// How wide the strip is while it shares the area with what is out
+    /// beside it (and was before); 0 when that is not known.
+    int m_stripWidth = 0;
     DockDropOverlay *m_overlay;
     Layout *m_layout;
+    /// A row of tabs that is never shown, for its height.
+    mutable QPointer<DockTabBar> m_headerProbe;
     // The button guide as it is shown: the cross stays with its group while
     // the pointer is on one of its buttons, wherever those lie.
     NodeId m_guideNode;

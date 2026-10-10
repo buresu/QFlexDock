@@ -65,6 +65,8 @@ public:
     // the requesting widget is not on the call stack during the drag.
     void requestPanelDrag(const PanelId &panel, const QPixmap &pixmap);
     void requestGroupDrag(const PanelId &anyPanelOfGroup, const QPixmap &pixmap);
+    /// The whole column the panel is in (LayoutTree::columnOf()).
+    void requestColumnDrag(const PanelId &anyPanelOfColumn, const QPixmap &pixmap);
     /// A floating window dragged by its (custom) title row, held at `grip`
     /// (window coordinates). False if the platform cannot carry a window with
     /// a drag, or would have to move the window itself where the window
@@ -75,6 +77,9 @@ public:
     /// Starts a session for one panel or for its whole tab group. Null if the
     /// panel is not in a tab group or a session is already active.
     const DragSession *begin(const PanelId &panel, bool wholeGroup);
+    /// Starts a session for the column the panel is in, as it is: every tab
+    /// group of it, iconified or not.
+    const DragSession *beginColumn(const PanelId &anyPanelOfColumn);
     /// Starts a session for everything in a floating window.
     const DragSession *beginContainer(const QString &containerId);
     /// Mime data naming the active session; the caller owns it. With

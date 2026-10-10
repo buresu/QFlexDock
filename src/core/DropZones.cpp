@@ -6,7 +6,8 @@
 
 namespace QFlexDock {
 
-DropZoneLayout DropZoneLayout::compute(const QRect &target, double edgeFraction, int margin)
+DropZoneLayout DropZoneLayout::compute(const QRect &target, double edgeFraction, int margin,
+                                       int edgeExtent)
 {
     DropZoneLayout layout;
     layout.bounds = target;
@@ -18,8 +19,12 @@ DropZoneLayout DropZoneLayout::compute(const QRect &target, double edgeFraction,
     if (!std::isfinite(edgeFraction))
         edgeFraction = 0.28;
     edgeFraction = std::clamp(edgeFraction, 0.1, 0.4);
-    const int dx = int(std::lround(layout.visible.width() * edgeFraction));
-    const int dy = int(std::lround(layout.visible.height() * edgeFraction));
+    int dx = int(std::lround(layout.visible.width() * edgeFraction));
+    int dy = int(std::lround(layout.visible.height() * edgeFraction));
+    if (edgeExtent >= 0) {
+        dx = std::min(edgeExtent, int(layout.visible.width() * 0.4));
+        dy = std::min(edgeExtent, int(layout.visible.height() * 0.4));
+    }
     layout.center = layout.visible.adjusted(dx, dy, -dx, -dy);
     return layout;
 }

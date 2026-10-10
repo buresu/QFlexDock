@@ -98,6 +98,8 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     m_floatButton = makeTitleButton(m_titleBar, "dockFloatButton", tr("Float"));
     m_autoHideButton = makeTitleButton(m_titleBar, "dockAutoHideButton", tr("Auto Hide"));
     m_closeButton = makeTitleButton(m_titleBar, "dockCloseButton", tr("Close"));
+    m_flyoutButton = makeTitleButton(m_titleBar, "dockFlyoutButton", tr("Collapse to Icons"));
+    m_flyoutButton->hide();
     m_floatButton->hide();
     m_autoHideButton->hide();
     m_closeButton->hide();
@@ -129,8 +131,8 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     m_titleLayout->addWidget(tabActions, 0, Qt::AlignVCenter);
     m_titleLayout->addWidget(m_filler, 1);
     m_titleLayout->addWidget(endActions, 0, Qt::AlignVCenter);
-    for (QToolButton *button :
-         {m_menuButton, m_maximizeButton, m_floatButton, m_autoHideButton, m_closeButton}) {
+    for (QToolButton *button : {m_flyoutButton, m_menuButton, m_maximizeButton, m_floatButton,
+                                m_autoHideButton, m_closeButton}) {
         m_titleLayout->addWidget(button, 0, Qt::AlignVCenter);
     }
 
@@ -170,6 +172,10 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
             toggleMaximized();
     });
     connect(m_menuButton, &QToolButton::clicked, this, &DockTabGroup::showGroupMenu);
+    connect(m_flyoutButton, &QToolButton::clicked, this, [this] {
+        if (m_flyout)
+            m_area->showFlyout({});
+    });
     connect(m_floatButton, &QToolButton::clicked, this, [this] { toggleFloating(); });
     connect(m_autoHideButton, &QToolButton::clicked, this, &DockTabGroup::autoHideGroup);
     connect(m_closeButton, &QToolButton::clicked, this, [this] {
@@ -290,16 +296,7 @@ void DockTabGroup::autoHideGroup()
 // such a window does not have, and the window system moves a window better.
 bool DockTabGroup::moveWindowInstead(qsizetype draggedPanels, bool byHeader)
 {
-    const DockFloatingWindow *floating = floatingWindow();
-    if (!floating || !floating->isMovedByHeaders() || !floating->windowHandle()
-        || m_area->tree().panels().size() != draggedPanels) {
-        return false;
-    }
-    const DockDragController *drag = m_manager->drag;
-    const bool leftToTheHeader = byHeader && drag->movesCarriedWindows();
-    if (!leftToTheHeader && (drag->carriesWindows() || m_manager->floatOnOutsideDrop))
-        return false;
-    return floating->windowHandle()->startSystemMove();
+    return m_area->moveWindowInstead(draggedPanels, byHeader);
 }
 
 void DockTabGroup::startPanelDrag(const PanelId &panel, const QPixmap &pixmap)
@@ -464,8 +461,10 @@ void DockTabGroup::updateHeader()
     const DockTitleButtons buttons = m_manager->titleButtonsFor(m_area->containerId());
     const DockFeatures features = current ? current->features() : DockFeatures();
     setShown(m_menuButton, buttons.testFlag(DockTitleButton::Menu));
+    setShown(m_flyoutButton, m_flyout);
     // (A window's title has the buttons of a window, whatever the theme.)
-    setShown(m_maximizeButton, m_windowTitle || buttons.testFlag(DockTitleButton::Maximize));
+    setShown(m_maximizeButton,
+             m_windowTitle || (buttons.testFlag(DockTitleButton::Maximize) && !m_flyout));
     setShown(m_floatButton, buttons.testFlag(DockTitleButton::Float)
                                 && features.testFlag(DockFeature::Floatable));
     setShown(m_autoHideButton, buttons.testFlag(DockTitleButton::AutoHide) && !floating
@@ -634,6 +633,41 @@ void DockTabGroup::setActive(bool active)
     restyle();
 }
 
+void DockTabGroup::setFlyout(bool flyout, DockArea side)
+{
+    if (m_flyout == flyout && m_flyoutSide == side)
+        return;
+    const bool changed = m_flyout != flyout;
+    m_flyout = flyout;
+    m_flyoutSide = side;
+    // Its button points back at the strip.
+    if (m_manager) {
+        m_flyoutButton->setIcon(m_manager->icon(side == DockArea::Left ? DockIcon::IconifyRight
+                                                                       : DockIcon::IconifyLeft,
+                                                this));
+    }
+    if (changed) {
+        updateHeader();
+        restyle();
+    }
+}
+
+QSize DockTabGroup::preferredSize() const
+{
+    QSize content(260, 220);
+    const DockPanel *panel = m_manager ? m_manager->panels.value(shownPanel()) : nullptr;
+    if (const QWidget *widget = panel ? panel->widget() : nullptr)
+        content = content.expandedTo(widget->sizeHint());
+    const bool tabsBelow = m_titleMode && !m_tabBar->isHidden();
+    const int header = (m_titleBar->isHidden() ? 0 : m_titleBar->sizeHint().height())
+        + (tabsBelow ? m_tabBar->sizeHint().height() : 0);
+    const QMargins frame = contentsMargins();
+    const SizeLimits limits = sizeLimits();
+    return QSize(content.width() + frame.left() + frame.right(),
+                 content.height() + header + frame.top() + frame.bottom())
+        .expandedTo(limits.min).boundedTo(limits.max);
+}
+
 void DockTabGroup::restyle()
 {
     style()->unpolish(this);
@@ -738,7 +772,7 @@ void DockTabGroup::updateTab(int index)
     if (panel->isDirty())
         text += QStringLiteral(" ●");
     m_tabBar->setTabText(index, text);
-    m_tabBar->setTabIcon(index, panel->icon());
+    m_tabBar->setTabIcon(index, m_manager->theme.tabIcons ? panel->icon() : QIcon());
     m_tabBar->setTabToolTip(index, panel->toolTip());
 
     // The close-button slot shows: a pin for pinned tabs, nothing for panels
@@ -748,7 +782,7 @@ void DockTabGroup::updateTab(int index)
     QWidget *button = m_tabBar->tabButton(index, side);
     // (Tabs below the content are plain: see updateHeader().)
     const bool wantsPin = !m_titleMode && panel->isPinnedTab();
-    const bool wantsClose = !m_titleMode && !wantsPin
+    const bool wantsClose = !m_titleMode && !wantsPin && panel->hasTabCloseButton()
         && panel->features().testFlag(DockFeature::Closable);
     const bool hasPin = button && button->objectName() == QLatin1String("dockTabPin");
     if (wantsPin) {
@@ -791,10 +825,13 @@ void DockTabGroup::refreshAppearance()
     const int themed = m_manager->theme.iconSize;
     const int small = themed > 0 ? themed
                                  : style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    for (QToolButton *button :
-         {m_menuButton, m_maximizeButton, m_floatButton, m_autoHideButton, m_closeButton}) {
+    for (QToolButton *button : {m_flyoutButton, m_menuButton, m_maximizeButton, m_floatButton,
+                                m_autoHideButton, m_closeButton}) {
         button->setIconSize(QSize(small, small));
     }
+    m_flyoutButton->setIcon(m_manager->icon(m_flyoutSide == DockArea::Left ? DockIcon::IconifyRight
+                                                                             : DockIcon::IconifyLeft,
+                                            this));
     for (const ActionBar &bar : std::as_const(m_actionBars)) {
         for (const ShownAction &shown : bar.shown) {
             if (auto *button = qobject_cast<QToolButton *>(shown.widget.data());

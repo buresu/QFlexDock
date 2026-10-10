@@ -21,8 +21,9 @@ struct SizeLimits
     QSize max{UnboundedSize, UnboundedSize};
 };
 
-/// Supplies the pixel limits of a tab group (taken from its widgets).
-using LimitsProvider = std::function<SizeLimits(const LayoutNode &tabs)>;
+/// Supplies the pixel limits of what is laid out as one thing (taken from its
+/// widgets): a tab group, or an iconified column.
+using LimitsProvider = std::function<SizeLimits(const LayoutNode &leaf)>;
 
 /// A boundary between child `index` and `index + 1` of a split.
 struct SolvedHandle
@@ -38,7 +39,7 @@ struct SolvedHandle
 /// Pixel geometry computed from a layout tree.
 struct SolvedLayout
 {
-    QHash<NodeId, QRect> rects; // every node
+    QHash<NodeId, QRect> rects; // every node, down to tab groups and iconified columns
     QHash<NodeId, SizeLimits> limits; // every node, limits of its whole subtree
     std::vector<SolvedHandle> handles;
     int handleWidth = 0;

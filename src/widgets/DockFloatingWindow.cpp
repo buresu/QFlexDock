@@ -148,10 +148,45 @@ void DockFloatingWindow::detachFromManager()
 
 void DockFloatingWindow::setLayoutState(const ContainerState &container)
 {
+    if (m_owner != container.owner) {
+        m_owner = container.owner;
+        style()->unpolish(this);
+        style()->polish(this);
+    }
     // Before the groups hear of it: their headers go by the title row.
     showTitleRow(wantsTitleRow(container.tree));
     m_area->setLayoutState(container);
     updateTitle();
+}
+
+// A window that holds nothing but an iconified column is as large as the
+// strip of buttons that column is, and what is out beside the strip; shown
+// again, the column has the size the window had before.
+void DockFloatingWindow::fitIconified()
+{
+    const QSize strip = m_area->iconifiedSizeHint();
+    const bool iconified = strip.isValid();
+    if (m_ghost || (!iconified && !m_iconified) || (iconified && strip == m_fitted))
+        return;
+    const bool was = std::exchange(m_iconified, iconified);
+    m_fitted = strip;
+    if (!m_presented || !isPlain())
+        return;
+    const QMargins frame = layout()->contentsMargins();
+    const QSize around(frame.left() + frame.right(), frame.top() + frame.bottom());
+    // The least the window may be has changed with what it holds, and has
+    // to be known before the window is made that small.
+    layout()->invalidate();
+    layout()->activate();
+    if (iconified) {
+        // (Also when a tab group comes out beside the strip, or goes back.)
+        if (!was)
+            m_expandedSize = size();
+        resize(strip + around);
+    } else {
+        resize(m_expandedSize.isValid() ? m_expandedSize
+                                        : sizeHint().expandedTo(QSize(320, 260)));
+    }
 }
 
 // The title row is for what no header in the window stands for: more than
@@ -226,6 +261,14 @@ void DockFloatingWindow::present(const QRect &geometry, QWidget *ownerWindow)
         setGeometry(geometry);
     else
         resize(sizeHint().expandedTo(QSize(360, 260)));
+    // An iconified column comes as its strip of buttons, whatever the size
+    // of what it was taken out of.
+    if (const QSize strip = m_area->iconifiedSizeHint(); strip.isValid() && !m_ghost) {
+        const QMargins frame = layout()->contentsMargins();
+        m_iconified = true;
+        m_fitted = strip;
+        resize(strip + QSize(frame.left() + frame.right(), frame.top() + frame.bottom()));
+    }
     // Keeps the window above its owner. Positioning is up to the platform:
     // Wayland compositors place top-level windows themselves.
     if (ownerWindow && ownerWindow != this) {

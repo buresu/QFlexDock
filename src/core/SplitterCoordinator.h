@@ -87,9 +87,13 @@ public:
 
     /// Range [min, max] of pixel offsets by which every handle in `group` can
     /// move without breaking any minimum or maximum size. Always contains 0.
+    /// With `push`, a handle goes on where the child next to it can give no
+    /// more: the children behind that one give in turn, nearest first, and
+    /// likewise take what the nearest cannot.
     [[nodiscard]] static std::pair<int, int> deltaRange(const LayoutTree &tree,
                                                         const SolvedLayout &layout,
-                                                        const std::vector<int> &group);
+                                                        const std::vector<int> &group,
+                                                        bool push = false);
 
     /// Weights that move every handle in `group` by `delta` pixels relative to
     /// `layout` (the layout at the start of the drag). `delta` is clamped to
@@ -97,7 +101,7 @@ public:
     [[nodiscard]] static std::vector<WeightUpdate> moveHandles(const LayoutTree &tree,
                                                                const SolvedLayout &layout,
                                                                const std::vector<int> &group,
-                                                               int delta);
+                                                               int delta, bool push = false);
 };
 
 } // namespace QFlexDock

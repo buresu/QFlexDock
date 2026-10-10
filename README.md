@@ -11,6 +11,7 @@ Made for creative tools, IDEs, 3D editors and node editors.
 - **Follows the host application** — drawn with its `QStyle`, `QPalette`, `QFont` and style sheet, and follows changes at run time.
 - **Tabs or title bars** — groups headed by their tabs, or by a title bar with tabs only where panels are stacked, for all workspaces or each its own; fixed content that panels dock around; your own buttons and widgets in the headers.
 - **Workspaces within workspaces** — a document area in the middle of the tool panels, each kind of panel staying in its own, with boundaries that are resized together across the two.
+- **Columns that shrink to icons** — a workspace can dock in columns, each under a bar that moves it as a whole and shrinks it to a strip of buttons; a button brings its tab group out beside the strip. Drops go beside a column, into it, or into the tabs of a group.
 - **Windows of tabs** — an application can do without a main window: floating windows that are rows of tabs, where a tab is dragged into the row of another window or let go of to become a window. The rows can show a drag as it will turn out: the tab gone from one, a place opening for it in the other.
 - Floating windows, auto-hide, maximize, undo/redo, named presets, per-panel dock policies, lazily created panels.
 
@@ -51,10 +52,10 @@ if (QFlexDock::DockResult r = manager.loadLayout("layout.json"); !r)
     qWarning() << r.message();
 ```
 
-Examples are in [examples/](examples/): `basic`, `multi-window`, `quick-panel`, `gpu-panel`, and four that
+Examples are in [examples/](examples/): `basic`, `multi-window`, `quick-panel`, `gpu-panel`, and five that
 rebuild the window layout and look of an existing application (layout and style only): `obs-style` after
-OBS Studio, `vscode-style` after Visual Studio Code, `vs-style` after Visual Studio, and `chrome-style`
-after Chrome.
+OBS Studio, `vscode-style` after Visual Studio Code, `vs-style` after Visual Studio, `chrome-style`
+after Chrome, and `photoshop-style` after Photoshop.
 
 ## Build
 
@@ -93,7 +94,7 @@ target_link_libraries(app PRIVATE QFlexDock::QFlexDock)
 within a group), replacing a group's header by a widget of the application's own (it can add buttons and
 widgets to it), side areas that keep their pixel size when the window is resized, animations. Replacing the dock UI itself with QML is out of scope.
 
-**Tested** — all 14 test suites pass, with warnings as errors, in [CI](.github/workflows/ci.yml) and locally:
+**Tested** — all 15 test suites pass, with warnings as errors, in [CI](.github/workflows/ci.yml) and locally:
 
 | Environment | Notes |
 |---|---|

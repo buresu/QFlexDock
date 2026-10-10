@@ -3,6 +3,7 @@
 
 #include "core/DockDragController.h"
 #include "core/DropZones.h"
+#include "widgets/DockColumn.h"
 #include "widgets/DockDropOverlay.h"
 #include "widgets/DockFloatingWindow.h"
 #include "widgets/DockTabBar.h"
@@ -32,6 +33,15 @@ public:
     bool begin(const char *panel, bool wholeGroup = false)
     {
         if (!m_controller->begin(p(panel), wholeGroup))
+            return false;
+        m_mime.reset(m_controller->createMimeData());
+        return true;
+    }
+
+    /// The whole column the panel is in, as by the bar above it.
+    bool beginColumn(const char *panel)
+    {
+        if (!m_controller->beginColumn(p(panel)))
             return false;
         m_mime.reset(m_controller->createMimeData());
         return true;
@@ -1083,9 +1093,22 @@ private Q_SLOTS:
         const DockTabBar *barB = areaB->groupOfPanel(p("c"))->tabBar();
         QVERIFY(drag.move(areaB, barB->mapTo(areaB, barB->tabRect(1).center() + QPoint(8, 0))));
         drag.leave(areaB);
-        // An empty workspace has no header to aim for, and takes the panel.
+        // An empty workspace takes the panel where its tabs will be: along
+        // its top, as high as a row of tabs. All of it is shown as aimed at.
+        const int row = bar->height();
         QVERIFY(f.manager.hidePanels({p("a"), p("b")}));
+        QVERIFY(!drag.move(area, area->rect().center()));
+        QVERIFY(!drag.move(area, QPoint(area->width() / 2, row + 4)));
+        QVERIFY(drag.move(area, QPoint(area->width() / 2, row - 2)));
+        QVERIFY(drag.move(area, QPoint(4, 2)));
+        QCOMPARE(area->overlay()->scene().preview, area->contentsRect());
+        QCOMPARE(area->overlay()->scene().target, area->contentsRect());
+        QCOMPARE(area->overlay()->scene().header, QRect(0, 0, area->width(), row));
+        // With the middle open, so is all of an empty workspace.
+        f.manager.setCenterDropEnabled(true);
         QVERIFY(drag.move(area, area->rect().center()));
+        QVERIFY(area->overlay()->scene().header.isNull());
+        f.manager.setCenterDropEnabled(false);
         QVERIFY(f.manager.showPanels({p("a"), p("b")}));
         drag.leave(area);
 
@@ -1671,6 +1694,386 @@ private Q_SLOTS:
         grab(&f.windowA, p("preview-left"));
         QVERIFY(drag.drop(area, zonePoint(area, "b", DockArea::Left)));
         QCOMPARE(describe(f.a), p("H(a, c, b)"));
+    }
+
+    void oneWorkspaceCanTakeTabsByItsHeadersOnly()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.b->addPanel(p("c")));
+        QVERIFY(f.manager.movePanel(p("d"), p("c"), DockArea::Center));
+        DockAreaWidget *area = areaOf(f.a);
+        DockAreaWidget *areaB = areaOf(f.b);
+        f.manager.setCenterDropEnabled(f.a, false);
+        QVERIFY(f.manager.isCenterDropEnabled());
+        QVERIFY(!f.manager.isCenterDropEnabled(f.a));
+        QVERIFY(f.manager.isCenterDropEnabled(f.b));
+
+        // Into A by the tabs only; its own tab does not stay by the middle.
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("c"));
+        QVERIFY(!drag.move(area, zonePoint(area, "a", DockArea::Center)));
+        const DockTabBar *bar = area->groupOfPanel(p("a"))->tabBar();
+        QVERIFY(drag.move(area, bar->mapTo(area, bar->tabRect(1).center())));
+        drag.leave(area);
+        // B is as it was.
+        QVERIFY(drag.move(areaB, zonePoint(areaB, "c", DockArea::Center)));
+        drag.leave(areaB);
+
+        // So for the windows A owns, where a title bar that names its panel
+        // takes a tab like a row of tabs does.
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
+        const DockFloatingWindow *window = priv(f.manager)->floatingWindows.begin().value();
+        QVERIFY(QTest::qWaitForWindowExposed(const_cast<DockFloatingWindow *>(window)));
+        DockAreaWidget *floating = window->area();
+        const DockTabGroup *group = floating->groupOfPanel(p("b"));
+        QVERIFY(group->titleLabel()->isVisible()); // the header is the window's title
+        const QRect title(group->titleBar()->mapTo(floating, QPoint(0, 0)), group->titleBar()->size());
+        priv(f.manager)->drag->cancel();
+        QVERIFY(drag.begin("c"));
+        QVERIFY(!drag.move(floating, group->geometry().center()));
+        QVERIFY(drag.move(floating, QPoint(title.left() + 30, title.center().y())));
+        QCOMPARE(floating->overlay()->scene().header, title);
+        QVERIFY(drag.drop(floating, QPoint(title.left() + 30, title.center().y())));
+        QCOMPARE(describe(floating->tree()), p("b|c"));
+    }
+
+    // --- Columns -------------------------------------------------------------
+
+    void theSidesOfAGroupAreThoseOfItsColumn()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
+        QVERIFY(f.b->addPanel(p("d")));
+        QVERIFY(f.manager.movePanel(p("e"), p("d"), DockArea::Center));
+        DockAreaWidget *area = areaOf(f.a);
+        const NodeId column = area->tree().columnOf(area->tree().findPanel(p("c"))->id)->id;
+
+        // As a rule, the side of a group is where that group is split.
+        {
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("d"));
+            const QPoint left = zonePoint(area, "c", DockArea::Left);
+            QCOMPARE(area->candidateAt(left, drag.session()).target.node,
+                     area->tree().findPanel(p("c"))->id);
+        }
+
+        // In a workspace that docks in columns, it is the side of the column.
+        f.manager.setColumnDocking(f.a, true);
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        const QPoint left = zonePoint(area, "c", DockArea::Left);
+        QVERIFY(drag.move(area, left));
+        const DropCandidate candidate = area->candidateAt(left, drag.session());
+        QVERIFY(candidate.valid);
+        QCOMPARE(candidate.target.node, column);
+        QCOMPARE(candidate.target.area, DockArea::Left);
+        // Shown for all of the column, the bar above it included.
+        const QRect whole = area->solved().rects.value(column);
+        QCOMPARE(whole.top(), 0);
+        QCOMPARE(area->overlay()->scene().preview, dropPreviewRect(whole, DockArea::Left, 0.5));
+        QCOMPARE(area->overlay()->scene().target, whole);
+        QVERIFY(drag.drop(area, left));
+        QCOMPARE(describe(f.a), p("H(a, d, V(b, c))"));
+
+        // Above and below, a group is still what it is.
+        QVERIFY(drag.begin("e"));
+        const QPoint bottom = zonePoint(area, "b", DockArea::Bottom);
+        QCOMPARE(area->candidateAt(bottom, drag.session()).target.node,
+                 area->tree().findPanel(p("b"))->id);
+        QVERIFY(drag.drop(area, bottom));
+        QCOMPARE(describe(f.a), p("H(a, d, V(b, e, c))"));
+    }
+
+    void aGroupLeavesItsColumnForOneOfItsOwn()
+    {
+        TwoWindows f;
+        f.show();
+        f.manager.setColumnDocking(f.a, true);
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
+        DockAreaWidget *area = areaOf(f.a);
+
+        // Beside the column it is in, held over the other group of it: the
+        // column is that other group once this one has left.
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("b", true));
+        QVERIFY(drag.drop(area, zonePoint(area, "c", DockArea::Left)));
+        QCOMPARE(describe(f.a), p("H(a, b, c)"));
+
+        // And held over itself, which has no sides of its own to offer.
+        QVERIFY(f.manager.undo());
+        QCOMPARE(describe(f.a), p("H(a, V(b, c))"));
+        QVERIFY(drag.begin("b", true));
+        const QPoint left = zonePoint(area, "b", DockArea::Left);
+        const DropCandidate candidate = area->candidateAt(left, drag.session());
+        QVERIFY(candidate.valid);
+        QCOMPARE(candidate.zones, DockAreas(DockArea::Left) | DockArea::Right | DockArea::Center);
+        QVERIFY(drag.drop(area, left));
+        QCOMPARE(describe(f.a), p("H(a, b, c)"));
+
+        // A group that is a column cannot be put beside itself.
+        QVERIFY(drag.begin("c", true));
+        QVERIFY(!drag.move(area, zonePoint(area, "c", DockArea::Left)));
+    }
+
+    void aColumnIsDraggedAsItIs()
+    {
+        TwoWindows f;
+        f.show();
+        f.manager.setColumnDocking(f.a, true);
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
+        QVERIFY(f.manager.movePanel(p("d"), p("c"), DockArea::Center));
+        DockAreaWidget *area = areaOf(f.a);
+        const NodeId column = area->tree().columnOf(area->tree().findPanel(p("c"))->id)->id;
+
+        Drag drag(f.manager);
+        QVERIFY(drag.beginColumn("c"));
+        QVERIFY(drag.session().wholeGroup);
+        QCOMPARE(drag.session().sourceNode, column);
+        QVERIFY(!drag.session().sourceIsTabs);
+        QCOMPARE(drag.session().panels, QStringList({p("b"), p("c"), p("d")}));
+        // Not onto itself or anything in it, and it cannot become tabs.
+        QVERIFY(!drag.move(area, zonePoint(area, "b", DockArea::Left)));
+        QVERIFY(!drag.move(area, zonePoint(area, "c", DockArea::Top)));
+        QVERIFY(!drag.move(area, zonePoint(area, "a", DockArea::Center)));
+        QVERIFY(drag.drop(area, zonePoint(area, "a", DockArea::Left)));
+        QCOMPARE(describe(f.a), p("H(V(b, c|d), a)"));
+
+        // Dropped outside every window, it floats as it is.
+        f.manager.setFloatsOnOutsideDrop(true);
+        DockDragController *controller = priv(f.manager)->drag;
+        QVERIFY(controller->beginColumn(p("b")));
+        if (controller->carriesWindows() && !controller->movesCarriedWindows()) {
+            // (Wayland: a picture of the column is carried along, and a drop
+            // that nobody took is reported as taken.)
+            const QPointer<DockFloatingWindow> ghost = controller->createGhost();
+            QVERIFY(ghost);
+            QCOMPARE(ghost->size(), area->solved().rects.value(drag.session().sourceNode).size());
+            controller->finish(Qt::MoveAction, ghost, false);
+        } else {
+            controller->finish(Qt::IgnoreAction, nullptr, false);
+        }
+        QVERIFY(f.manager.panel(p("b"))->isFloating());
+        QCOMPARE(describe(f.a), p("a"));
+        QCOMPARE(priv(f.manager)->floatingWindows.size(), 1);
+        const DockFloatingWindow *window = priv(f.manager)->floatingWindows.begin().value();
+        QCOMPARE(describe(window->area()->tree()), p("V(b, c|d)"));
+
+        // A column of one group is that group.
+        QVERIFY(drag.beginColumn("a"));
+        QVERIFY(drag.session().sourceIsTabs);
+        QCOMPARE(drag.session().panels, QStringList({p("a")}));
+    }
+
+    void aStripOfButtonsTakesDropsAsTheColumnItIs()
+    {
+        TwoWindows f(8);
+        DockTheme theme;
+        theme.overlay.outerBandWidth = 0; // the strip is at the border
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
+        QVERIFY(f.manager.setColumnIconified(p("b"), true));
+        for (const char *id : {"d", "e", "f", "g"})
+            QVERIFY(f.manager.movePanel(p(id), f.b, DockArea::Center));
+        DockAreaWidget *area = areaOf(f.a);
+        const auto strip = [area] { return area->iconStrips().value(0); };
+        const auto blockOf = [&](const char *panel) {
+            const NodeId group = area->tree().findPanel(p(panel))->id;
+            return QRect(strip()->mapTo(area, strip()->blockRect(group).topLeft()),
+                         strip()->blockRect(group).size());
+        };
+
+        // On the buttons of a group: one more of them.
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        QVERIFY(drag.move(area, blockOf("b").center()));
+        QCOMPARE(area->overlay()->scene().preview, blockOf("b"));
+        QVERIFY(drag.drop(area, blockOf("b").center()));
+        QCOMPARE(describe(f.a), p("H(a, V(b|d, c))"));
+        QVERIFY(f.manager.isColumnIconified(p("d")));
+        QVERIFY(strip()->button(p("d")));
+        // It is a button there, not brought out.
+        QVERIFY(area->flyout().isNull());
+        QVERIFY(!f.widgets[p("d")]->isVisible());
+
+        // Below the last of them: the buttons of a group of its own.
+        QVERIFY(drag.begin("e"));
+        const QPoint below(blockOf("c").center().x(), area->height() - 10);
+        QVERIFY(drag.move(area, below));
+        QVERIFY(drag.drop(area, below));
+        QCOMPARE(describe(f.a), p("H(a, V(b|d, c, e))"));
+        QVERIFY(f.manager.isColumnIconified(p("e")));
+        QCOMPARE(area->iconStrips().size(), 1);
+        QCOMPARE(strip()->grips().size(), 3);
+
+        // Above a group of the strip, likewise.
+        QVERIFY(drag.begin("f"));
+        const QPoint above(blockOf("c").center().x(), blockOf("c").top() + 1);
+        QVERIFY(drag.drop(area, above));
+        QCOMPARE(describe(f.a), p("H(a, V(b|d, f, c, e))"));
+        QVERIFY(f.manager.isColumnIconified(p("f")));
+
+        // At its side: beside the column, and not part of it.
+        QVERIFY(drag.begin("g"));
+        const QPoint side(blockOf("c").left() + 1, blockOf("c").center().y());
+        const DropCandidate candidate = area->candidateAt(side, drag.session());
+        QCOMPARE(candidate.target.node, strip()->nodeId());
+        QVERIFY(drag.drop(area, side));
+        QCOMPARE(describe(f.a), p("H(a, g, V(b|d, f, c, e))"));
+        QVERIFY(!f.manager.isColumnIconified(p("g")));
+        QVERIFY(f.manager.isColumnIconified(p("c")));
+        QVERIFY(area->groupOfPanel(p("g")));
+    }
+
+    void aButtonIsDraggedOutOfItsStrip()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
+        QVERIFY(f.manager.movePanel(p("d"), p("c"), DockArea::Center));
+        QVERIFY(f.manager.setColumnIconified(p("b"), true));
+        DockAreaWidget *area = areaOf(f.a);
+
+        // One panel, into a group that is open.
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        QVERIFY(qobject_cast<DockIconButton *>(area->dragSource(drag.session())));
+        QVERIFY(drag.drop(area, zonePoint(area, "a", DockArea::Center)));
+        QCOMPARE(describe(f.a), p("H(a|d, V(b, c))"));
+        QVERIFY(!f.manager.isColumnIconified(p("d")));
+        QVERIFY(f.widgets[p("d")]->isVisible());
+
+        // The buttons of a group, by the grip above them: a group again.
+        QVERIFY(drag.begin("c", true));
+        QCOMPARE(area->dragSource(drag.session()),
+                 area->iconStrips().value(0)->block(area->tree().findPanel(p("c"))->id));
+        QVERIFY(drag.drop(area, zonePoint(area, "a", DockArea::Bottom)));
+        QCOMPARE(describe(f.a), p("H(V(a|d, c), b)"));
+        QVERIFY(!f.manager.isColumnIconified(p("c")));
+        QVERIFY(f.manager.isColumnIconified(p("b")));
+
+        // What is out beside the strip takes a tab, and nothing else.
+        QVERIFY(f.manager.activatePanel(p("b")));
+        const DockTabGroup *out = area->groupOfPanel(p("b"));
+        QVERIFY(out && out->isFlyout());
+        QVERIFY(drag.begin("d"));
+        const DropCandidate candidate =
+            area->candidateAt(out->geometry().center(), drag.session());
+        QVERIFY(candidate.valid);
+        QCOMPARE(candidate.zones, DockAreas(DockArea::Center));
+        QCOMPARE(candidate.preview, out->geometry());
+        QVERIFY(drag.drop(area, out->geometry().center()));
+        QCOMPARE(describe(f.a), p("H(V(a, c), b|d)"));
+        QVERIFY(f.manager.isColumnIconified(p("d")));
+    }
+
+    void theGuideTellsWhatADropWouldJoin()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.guide = DockGuide::Preview;
+        theme.overlay.edgeExtent = 12;
+        theme.overlay.zoneMargin = 0;
+        theme.overlay.outerBandWidth = 0;
+        f.manager.setTheme(theme);
+        f.manager.setTabDragPreviewEnabled(true);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Right));
+        DockAreaWidget *area = areaOf(f.a);
+        DockTabGroup *group = area->groupOfPanel(p("a"));
+        const QRect header(group->titleBar()->mapTo(area, QPoint(0, 0)), group->titleBar()->size());
+        const QRect whole = group->geometry();
+        DockDragController *controller = priv(f.manager)->drag;
+
+        // Another group's panel, over the middle: the group and its header.
+        {
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("d"));
+            controller->showSourcePreview();
+            QVERIFY(drag.move(area, whole.center()));
+            const DockOverlayScene scene = area->overlay()->scene();
+            QCOMPARE(scene.preview, whole);
+            QCOMPARE(scene.target, whole);
+            QCOMPARE(scene.header, header);
+            QVERIFY(!scene.ownGroup);
+            QVERIFY(scene.tabGap.isNull());
+            // Twelve pixels in is the middle, with edges twelve deep.
+            QVERIFY(drag.move(area, QPoint(whole.left() + 12, whole.center().y())));
+            QCOMPARE(area->overlay()->scene().preview, whole);
+            // At an edge nothing is joined.
+            QVERIFY(drag.move(area, QPoint(whole.left() + 11, whole.center().y())));
+            QCOMPARE(area->overlay()->scene().preview, dropPreviewRect(whole, DockArea::Left, 0.5));
+            QCOMPARE(area->overlay()->scene().target, whole);
+            QVERIFY(area->overlay()->scene().header.isNull());
+            // Its own group lets it stay, and is what that is aimed at.
+            const QRect own = area->groupOfPanel(p("d"))->geometry();
+            QVERIFY(drag.move(area, own.center()));
+            QCOMPARE(area->overlay()->scene().target, own);
+            QVERIFY(area->overlay()->scene().ownGroup);
+            // Among the tabs: the place kept open for it there.
+            const DockTabBar *bar = group->tabBar();
+            QVERIFY(drag.move(area, bar->mapTo(area, bar->tabRect(1).center())));
+            const DockOverlayScene among = area->overlay()->scene();
+            QCOMPARE(among.header, header);
+            QVERIFY(header.contains(among.tabGap));
+            QVERIFY(!among.tabGap.isEmpty());
+            QVERIFY(!among.ownGroup);
+            QCOMPARE(among.target, whole);
+        }
+
+        // A tab among those of its own group: the group is what it is aimed
+        // at, though nothing of it is taken.
+        {
+            Drag drag(f.manager);
+            QVERIFY(drag.begin("c"));
+            controller->showSourcePreview();
+            const DockTabBar *bar = group->tabBar();
+            QVERIFY(drag.move(area, bar->mapTo(area, bar->tabRect(0).center())));
+            const DockOverlayScene among = area->overlay()->scene();
+            QVERIFY(among.ownGroup);
+            QVERIFY(among.preview.isNull());
+            QCOMPARE(among.target, whole);
+            QVERIFY(header.contains(among.tabGap));
+        }
+
+        // A tab of the group itself, held over the middle: it stays, and the
+        // place it left is the one kept open.
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("b"));
+        controller->showSourcePreview();
+        QCOMPARE(group->draggedOut(), p("b"));
+        QVERIFY(drag.move(area, whole.center()));
+        const DockOverlayScene scene = area->overlay()->scene();
+        QVERIFY(scene.ownGroup);
+        QCOMPARE(scene.preview, whole);
+        QCOMPARE(scene.header, header);
+        QCOMPARE(group->dropGap(), 1);
+        QVERIFY(header.contains(scene.tabGap));
+        QCOMPARE(scene.tabGap.width(), group->tabBar()->tabRect(0).width());
+        QVERIFY(scene.tabGap.left() > group->tabBar()->mapTo(area, QPoint(0, 0)).x());
+        QCOMPARE(hoveredZone(area)->area, DockArea::Center);
+        // Let go of there, nothing has changed.
+        QVERIFY(drag.drop(area, whole.center()));
+        QCOMPARE(describe(f.a), p("H(a|b|c, d)"));
+        QCOMPARE(group->dropGap(), -1);
+        QVERIFY(group->draggedOut().isEmpty());
     }
 };
 

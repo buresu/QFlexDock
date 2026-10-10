@@ -27,9 +27,10 @@ struct QFLEXDOCK_EXPORT DropZoneLayout
 
     /// `edgeFraction` is the depth of the edge areas as a share of the
     /// (visible) width/height, clamped so the centre keeps a usable size.
-    /// `margin` is clamped for small targets.
+    /// `margin` is clamped for small targets. `edgeExtent`, if not negative,
+    /// is that depth in pixels instead, at most 0.4 of the width/height.
     [[nodiscard]] static DropZoneLayout compute(const QRect &target, double edgeFraction,
-                                                int margin = 0);
+                                                int margin = 0, int edgeExtent = -1);
 
     /// Outline of one area as drawn. Empty for DockArea::None.
     [[nodiscard]] QPolygonF polygon(DockArea area) const;

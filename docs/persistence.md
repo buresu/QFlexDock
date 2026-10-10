@@ -50,6 +50,7 @@ Restoring is one transaction and can be undone.
 
 - `windows[].id` is the workspace id given to `createWorkspace()`, or a floating window's id.
 - `geometry`, `maximized`, `fullScreen` describe the top-level window a workspace sits in, or the floating window.
+- A node of `layout` that is a column shrunk to a strip of buttons has `"iconified": true`.
 - `panelMemory` records where panels that are not placed right now (closed, or not registered) go back to.
 
 Only **stable panel ids** are stored: no pointers, no node ids. What is inside a panel is the application's to save.

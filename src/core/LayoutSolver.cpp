@@ -37,7 +37,7 @@ SizeLimits computeLimits(const LayoutNode &node, int handleWidth, const LimitsPr
                          QHash<NodeId, SizeLimits> *cache)
 {
     SizeLimits result;
-    if (node.isTabs()) {
+    if (node.isTabs() || node.iconified) {
         result = sanitized(provider ? provider(node) : SizeLimits{});
     } else {
         const Qt::Orientation o = node.orientation;
@@ -153,7 +153,8 @@ void place(const LayoutNode &node, const QRect &rect, Placing &placing)
 {
     SolvedLayout &out = placing.out;
     out.rects.insert(node.id, rect);
-    if (node.isTabs())
+    // An iconified column is one thing, whatever is in it.
+    if (node.isTabs() || node.iconified)
         return;
     placeChildren(node, rect, placing);
 }
@@ -394,7 +395,7 @@ std::vector<NodeId> holdLine(const QHash<NodeId, const LayoutNode *> &splits,
 
 void collectSplits(const LayoutNode &node, QHash<NodeId, const LayoutNode *> &splits)
 {
-    if (node.isTabs())
+    if (node.isTabs() || node.iconified)
         return;
     splits.insert(node.id, &node);
     for (const auto &child : node.children)

@@ -3,12 +3,15 @@
 
 #include "core/DockDragController.h"
 #include "core/DropZones.h"
+#include "widgets/DockColumn.h"
 #include "widgets/DockDropOverlay.h"
+#include "widgets/DockFloatingWindow.h"
 #include "widgets/DockSplitHandle.h"
 #include "widgets/DockTabBar.h"
 #include "widgets/DockTabGroup.h"
 
 #include <QtGui/QDragEnterEvent>
+#include <QtGui/QWindow>
 #include <QtWidgets/QLayout>
 
 namespace QFlexDock {
@@ -89,6 +92,10 @@ void DockAreaWidget::detachFromManager()
     m_overlay->setManager(nullptr);
     for (DockTabGroup *group : std::as_const(m_groups))
         group->detachFromManager();
+    for (DockColumnBar *bar : std::as_const(m_bars))
+        bar->detachFromManager();
+    for (DockIconStrip *strip : std::as_const(m_strips))
+        strip->detachFromManager();
 }
 
 DockTabGroup *DockAreaWidget::groupOfPanel(const PanelId &panel) const
@@ -129,23 +136,54 @@ int DockAreaWidget::handleHoverWidth() const
 
 LimitsProvider DockAreaWidget::limitsProvider() const
 {
-    return [this](const LayoutNode &tabs) {
-        const DockTabGroup *g = m_groups.value(tabs.id);
-        return g ? g->sizeLimits() : SizeLimits{};
+    return limitsProvider(m_columns);
+}
+
+// The limits of a tab group or of the strip of an iconified column, and with
+// them the bar above a column: the node at its top makes room for that.
+LimitsProvider DockAreaWidget::limitsProvider(const std::vector<Column> &columns) const
+{
+    QSet<NodeId> tops;
+    for (const Column &column : columns)
+        tops.insert(column.top);
+    const int bar = tops.isEmpty() || !m_manager ? 0 : m_manager->columnBarHeight();
+    return [this, tops, bar](const LayoutNode &leaf) {
+        SizeLimits limits;
+        if (leaf.iconified) {
+            if (const DockIconStrip *strip = m_strips.value(leaf.id))
+                limits = strip->sizeLimits();
+        } else if (const DockTabGroup *g = m_groups.value(leaf.id)) {
+            limits = g->sizeLimits();
+        }
+        if (tops.contains(leaf.id)) {
+            limits.min.rheight() += bar;
+            if (limits.max.height() < UnboundedSize)
+                limits.max.rheight() += bar;
+        }
+        return limits;
     };
 }
 
 const LayoutNode *DockAreaWidget::maximizedNode() const
 {
-    return m_maximized.isEmpty() ? nullptr : m_tree.findPanel(m_maximized);
+    const LayoutNode *node = m_maximized.isEmpty() ? nullptr : m_tree.findPanel(m_maximized);
+    // (Not what is shown as a button of a strip.)
+    return node && !m_iconifiedOf.contains(node->id) ? node : nullptr;
 }
 
 QSize DockAreaWidget::layoutMinimumSize() const
 {
     if (const LayoutNode *node = maximizedNode())
-        return limitsProvider()(*node).min;
-    if (const LayoutNode *root = m_tree.root())
-        return LayoutSolver::limits(*root, handleWidth(), limitsProvider()).min;
+        return limitsProvider({})(*node).min;
+    if (const LayoutNode *root = m_tree.root()) {
+        QSize least =
+            LayoutSolver::limits(*root, handleWidth(), limitsProvider(columnsOf(m_tree))).min;
+        if (flyoutSharesTheArea()) {
+            const QSize out = m_groups.value(m_flyout)->sizeLimits().min;
+            least = QSize(least.width() + out.width(), qMax(least.height(), out.height()));
+        }
+        return least;
+    }
     return QSize(0, 0);
 }
 
@@ -154,8 +192,43 @@ void DockAreaWidget::setLayoutState(const ContainerState &container)
     m_tree = container.tree;
     m_maximized = container.maximized;
 
+    // The tab groups of an iconified column are not shown as groups: their
+    // column is a strip of buttons, and at most one of them is out beside it.
+    QHash<NodeId, NodeId> iconifiedOf;
+    std::vector<const LayoutNode *> iconified;
+    const auto note = [&](const auto &self, const LayoutNode &node, NodeId column) -> void {
+        if (column.isNull() && node.iconified) {
+            column = node.id;
+            iconified.push_back(&node);
+        }
+        if (node.isTabs() && !column.isNull())
+            iconifiedOf.insert(node.id, column);
+        for (const auto &child : node.children)
+            self(self, child, column);
+    };
+    if (const LayoutNode *root = m_tree.root())
+        note(note, *root, NodeId());
+    for (auto it = iconifiedOf.cbegin(); it != iconifiedOf.cend(); ++it) {
+        const DockTabGroup *g = m_groups.value(it.key());
+        if (g && g->isVisible() && !m_iconifiedOf.contains(it.key()))
+            m_expandedSizes.insert(it.key(), g->size());
+    }
+    m_expandedSizes.removeIf([this](const auto &entry) { return !m_tree.findNode(entry.key()); });
+    m_iconifiedOf = iconifiedOf;
+    // A group that is out when its column is expanded is simply a group again.
+    if (!m_flyout.isNull() && !m_iconifiedOf.contains(m_flyout)) {
+        if (DockTabGroup *g = m_groups.value(m_flyout))
+            g->setFlyout(false);
+        m_flyout = {};
+    }
+
+    if (!m_tree.root() || !m_tree.root()->iconified)
+        m_stripWidth = 0;
+
     QSet<NodeId> alive;
     for (const LayoutNode *node : m_tree.tabNodes()) {
+        if (m_iconifiedOf.contains(node->id) && node->id != m_flyout)
+            continue;
         alive.insert(node->id);
         DockTabGroup *&g = m_groups[node->id];
         if (!g) {
@@ -180,6 +253,24 @@ void DockAreaWidget::setLayoutState(const ContainerState &container)
         it = m_groups.erase(it);
     }
 
+    QSet<NodeId> strips;
+    for (const LayoutNode *node : iconified) {
+        strips.insert(node->id);
+        DockIconStrip *&strip = m_strips[node->id];
+        if (!strip)
+            strip = new DockIconStrip(m_manager, this);
+        strip->setColumn(*node);
+        strip->setShown(m_flyout);
+    }
+    for (auto it = m_strips.begin(); it != m_strips.end();) {
+        if (strips.contains(it.key())) {
+            ++it;
+            continue;
+        }
+        it.value()->retire();
+        it = m_strips.erase(it);
+    }
+
     relayout();
     m_layout->invalidate(); // the minimum size may have changed
 }
@@ -193,6 +284,10 @@ void DockAreaWidget::refreshAppearance()
 {
     for (DockTabGroup *g : std::as_const(m_groups))
         g->refreshAppearance();
+    for (DockIconStrip *strip : std::as_const(m_strips))
+        strip->refreshAppearance();
+    for (DockColumnBar *bar : std::as_const(m_bars))
+        bar->refreshAppearance();
     m_layout->invalidate();
     m_overlay->update();
 }
@@ -241,7 +336,14 @@ void DockAreaWidget::nestedLayoutChanged()
 
 void DockAreaWidget::placeWidgets()
 {
-    const QRect bounds = contentsRect();
+    QRect bounds = contentsRect();
+    // A strip that is all there is keeps its width at the side, and leaves
+    // the rest to the tab group that is out beside it.
+    if (flyoutSharesTheArea()) {
+        const SizeLimits strip = m_strips.value(m_tree.root()->id)->sizeLimits();
+        const int room = qMax(1, bounds.width() - m_groups.value(m_flyout)->sizeLimits().min.width());
+        bounds.setWidth(qMin(qBound(strip.min.width(), m_stripWidth, strip.max.width()), room));
+    }
     const LayoutNode *maximized = maximizedNode();
     // What a drag has squeezed out is shown as gone already, its room with
     // the node across the handle. The tree itself changes when the drag ends.
@@ -251,6 +353,7 @@ void DockAreaWidget::placeWidgets()
     LayoutTree shown;
     if (maximized) {
         // Display state only: one group fills the area, the tree is untouched.
+        m_columns.clear();
         m_solved = SolvedLayout{};
         m_solved.handleWidth = handleWidth();
         m_solved.rects.insert(maximized->id, bounds);
@@ -259,18 +362,23 @@ void DockAreaWidget::placeWidgets()
         shown = m_tree;
         for (const SplitterCoordinator::Squeezed &gone : m_squeezed)
             (void)shown.takeNode(gone.node, gone.heir);
+        m_columns = columnsOf(shown);
         m_solved = LayoutSolver::solve(shown, bounds, handleWidth(), limitsProvider(), linesKept);
     } else {
+        m_columns = columnsOf(m_tree);
         m_solved = LayoutSolver::solve(m_tree, bounds, handleWidth(), limitsProvider(), linesKept);
     }
 
     for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it) {
+        if (it.key() == m_flyout)
+            continue; // beside its strip: see placeFlyout()
         DockTabGroup *g = it.value();
         const bool visible = maximized ? maximized->id == it.key() : m_solved.rects.contains(it.key());
         if (visible)
-            g->setGeometry(m_solved.rects.value(it.key()));
+            g->setGeometry(nodeRect(it.key()));
         g->setVisible(visible);
     }
+    placeColumns();
 
     // Below the handles: where there is one, that is what the pointer finds.
     updateEdgeHandles();
@@ -313,10 +421,340 @@ void DockAreaWidget::placeWidgets()
     m_wasSqueezing = squeezing;
 
     updateCorners();
+    placeFlyout();
 
     m_overlay->setGeometry(rect());
     if (m_overlay->isVisible())
         m_overlay->raise();
+}
+
+// --- Columns -----------------------------------------------------------------
+
+QStringList DockAreaWidget::panelsOf(NodeId id) const
+{
+    QStringList panels;
+    const auto collect = [&panels](const auto &self, const LayoutNode &node) -> void {
+        if (node.isTabs())
+            panels += node.panels;
+        for (const auto &child : node.children)
+            self(self, child);
+    };
+    if (const LayoutNode *node = m_tree.findNode(id))
+        collect(collect, *node);
+    return panels;
+}
+
+QList<DockColumnBar *> DockAreaWidget::columnBars() const
+{
+    QList<DockColumnBar *> bars;
+    for (const Column &column : m_columns) {
+        if (DockColumnBar *bar = m_bars.value(column.node))
+            bars.append(bar);
+    }
+    return bars;
+}
+
+// The columns of `tree` that get a bar: those the user may move.
+std::vector<DockAreaWidget::Column> DockAreaWidget::columnsOf(const LayoutTree &tree) const
+{
+    std::vector<Column> columns;
+    if (!m_manager || !m_manager->columnDockingFor(m_containerId))
+        return columns;
+    for (const LayoutNode *group : tree.tabNodes()) {
+        const LayoutNode *column = tree.columnOf(group->id);
+        const bool known = !column
+            || std::any_of(columns.begin(), columns.end(),
+                           [column](const Column &c) { return c.node == column->id; });
+        if (known)
+            continue;
+        QStringList panels;
+        const auto collect = [&panels](const auto &self, const LayoutNode &node) -> void {
+            if (node.isTabs())
+                panels += node.panels;
+            for (const auto &child : node.children)
+                self(self, child);
+        };
+        collect(collect, *column);
+        const DockManagerPrivate *manager = m_manager;
+        const bool movable = std::all_of(panels.cbegin(), panels.cend(), [manager](const PanelId &id) {
+            return manager->userMay(id, DockFeature::Movable);
+        });
+        // (The first tab group found in a column is the one at its top.)
+        if (movable)
+            columns.push_back({column->id, column->iconified ? column->id : group->id,
+                               column->iconified});
+    }
+    return columns;
+}
+
+QRect DockAreaWidget::nodeRect(NodeId node) const
+{
+    QRect rect = m_solved.rects.value(node);
+    const bool below = std::any_of(m_columns.begin(), m_columns.end(),
+                                   [node](const Column &column) { return column.top == node; });
+    if (below && m_manager)
+        rect.adjust(0, qMin(m_manager->columnBarHeight(), rect.height()), 0, 0);
+    return rect;
+}
+
+// The strips of iconified columns, and the bars above all columns.
+void DockAreaWidget::placeColumns()
+{
+    const bool hidden = maximizedNode() != nullptr;
+    for (auto it = m_strips.cbegin(); it != m_strips.cend(); ++it) {
+        const bool shown = !hidden && m_solved.rects.contains(it.key());
+        if (shown)
+            it.value()->setGeometry(nodeRect(it.key()));
+        it.value()->setVisible(shown);
+    }
+
+    // A window that is one column has the bar of that column for a title bar.
+    const auto *floating = qobject_cast<const DockFloatingWindow *>(window());
+    const bool standsForWindow = floating && floating->area() == this
+        && floating->isMovedByHeaders() && m_tree.root() && m_columns.size() == 1 && m_columns.front().node == m_tree.root()->id;
+    const int height = m_manager ? m_manager->columnBarHeight() : 0;
+    QSet<NodeId> wanted;
+    for (const Column &column : m_columns) {
+        const QRect rect = m_solved.rects.value(column.node);
+        if (!rect.isValid())
+            continue;
+        wanted.insert(column.node);
+        DockColumnBar *&bar = m_bars[column.node];
+        if (!bar)
+            bar = new DockColumnBar(m_manager, this);
+        // The mark on its button points to the side the column is on while
+        // the column is open, and away from it while it is iconified.
+        const bool onTheRight = rect.center().x() > contentsRect().center().x();
+        bar->configure(column.node, column.iconified, onTheRight != column.iconified,
+                       standsForWindow);
+        bar->setGeometry(rect.x(), rect.y(), rect.width(), qMin(height, rect.height()));
+        bar->show();
+    }
+    for (auto it = m_bars.begin(); it != m_bars.end();) {
+        if (wanted.contains(it.key())) {
+            ++it;
+            continue;
+        }
+        // (Not deleted on the spot: it may be what the user just clicked.)
+        it.value()->hide();
+        it.value()->deleteLater();
+        it = m_bars.erase(it);
+    }
+}
+
+// The tab group that is out lies beside the strip of its column, on the side
+// with more room, over whatever is there.
+void DockAreaWidget::placeFlyout()
+{
+    DockTabGroup *out = m_flyout.isNull() ? nullptr : m_groups.value(m_flyout);
+    if (!out)
+        return;
+    const DockIconStrip *strip = m_strips.value(m_iconifiedOf.value(m_flyout));
+    if (!strip || strip->isHidden() || maximizedNode()) {
+        out->hide();
+        return;
+    }
+    const QRect bounds = contentsRect();
+    const QRect beside = strip->geometry();
+    if (flyoutSharesTheArea()) {
+        out->setFlyout(true, DockArea::Right);
+        out->setGeometry(QRect(QPoint(beside.right() + 1, bounds.top()), bounds.bottomRight()));
+        out->show();
+        out->raise();
+        return;
+    }
+    const QRect block(strip->mapTo(this, strip->blockRect(m_flyout).topLeft()),
+                      strip->blockRect(m_flyout).size());
+    const int roomLeft = beside.left() - bounds.left();
+    const int roomRight = bounds.right() - beside.right();
+    const bool onTheLeft = roomLeft >= roomRight;
+    out->setFlyout(true, onTheLeft ? DockArea::Left : DockArea::Right);
+
+    const QSize size =
+        flyoutSize().boundedTo(QSize(qMax(onTheLeft ? roomLeft : roomRight, 1), bounds.height()));
+    const int x = onTheLeft ? beside.left() - size.width() : beside.right() + 1;
+    const int y = qBound(bounds.top(), block.top(), bounds.bottom() + 1 - size.height());
+    out->setGeometry(x, y, size.width(), size.height());
+    out->show();
+    out->raise();
+}
+
+bool DockAreaWidget::flyoutSharesTheArea() const
+{
+    const LayoutNode *root = m_tree.root();
+    return root && root->iconified && !m_flyout.isNull() && m_groups.contains(m_flyout)
+        && m_strips.contains(root->id) && !maximizedNode();
+}
+
+// As large as its group was before the column was iconified, or as it likes.
+QSize DockAreaWidget::flyoutSize() const
+{
+    const DockTabGroup *out = m_groups.value(m_flyout);
+    if (!out)
+        return {};
+    const SizeLimits limits = out->sizeLimits();
+    return m_expandedSizes.value(m_flyout, out->preferredSize())
+        .expandedTo(limits.min).boundedTo(limits.max);
+}
+
+void DockAreaWidget::showFlyout(NodeId node)
+{
+    const LayoutNode *group = m_iconifiedOf.contains(node) ? m_tree.findNode(node) : nullptr;
+    // Nothing comes out for a panel that is there in its small form.
+    const DockPanel *current = group && m_manager ? m_manager->panels.value(group->active) : nullptr;
+    if (!current || current->compactWidget())
+        node = {};
+    if (node == m_flyout)
+        return;
+
+    if (DockTabGroup *out = m_flyout.isNull() ? nullptr : m_groups.take(m_flyout)) {
+        // The layout has not changed, so nobody else sees to its content.
+        if (m_manager) {
+            for (const PanelId &id : out->panelIds()) {
+                if (DockPanel *panel = m_manager->panels.value(id))
+                    m_manager->parkIfHostedBy(panel, out->contentHost());
+            }
+        }
+        out->releaseTitleActions();
+        out->detachFromManager(); // it holds nothing of the manager's any more
+        out->hide();
+        out->deleteLater();
+    }
+    // A strip that is all there is, is as wide as it is now for as long as
+    // something is out beside it, and after.
+    const DockIconStrip *alone = m_tree.root() ? m_strips.value(m_tree.root()->id) : nullptr;
+    if (alone && m_flyout.isNull() && !alone->isHidden() && alone->width() > 0)
+        m_stripWidth = alone->width();
+    m_flyout = node;
+    if (!node.isNull()) {
+        auto *out = new DockTabGroup(m_manager, this);
+        out->setFlyout(true);
+        m_groups.insert(node, out);
+        out->setNode(*group, false);
+    }
+    for (DockIconStrip *strip : std::as_const(m_strips))
+        strip->setShown(m_flyout);
+    relayout();
+    m_layout->invalidate();
+    // A floating window makes the room, and takes it back.
+    if (auto *floating = qobject_cast<DockFloatingWindow *>(window());
+        floating && floating->area() == this) {
+        floating->fitIconified();
+    }
+    if (m_manager)
+        m_manager->refreshActiveMarks();
+}
+
+QWidget *DockAreaWidget::dragSource(const DragSession &session) const
+{
+    if (const DockIconStrip *strip = m_strips.value(m_iconifiedOf.value(session.sourceNode));
+        strip && session.sourceNode != m_flyout) {
+        if (QWidget *button = session.wholeGroup ? nullptr : strip->button(session.primary))
+            return button;
+        return strip->block(session.sourceNode);
+    }
+    if (DockIconStrip *strip = m_strips.value(session.sourceNode))
+        return strip;
+    return m_groups.value(session.sourceNode);
+}
+
+QSize DockAreaWidget::iconifiedSizeHint() const
+{
+    const LayoutNode *root = m_tree.root();
+    const DockIconStrip *strip = root && root->iconified ? m_strips.value(root->id) : nullptr;
+    if (!strip)
+        return {};
+    QSize size = strip->preferredSize();
+    if (m_stripWidth > 0)
+        size.setWidth(qBound(strip->sizeLimits().min.width(), m_stripWidth, size.width()));
+    if (m_manager && !columnsOf(m_tree).empty())
+        size.rheight() += m_manager->columnBarHeight();
+    if (flyoutSharesTheArea()) {
+        const QSize out = flyoutSize();
+        size = QSize(size.width() + out.width(), qMax(size.height(), out.height()));
+    }
+    const QMargins margins = contentsMargins();
+    return size + QSize(margins.left() + margins.right(), margins.top() + margins.bottom());
+}
+
+void DockAreaWidget::refreshPanel(const PanelId &panel)
+{
+    const LayoutNode *node = m_tree.findPanel(panel);
+    if (!node)
+        return;
+    if (DockTabGroup *g = m_groups.value(node->id))
+        g->refreshPanel(panel);
+    if (DockIconStrip *strip = m_strips.value(m_iconifiedOf.value(node->id)))
+        strip->refreshPanel(panel);
+}
+
+// A button of a strip: its panel's group comes out, or goes back if that
+// panel is what is out.
+void DockAreaWidget::iconButtonClicked(NodeId group, const PanelId &panel)
+{
+    if (!m_manager)
+        return;
+    const LayoutNode *node = m_tree.findNode(group);
+    if (m_flyout == group && node && node->active == panel)
+        showFlyout({});
+    else
+        (void)m_manager->activate(panel, true);
+}
+
+// See DockTabGroup::moveWindowInstead(), which this is the whole of.
+bool DockAreaWidget::moveWindowInstead(qsizetype draggedPanels, bool byHeader)
+{
+    const auto *floating = qobject_cast<const DockFloatingWindow *>(window());
+    if (!m_manager || !floating || floating->area() != this || !floating->isMovedByHeaders()
+        || !floating->windowHandle() || m_tree.panels().size() != draggedPanels) {
+        return false;
+    }
+    const DockDragController *drag = m_manager->drag;
+    const bool leftToTheHeader = byHeader && drag->movesCarriedWindows();
+    if (!leftToTheHeader && (drag->carriesWindows() || m_manager->floatOnOutsideDrop))
+        return false;
+    return floating->windowHandle()->startSystemMove();
+}
+
+void DockAreaWidget::startIconDrag(const PanelId &panel, bool wholeGroup, QWidget *pictured)
+{
+    if (!m_manager)
+        return;
+    const QStringList moved = wholeGroup ? m_manager->groupPanels(panel) : QStringList{panel};
+    for (const PanelId &id : moved) {
+        if (!m_manager->userMay(id, DockFeature::Movable))
+            return;
+    }
+    if (moved.isEmpty() || moveWindowInstead(moved.size(), wholeGroup))
+        return;
+    const QPixmap picture = pictured ? pictured->grab() : QPixmap();
+    if (wholeGroup)
+        m_manager->drag->requestGroupDrag(panel, picture);
+    else
+        m_manager->drag->requestPanelDrag(panel, picture);
+}
+
+void DockAreaWidget::startColumnDrag(NodeId column)
+{
+    if (!m_manager)
+        return;
+    const QStringList moved = panelsOf(column);
+    for (const PanelId &id : moved) {
+        if (!m_manager->userMay(id, DockFeature::Movable))
+            return;
+    }
+    if (moved.isEmpty() || moveWindowInstead(moved.size(), true))
+        return;
+    DockColumnBar *bar = m_bars.value(column);
+    m_manager->drag->requestColumnDrag(moved.constFirst(), bar ? bar->grab() : QPixmap());
+}
+
+void DockAreaWidget::toggleColumnIconified(NodeId column)
+{
+    const QStringList panels = panelsOf(column);
+    const LayoutNode *node = m_tree.findNode(column);
+    if (m_manager && node && !panels.isEmpty())
+        (void)m_manager->setColumnIconified(panels.constFirst(), !node->iconified);
 }
 
 // Where a dragged handle is shown while a group next to it is squeezed out.
@@ -507,6 +945,19 @@ void DockAreaWidget::updateCorners()
 
 // --- Drag and drop -----------------------------------------------------------
 
+// How high the header of a tab group would be here, where there is none to
+// ask: a row of tabs, as this area's style has them.
+int DockAreaWidget::headerHeight() const
+{
+    if (!m_headerProbe) {
+        m_headerProbe = new DockTabBar(const_cast<DockAreaWidget *>(this));
+        m_headerProbe->hide();
+        m_headerProbe->addTab(QStringLiteral("X"));
+    }
+    m_headerProbe->ensurePolished();
+    return m_headerProbe->sizeHint().height();
+}
+
 DockAreaWidget *DockAreaWidget::areaAround(const DragSession &session) const
 {
     if (!m_manager || m_overlay->effectiveStyle().guide != DockGuide::Buttons)
@@ -541,19 +992,30 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
     const int rings = shared || inside ? 2 : 1;
 
     if (m_tree.isEmpty()) {
-        // Nothing here yet: the whole area is one target.
+        // Nothing here yet: the whole area is one target. Where the middle
+        // of a tab group takes no drop, it is taken where the tabs of the
+        // first group will be: along the top, as high as a row of tabs.
         c.zoneRect = bounds;
         c.zones = wholeAreas & DockAreas(DockArea::Center);
         if (buttons) {
             c.buttons = DropButtonLayout::compute(bounds, bounds, style.buttonSize, style.zoneGap,
                                                   rings);
         }
+        QRect row = bounds;
+        const bool byHeader = !buttons && !m_manager->centerDropFor(m_containerId);
+        if (byHeader)
+            row.setHeight(qMin(bounds.height(), headerHeight()));
         const bool hit = buttons ? c.buttons.hitTest(pos, c.zones) == DockArea::Center
-                                 : bounds.contains(pos);
+                                 : row.contains(pos);
         if (c.zones && hit) {
             c.hovered = DockArea::Center;
             c.target.area = DockArea::Center;
             c.preview = bounds;
+            c.aimedAt = bounds;
+            if (byHeader) {
+                c.header = row;
+                c.byHeader = true;
+            }
         }
     } else {
         const LayoutNode *maximized = maximizedNode();
@@ -584,11 +1046,17 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
             // band shrinks to a thin strip at the very edge, so that a tab
             // can still be dropped between tabs. The empty rest of a title
             // row belongs to the band like everything else there.
+            // (So does all of a title row where that row is the one way to
+            // become a tab: the middle of the groups takes no drop.)
+            const bool headersTakeTabs = !m_manager->centerDropFor(m_containerId);
             int hitBand = band;
             for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it) {
                 if (maximized && maximized->id != it.key())
                     continue;
-                if (overTabs(it.value()))
+                const QWidget *row = it.value()->titleBar();
+                const bool onRow = headersTakeTabs && row->isVisible()
+                    && QRect(row->mapTo(this, QPoint(0, 0)), row->size()).contains(pos);
+                if (overTabs(it.value()) || onRow)
                     hitBand = qMin(band, OuterStripOnTitle);
             }
             outerHit = outerBandAt(bounds, pos, hitBand);
@@ -599,13 +1067,27 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
             c.target.area = outerHit;
             c.target.fraction = OuterDropFraction;
             c.preview = dropPreviewRect(bounds, outerHit, OuterDropFraction);
+            c.aimedAt = bounds;
         }
 
         // The tab group under the pointer. Its guide is shown even while an
         // outer band is hovered, so both kinds of target stay visible.
         NodeId under;
-        for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it) {
-            if (maximized && maximized->id != it.key())
+        // What is out beside a strip lies over everything else.
+        const DockTabGroup *out = maximized || m_flyout.isNull() ? nullptr : m_groups.value(m_flyout);
+        const bool onFlyout = out && out->isVisible() && out->geometry().contains(pos);
+        if (onFlyout)
+            under = m_flyout;
+        // In a strip: the buttons of one tab group, or the room below them all.
+        bool belowButtons = false;
+        for (auto it = m_strips.cbegin(); under.isNull() && !maximized && it != m_strips.cend();
+             ++it) {
+            const DockIconStrip *strip = it.value();
+            if (!strip->isHidden() && m_solved.rects.value(it.key()).contains(pos))
+                under = strip->groupAt(strip->mapFrom(this, pos), &belowButtons);
+        }
+        for (auto it = m_groups.cbegin(); under.isNull() && it != m_groups.cend(); ++it) {
+            if ((maximized && maximized->id != it.key()) || it.key() == m_flyout)
                 continue;
             if (m_solved.rects.value(it.key()).contains(pos)) {
                 under = it.key();
@@ -621,10 +1103,29 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
         }
 
         if (!under.isNull()) {
-            const QRect rect = m_solved.rects.value(under);
-            const DockTabGroup *g = m_groups.value(under);
+            const DockIconStrip *strip =
+                onFlyout ? nullptr : m_strips.value(m_iconifiedOf.value(under));
+            const DockTabGroup *g = strip ? nullptr : m_groups.value(under);
+            const QRect rect = strip ? QRect(strip->mapTo(this, strip->blockRect(under).topLeft()),
+                                             strip->blockRect(under).size())
+                                     : onFlyout ? out->geometry() : nodeRect(under);
             c.guideNode = under;
             c.zones = m_manager->allowedDropAreas(session, m_containerId, under);
+            // Where tab groups are in columns, the sides of a group are
+            // those of its column: what is dropped there goes beside all of
+            // it. So it does for an iconified column anywhere, which is not
+            // something to be split.
+            const bool inColumn = m_manager->columnDockingFor(m_containerId)
+                || m_iconifiedOf.contains(under);
+            const LayoutNode *column = inColumn ? m_tree.columnOf(under) : nullptr;
+            const DockAreas sides = DockAreas(DockArea::Left) | DockArea::Right;
+            if (column && column->id != under) {
+                c.zones = (c.zones & ~sides)
+                    | (m_manager->allowedDropAreas(session, m_containerId, column->id) & sides);
+            }
+            // What is out is there to become a tab of, nothing else.
+            if (onFlyout)
+                c.zones &= DockAreas(DockArea::Center);
             if (!buttons) {
                 // The guide stays clear of the outer bands so the two never overlap.
                 c.zoneRect = c.outerZones
@@ -652,30 +1153,38 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
                 const bool ownGroup = session.sourceContainer == m_containerId
                     && session.sourceNode == under;
                 const bool reorder = ownGroup && !session.wholeGroup;
-                const QWidget *title = g->titleBar();
-                const bool overHeader = title->isVisible()
-                    && QRect(title->mapTo(this, QPoint(0, 0)), title->size()).contains(pos);
-                const bool tabsInHeader = g->tabBar()->parentWidget() == title;
+                const QWidget *title = g ? g->titleBar() : nullptr;
+                const QRect header = title && title->isVisible()
+                    ? QRect(title->mapTo(this, QPoint(0, 0)), title->size()) : QRect();
+                const bool overHeader = header.contains(pos);
+                const bool tabsInHeader = g && g->tabBar()->parentWidget() == title;
                 const bool tabsOnly = !(c.zones & EdgeDockAreas);
                 const bool mayJoin = !ownGroup && c.zones.testFlag(DockArea::Center);
-                const bool tabDrop = !inside
+                const bool tabDrop = g && !inside
                     && (overTabs(g) || (overHeader && tabsInHeader && tabsOnly))
                     && (reorder || mayJoin);
                 // With buttons, a header that names its panel takes a tab
                 // as well: the rest of the group, the buttons aside, takes
                 // nothing.
-                const bool headerDrop = buttons && !inside && !tabDrop && overHeader && mayJoin;
                 // The middle of a group may be closed to drops: then the
-                // header is the one way to become a tab, and the guide shows
-                // no centre.
-                if (!m_manager->centerDrop)
+                // header is the one way to become a tab, a title bar that
+                // names its panel as well, and the guide shows no centre.
+                const bool centerDrop = m_manager->centerDropFor(m_containerId);
+                const bool headerDrop =
+                    (buttons || !centerDrop) && !inside && !tabDrop && overHeader && mayJoin;
+                if (!centerDrop)
                     c.zones &= ~DockAreas(DockArea::Center);
 
                 DockArea hit = DockArea::None;
                 if (buttons) {
                     hit = c.buttons.hitTest(pos, c.zones, c.ring);
+                } else if (belowButtons) {
+                    // Below the last buttons of a strip: more of them.
+                    if (c.zones.testFlag(DockArea::Bottom))
+                        hit = DockArea::Bottom;
                 } else if (!tabDrop) {
-                    hit = DropZoneLayout::compute(c.zoneRect, style.edgeFraction, style.zoneMargin)
+                    hit = DropZoneLayout::compute(c.zoneRect, style.edgeFraction, style.zoneMargin,
+                                                  style.edgeExtent)
                               .hitTest(pos, c.zones);
                 }
                 if (hit != DockArea::None) {
@@ -686,7 +1195,24 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
                     c.target.node = under;
                     c.target.area = hit;
                     c.target.fraction = fraction;
-                    c.preview = dropPreviewRect(rect, hit, fraction);
+                    QRect whole = rect;
+                    if (column && column->id != under && sides.testFlag(hit)) {
+                        c.target.node = column->id;
+                        whole = m_solved.rects.value(column->id);
+                    }
+                    c.preview = dropPreviewRect(whole, hit, fraction);
+                    c.aimedAt = whole;
+                    if (hit == DockArea::Center) {
+                        c.header = header;
+                        c.ownGroup = ownGroup;
+                        // Where tabs show a drag as it would turn out, the
+                        // tab that stays is back where it left.
+                        if (reorder && g && m_manager->tabDragPreview
+                            && g->draggedOut() == session.primary) {
+                            c.stays = true;
+                            c.tabGap = int(g->panelIds().indexOf(session.primary));
+                        }
+                    }
                 } else if (tabDrop) {
                     DockTabBar *bar = g->tabBar();
                     const int index = g->dropIndexAt(bar->mapFrom(this, pos), &c.tabGap);
@@ -699,7 +1225,12 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
                               bar->insertIndicatorRect(c.tabGap).size());
                     c.preview = reorder ? QRect() : rect;
                     c.byHeader = true;
+                    c.aimedAt = rect;
+                    c.header = header;
+                    c.ownGroup = ownGroup;
                 } else if (headerDrop) {
+                    c.aimedAt = rect;
+                    c.header = header;
                     c.hovered = DockArea::Center;
                     c.target.node = under;
                     c.target.area = DockArea::Center;
@@ -719,6 +1250,10 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
         c.tabGap = -1;
         c.outer = false;
         c.byHeader = false;
+        c.aimedAt = QRect();
+        c.header = QRect();
+        c.ownGroup = false;
+        c.stays = false;
     }
     return c;
 }
@@ -742,6 +1277,10 @@ DropCandidate DockAreaWidget::resolveDrag(const QPoint &pos, const DragSession &
             c.preview = QRect();
             c.tabIndicator = QRect();
             c.tabGap = -1;
+            c.aimedAt = QRect();
+            c.header = QRect();
+            c.ownGroup = false;
+            c.stays = false;
         };
         if (candidate.valid && !(candidate.byHeader && outside.valid))
             pass(outside);
@@ -769,7 +1308,7 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
 
     if (candidate.zoneRect.isValid()) {
         const DropZoneLayout zones = DropZoneLayout::compute(candidate.zoneRect, style.edgeFraction,
-                                                             style.zoneMargin);
+                                                             style.zoneMargin, style.edgeExtent);
         for (DockArea area : {DockArea::Left, DockArea::Right, DockArea::Top, DockArea::Bottom,
                               DockArea::Center}) {
             if (!candidate.zones.testFlag(area))
@@ -778,7 +1317,8 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
             zone.area = area;
             zone.shape = buttons ? QPolygonF(QRectF(candidate.buttons.rect(area, candidate.ring)))
                                  : zones.polygon(area);
-            zone.hovered = !candidate.outer && candidate.hovered == area && candidate.tabGap < 0;
+            zone.hovered = !candidate.outer && candidate.hovered == area
+                && (candidate.tabGap < 0 || candidate.stays);
             scene.zones.append(zone);
         }
     }
@@ -803,11 +1343,22 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
         }
     }
     scene.preview = candidate.preview;
+    scene.target = candidate.aimedAt;
+    scene.header = candidate.header;
+    scene.ownGroup = candidate.ownGroup;
     // With the tabs making room themselves, no mark is needed between them.
     const bool tabsMakeRoom = m_manager && m_manager->tabDragPreview;
     if (!tabsMakeRoom)
         scene.tabIndicator = candidate.tabIndicator;
     showDropGap(tabsMakeRoom ? candidate.target.node : NodeId(), candidate.tabGap);
+    if (const DockTabGroup *g = tabsMakeRoom ? m_groups.value(candidate.target.node) : nullptr) {
+        const DockTabBar *bar = g->tabBar();
+        const int gap = bar->gapIndex();
+        if (gap >= 0 && bar->isVisible()) {
+            const QRect place = bar->tabRect(gap).intersected(bar->rect());
+            scene.tabGap = QRect(bar->mapTo(this, place.topLeft()), place.size());
+        }
+    }
 
     // A cross that is another area's (ring 1) follows that area's pointer.
     const bool ownCross = buttons && candidate.ring == 0;
@@ -1066,8 +1617,11 @@ void DockAreaWidget::movePartDrag(const QPoint &delta)
     // cannot accumulate while the mouse moves. The two runs of a corner drag
     // change different splits (those of the columns and those of the rows),
     // and neither axis limits the other, so each is worked out on its own.
-    auto updates = SplitterCoordinator::moveHandles(m_tree, m_dragStart, m_dragGroup, delta.x());
-    auto rows = SplitterCoordinator::moveHandles(m_tree, m_dragStart, m_dragCrossGroup, delta.y());
+    const bool push = m_manager->splitterPush;
+    auto updates =
+        SplitterCoordinator::moveHandles(m_tree, m_dragStart, m_dragGroup, delta.x(), push);
+    auto rows =
+        SplitterCoordinator::moveHandles(m_tree, m_dragStart, m_dragCrossGroup, delta.y(), push);
     updates.insert(updates.end(), std::make_move_iterator(rows.begin()),
                    std::make_move_iterator(rows.end()));
 

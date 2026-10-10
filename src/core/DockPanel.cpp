@@ -19,7 +19,10 @@ DockPanel::DockPanel(DockManager *manager, const PanelId &id)
     d->title = id;
 }
 
-DockPanel::~DockPanel() = default;
+DockPanel::~DockPanel()
+{
+    delete d->compactWidget.data();
+}
 
 PanelId DockPanel::id() const
 {
@@ -172,6 +175,20 @@ bool DockPanel::hidesContentDuringDrag() const
     return d->hideContentDuringDrag;
 }
 
+bool DockPanel::hasTabCloseButton() const
+{
+    return d->tabCloseButton;
+}
+
+void DockPanel::setTabCloseButton(bool shown)
+{
+    if (d->tabCloseButton == shown)
+        return;
+    d->tabCloseButton = shown;
+    DockManagerPrivate::get(d->manager)->panelAppearanceChanged(this);
+    Q_EMIT metadataChanged();
+}
+
 bool DockPanel::isHeaderVisible() const
 {
     return d->headerVisible;
@@ -194,6 +211,31 @@ bool DockPanel::isCollapsible() const
 void DockPanel::setCollapsible(bool collapsible)
 {
     d->collapsible = collapsible;
+}
+
+QWidget *DockPanel::compactWidget() const
+{
+    return d->compactWidget;
+}
+
+void DockPanel::setCompactWidget(QWidget *widget)
+{
+    if (d->compactWidget == widget)
+        return;
+    DockManagerPrivate *manager = DockManagerPrivate::get(d->manager);
+    if (QWidget *old = d->compactWidget.data()) {
+        old->hide();
+        old->setParent(manager->parkingWidget());
+        old->deleteLater();
+    }
+    d->compactWidget = widget;
+    if (widget) {
+        // Until a strip of buttons shows it.
+        widget->hide();
+        widget->setParent(manager->parkingWidget());
+    }
+    manager->panelAppearanceChanged(this);
+    Q_EMIT metadataChanged();
 }
 
 QList<QAction *> DockPanel::titleActions(DockTitlePlace place) const

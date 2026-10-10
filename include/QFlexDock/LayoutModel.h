@@ -30,6 +30,12 @@ struct QFLEXDOCK_EXPORT LayoutNode
     Qt::Orientation orientation = Qt::Horizontal;
     std::vector<LayoutNode> children;
 
+    /// The node is a column that is shrunk to a strip of buttons, one for
+    /// each panel in it, instead of showing the panels themselves. Set on the
+    /// column as a whole (see LayoutTree::columnOf()), never on a node inside
+    /// one that is iconified already.
+    bool iconified = false;
+
     [[nodiscard]] static LayoutNode makeTabs(const QStringList &panels, const PanelId &active = {});
     [[nodiscard]] static LayoutNode makeSplit(Qt::Orientation orientation,
                                               std::vector<LayoutNode> children);
@@ -42,7 +48,9 @@ struct QFLEXDOCK_EXPORT LayoutNode
 ///
 /// Normal form, which every mutating function re-establishes:
 ///  - no empty tab group and no split with fewer than two children,
-///  - no split directly inside a split of the same orientation,
+///  - no split directly inside a split of the same orientation, unless it is
+///    an iconified column,
+///  - no iconified node inside an iconified node,
 ///  - sibling weights are positive and sum to 1,
 ///  - a tab group's active panel is one of its panels.
 /// Mutating functions either succeed and leave the tree in normal form, or fail
@@ -72,6 +80,11 @@ public:
     [[nodiscard]] std::vector<const LayoutNode *> tabNodes() const;
     [[nodiscard]] int nodeCount() const;
     [[nodiscard]] int depth() const;
+    /// The column node `id` belongs to: the iconified node it is or lies in;
+    /// else, for a tab group among tab groups that are stacked above one
+    /// another and nothing else, the vertical split holding them; else the
+    /// node itself. Null if there is no such node.
+    [[nodiscard]] const LayoutNode *columnOf(NodeId id) const;
 
     // --- Mutations ---------------------------------------------------------
     /// Docks `node` (a tab group or a whole subtree) relative to `target`.
@@ -80,6 +93,9 @@ public:
     /// root of an empty tree). Center requires `node` to be a tab group and
     /// inserts its panels at `tabIndex` (-1 appends). For edge areas `fraction`
     /// is the share of the target's extent the new node takes (0 < f < 1).
+    /// What is docked above or below a node joins the column of that node,
+    /// iconified if that is: only beside a column does a node keep being
+    /// iconified itself.
     DockResult insertNode(LayoutNode node, NodeId target, DockArea area, int tabIndex = -1,
                           double fraction = 0.5);
     /// Convenience for a single panel.
@@ -96,6 +112,8 @@ public:
     DockResult moveTab(const PanelId &panel, int index);
     /// Sets the weights of all children of split `id` (one per child, all > 0).
     DockResult setWeights(NodeId id, const std::vector<double> &weights);
+    /// Shrinks node `id` to a strip of buttons, or shows its panels again.
+    DockResult setIconified(NodeId id, bool iconified);
 
     /// Re-establishes normal form. Idempotent.
     void normalize();

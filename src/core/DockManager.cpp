@@ -21,6 +21,7 @@
 #include <QtWidgets/QStyle>
 
 #include <algorithm>
+#include <cmath>
 
 namespace QFlexDock {
 
@@ -39,6 +40,57 @@ DockResult unknownPanel(const PanelId &id)
 // Share of the target an edge dock takes when the caller does not say.
 constexpr double DefaultWorkspaceEdgeFraction = 0.25;
 constexpr double DefaultGroupEdgeFraction = 0.5;
+// Height of the bar above a column unless the theme says.
+constexpr int DefaultColumnBarHeight = 14;
+
+void collectPanels(const LayoutNode &node, QStringList &out)
+{
+    if (node.isTabs())
+        out += node.panels;
+    for (const auto &child : node.children)
+        collectPanels(child, out);
+}
+
+QStringList panelsOf(const LayoutNode *node)
+{
+    QStringList panels;
+    if (node)
+        collectPanels(*node, panels);
+    return panels;
+}
+
+bool holds(const LayoutNode &node, NodeId id)
+{
+    return node.id == id || std::any_of(node.children.begin(), node.children.end(),
+                                        [id](const LayoutNode &child) { return holds(child, id); });
+}
+
+// A panel of node `id` that is not one of `moving`: what the node is found by
+// again should taking those out do away with it (a column of two tab groups
+// is the other group once one has left).
+PanelId witnessIn(const LayoutTree &tree, NodeId id, const QStringList &moving)
+{
+    const QStringList inside = id.isNull() ? QStringList() : panelsOf(tree.findNode(id));
+    for (const PanelId &panel : inside) {
+        if (!moving.contains(panel))
+            return panel;
+    }
+    return {};
+}
+
+// After what is moved has left `tree`: the node the drop was aimed at, or
+// what has become of it.
+void retarget(const LayoutTree &tree, DropTarget &target, const PanelId &witness)
+{
+    if (target.node.isNull() || tree.findNode(target.node))
+        return;
+    const LayoutNode *group = witness.isEmpty() ? nullptr : tree.findPanel(witness);
+    if (!group)
+        return;
+    // Beside a column: beside what is left of that column.
+    const bool beside = target.area == DockArea::Left || target.area == DockArea::Right;
+    target.node = beside ? tree.columnOf(group->id)->id : group->id;
+}
 
 QList<QRect> screenGeometries()
 {
@@ -176,7 +228,7 @@ void DockManagerPrivate::syncViews()
     QList<DockFloatingWindow *> created;
     for (const auto &c : state.containers) {
         if (c.kind == ContainerKind::Floating && !floatingWindows.contains(c.id)) {
-            auto *window = new DockFloatingWindow(this, c.id, floatingFrame);
+            auto *window = new DockFloatingWindow(this, c.id, floatingFrameFor(c.owner));
             floatingWindows.insert(c.id, window);
             created.append(window);
         }
@@ -219,6 +271,10 @@ void DockManagerPrivate::syncViews()
         if (location && location->isAutoHidden()) {
             DockWorkspace *workspace = workspaceFor(location->container);
             hosted = workspace && get(workspace)->autoHide->expandedPanel() == panel->id();
+        } else if (location) {
+            // (No group for one that is a button of an iconified column.)
+            const DockAreaWidget *area = areaFor(location->container);
+            hosted = area && area->group(location->node);
         }
         if (!hosted)
             reparentContent(panel, parkingWidget());
@@ -230,6 +286,7 @@ void DockManagerPrivate::syncViews()
             continue;
         }
         DockFloatingWindow *window = it.value();
+        parkCompactWidgets(window);
         window->detachFromManager();
         window->hide();
         window->deleteLater();
@@ -243,6 +300,9 @@ void DockManagerPrivate::syncViews()
     }
 
     syncing = false;
+    // (Now that a window can say where it is again.)
+    for (DockFloatingWindow *window : std::as_const(floatingWindows))
+        window->fitIconified();
     refreshActiveMarks();
 }
 
@@ -258,6 +318,46 @@ void DockManagerPrivate::pushUndo(LayoutState previous)
 }
 
 // --- Operations --------------------------------------------------------------
+
+// A node that leaves its split hands its share on to a neighbour (see
+// LayoutTree::takeNode()). That is to be the room it has on screen. For a
+// node held at its largest or smallest size it is not: a strip of buttons
+// docked at a quarter of the window is still a strip, and the quarter it
+// never had must not turn up beside it when it goes. So, where the two
+// differ, its share is first made what it shows as.
+void DockManagerPrivate::settleShare(LayoutState &next, const QString &containerId,
+                                     NodeId leaving) const
+{
+    ContainerState *container = next.find(containerId);
+    const DockAreaWidget *area = areaFor(containerId);
+    const LayoutNode *parent = container && area ? container->tree.parentOf(leaving) : nullptr;
+    if (!parent || parent->children.size() < 3)
+        return; // (of two, what is left has all the room either way)
+    const SolvedLayout &shown = area->solved();
+    double ownExtent = 0;
+    double otherExtent = 0;
+    double ownWeight = 0;
+    double otherWeight = 0;
+    for (const LayoutNode &child : parent->children) {
+        const auto rect = shown.rects.constFind(child.id);
+        if (rect == shown.rects.constEnd())
+            return; // not laid out as it is
+        const int extent = parent->orientation == Qt::Horizontal ? rect->width() : rect->height();
+        (child.id == leaving ? ownExtent : otherExtent) += extent;
+        (child.id == leaving ? ownWeight : otherWeight) += child.weight;
+    }
+    if (otherExtent <= 0 || otherWeight <= 0)
+        return;
+    const double shownAs = ownExtent * otherWeight / otherExtent;
+    // Less than a pixel and a half apart: as good as the same.
+    const double pixel = otherWeight / otherExtent;
+    if (std::abs(shownAs - ownWeight) <= 1.5 * pixel)
+        return;
+    std::vector<double> weights;
+    for (const LayoutNode &child : parent->children)
+        weights.push_back(child.id == leaving ? std::max(shownAs, pixel * 0.01) : child.weight);
+    (void)container->tree.setWeights(parent->id, weights);
+}
 
 DockResult DockManagerPrivate::placePanel(const PanelId &panel, DropTarget target)
 {
@@ -295,7 +395,10 @@ DockResult DockManagerPrivate::placePanel(const PanelId &panel, DropTarget targe
         }
     }
 
+    const PanelId witness = witnessIn(next.find(target.container)->tree, target.node, {panel});
     if (location) {
+        if (!location->isAutoHidden() && groupPanels(panel).size() == 1)
+            settleShare(next, location->container, location->node);
         if (DockResult r = next.detach(panel, false); !r)
             return r;
     }
@@ -304,6 +407,7 @@ DockResult DockManagerPrivate::placePanel(const PanelId &panel, DropTarget targe
         return fail(DockError::UnknownNode,
                     QStringLiteral("the target disappears when the panel leaves it"));
     }
+    retarget(container->tree, target, witness);
     // "Into this workspace" without a group in mind: join where the user last
     // worked there.
     if (target.node.isNull() && target.area == DockArea::Center) {
@@ -340,6 +444,12 @@ DockResult DockManagerPrivate::placeGroup(const PanelId &anyPanel, DropTarget ta
     }
 
     LayoutState next = state;
+    const ContainerState *aimedAt = next.find(target.container);
+    const PanelId witness = aimedAt
+        ? witnessIn(aimedAt->tree, target.node,
+                    panelsOf(next.find(location->container)->tree.findNode(moving)))
+        : PanelId();
+    settleShare(next, location->container, moving);
     std::optional<LayoutNode> taken = next.find(location->container)->tree.takeNode(moving);
     if (!taken)
         return fail(DockError::UnknownNode, QStringLiteral("the dragged node no longer exists"));
@@ -348,6 +458,7 @@ DockResult DockManagerPrivate::placeGroup(const PanelId &anyPanel, DropTarget ta
         return fail(DockError::UnknownWorkspace,
                     QStringLiteral("no container '%1'").arg(target.container));
     }
+    retarget(container->tree, target, witness);
     if (target.node.isNull() && target.area == DockArea::Center) {
         if (const LayoutNode *group = container->tree.findPanel(lastActiveIn.value(container->id)))
             target.node = group->id;
@@ -362,7 +473,7 @@ DockResult DockManagerPrivate::placeGroup(const PanelId &anyPanel, DropTarget ta
 }
 
 DockResult DockManagerPrivate::floatPanels(const PanelId &panel, bool wholeGroup, QRect geometry,
-                                           DockFloatingWindow *adopt)
+                                           DockFloatingWindow *adopt, NodeId sourceNode)
 {
     if (!panels.contains(panel))
         return unknownPanel(panel);
@@ -385,8 +496,16 @@ DockResult DockManagerPrivate::floatPanels(const PanelId &panel, bool wholeGroup
 
     const bool inGroup = !location->isAutoHidden();
     QStringList moved{panel};
-    if (wholeGroup && inGroup)
-        moved = state.find(location->container)->tree.findNode(location->node)->panels;
+    const LayoutTree &from = state.find(location->container)->tree;
+    // The node that goes as it is: the tab group, or all of `sourceNode`.
+    NodeId going;
+    if (wholeGroup && inGroup) {
+        going = !sourceNode.isNull() && from.findNode(sourceNode) ? sourceNode : location->node;
+        moved = panelsOf(from.findNode(going));
+    }
+    // What is taken out of an iconified column stays iconified.
+    const LayoutNode *column = inGroup ? from.columnOf(location->node) : nullptr;
+    const bool iconified = column && column->iconified;
 
     LayoutState next = state;
     if (location->isFloating() && state.find(location->container)->tree.panels() == moved) {
@@ -415,6 +534,12 @@ DockResult DockManagerPrivate::floatPanels(const PanelId &panel, bool wholeGroup
     }
     const QString owner = workspaceIdFor(location->container);
 
+    // What goes as a whole node is remembered at the room it shows as.
+    if (!going.isNull())
+        settleShare(next, location->container, going);
+    else if (inGroup && groupPanels(panel).size() == 1)
+        settleShare(next, location->container, location->node);
+
     // Remember where docked panels came from, for dockPanel(). All of them
     // before any is removed, so each still sees its neighbours.
     for (const PanelId &id : std::as_const(moved)) {
@@ -424,13 +549,14 @@ DockResult DockManagerPrivate::floatPanels(const PanelId &panel, bool wholeGroup
     }
 
     LayoutNode node;
-    if (wholeGroup && inGroup) {
-        node = *next.find(location->container)->tree.takeNode(location->node);
+    if (!going.isNull()) {
+        node = *next.find(location->container)->tree.takeNode(going);
     } else {
         if (DockResult r = next.detach(panel, false); !r)
             return r;
         node = LayoutNode::makeTabs({panel});
     }
+    node.iconified = iconified;
     ContainerState &floating = next.addFloating(owner, geometry);
     floating.tree = LayoutTree(std::move(node));
     if (!adopt)
@@ -586,6 +712,10 @@ DockResult DockManagerPrivate::setMaximized(const PanelId &panel, bool maximized
                         QStringLiteral("panel '%1' is not in a tab group").arg(panel));
         }
         ContainerState *container = next.find(location->container);
+        if (container->tree.columnOf(location->node)->iconified) {
+            return fail(DockError::InvalidArgument,
+                        QStringLiteral("panel '%1' is in an iconified column").arg(panel));
+        }
         container->maximized = panel;
         (void)container->tree.setActivePanel(panel);
     } else {
@@ -607,11 +737,23 @@ DockResult DockManagerPrivate::closePanels(const QStringList &ids)
     for (const PanelId &id : ids) {
         if (!panels.contains(id))
             return unknownPanel(id);
-        if (next.isPlaced(id) && !leaving.contains(id)) {
+        if (next.isPlaced(id) && !leaving.contains(id))
             leaving.append(id);
-            memories.insert(id, next.capture(id));
-        }
     }
+    // A tab group that goes altogether is remembered at the size it shows.
+    for (const PanelId &id : std::as_const(leaving)) {
+        const std::optional<PanelLocation> location = next.locate(id);
+        if (location->isAutoHidden())
+            continue;
+        const QStringList together = groupPanels(id);
+        const bool all = std::all_of(together.cbegin(), together.cend(), [&leaving](const PanelId &p) {
+            return leaving.contains(p);
+        });
+        if (all)
+            settleShare(next, location->container, location->node);
+    }
+    for (const PanelId &id : std::as_const(leaving))
+        memories.insert(id, next.capture(id));
     for (const PanelId &id : std::as_const(leaving)) {
         if (DockResult r = next.detach(id, false); !r)
             return r;
@@ -633,7 +775,7 @@ DockResult DockManagerPrivate::showPanels(const QStringList &ids)
     return apply(std::move(next), true);
 }
 
-DockResult DockManagerPrivate::activate(const PanelId &id, bool focus)
+DockResult DockManagerPrivate::activate(const PanelId &id, bool focus, bool reveal)
 {
     DockPanel *panel = panels.value(id);
     if (!panel)
@@ -658,6 +800,18 @@ DockResult DockManagerPrivate::activate(const PanelId &id, bool focus)
             if (DockResult r = apply(std::move(next), false); !r)
                 return r;
         }
+        // In an iconified column, the panel's tab group has to come out for
+        // it, beside the strip.
+        const ContainerState *now = state.find(location->container);
+        const LayoutNode *column = now ? now->tree.columnOf(location->node) : nullptr;
+        if (column && column->iconified && !panel->compactWidget()) {
+            DockAreaWidget *area = areaFor(location->container);
+            const bool out = area && area->flyout() == location->node;
+            if (!out && !reveal)
+                return DockResult::success();
+            if (!out && area)
+                area->showFlyout(location->node);
+        }
     }
 
     setActivePanel(panel);
@@ -673,6 +827,38 @@ DockResult DockManagerPrivate::activate(const PanelId &id, bool focus)
         }
     }
     return DockResult::success();
+}
+
+const LayoutNode *DockManagerPrivate::columnOf(const PanelId &panel) const
+{
+    const std::optional<PanelLocation> location = state.locate(panel);
+    if (!location || location->isAutoHidden())
+        return nullptr;
+    return state.find(location->container)->tree.columnOf(location->node);
+}
+
+DockResult DockManagerPrivate::setColumnIconified(const PanelId &anyPanel, bool iconified)
+{
+    if (!panels.contains(anyPanel))
+        return unknownPanel(anyPanel);
+    const std::optional<PanelLocation> location = state.locate(anyPanel);
+    if (!location || location->isAutoHidden()) {
+        return fail(DockError::NotPlaced,
+                    QStringLiteral("panel '%1' is not in a tab group").arg(anyPanel));
+    }
+    LayoutState next = state;
+    ContainerState *container = next.find(location->container);
+    const LayoutNode *column = container->tree.columnOf(location->node);
+    if (column->iconified == iconified)
+        return DockResult::success();
+    // A strip of buttons has nothing in it to fill the container.
+    if (const LayoutNode *filling = container->tree.findPanel(container->maximized);
+        filling && holds(*column, filling->id)) {
+        container->maximized.clear();
+    }
+    if (DockResult r = container->tree.setIconified(column->id, iconified); !r)
+        return r;
+    return apply(std::move(next), true);
 }
 
 bool DockManagerPrivate::userMay(const PanelId &id, DockFeature feature) const
@@ -722,8 +908,15 @@ DockAreas DockManagerPrivate::allowedDropAreas(const DragSession &session, const
     if (!container || !containerAdmits(session, containerId))
         return {};
     const LayoutNode *group = node.isNull() ? nullptr : container->tree.findNode(node);
-    if (!node.isNull() && (!group || !group->isTabs()))
+    if (!node.isNull() && !group)
         return {};
+    // Nothing is docked against what is dragged itself, or a part of it.
+    const bool sameContainer = session.sourceContainer == containerId;
+    if (group && sameContainer && session.wholeGroup && session.sourceNode != node) {
+        const LayoutNode *source = container->tree.findNode(session.sourceNode);
+        if (source && holds(*source, node))
+            return {};
+    }
 
     // What the dragged panels' own policies permit.
     DockAreas areas = AllDockAreas;
@@ -734,7 +927,13 @@ DockAreas DockManagerPrivate::allowedDropAreas(const DragSession &session, const
         draggedTabbable = draggedTabbable && policy.features.testFlag(DockFeature::Tabbable);
     }
 
-    const bool sameContainer = session.sourceContainer == containerId;
+    if (group && !group->isTabs()) {
+        // A column of several tab groups: there is only beside it, and not
+        // for the column itself.
+        if (sameContainer && session.sourceNode == node)
+            return {};
+        return areas & EdgeDockAreas;
+    }
     if (group) {
         // Joining tabs needs the consent of both sides.
         bool targetTabbable = true;
@@ -769,7 +968,8 @@ bool DockManagerPrivate::dropAllowed(const DragSession &session, const DropTarge
 
     // With the middle of a group taking no drops, a panel becomes a tab (or
     // changes places with one) by the header only.
-    if (!centerDrop && !target.node.isNull() && target.area == DockArea::Center
+    if (!centerDropFor(target.container) && !target.node.isNull()
+        && target.area == DockArea::Center
         && target.tabIndex < 0) {
         return false;
     }
@@ -792,8 +992,13 @@ bool DockManagerPrivate::dropAllowed(const DragSession &session, const DropTarge
         request.panels = session.panels;
         request.workspaceId = workspaceIdFor(target.container);
         request.intoFloatingWindow = container->kind == ContainerKind::Floating;
-        if (const LayoutNode *group = container->tree.findNode(target.node))
-            request.targetPanel = group->active;
+        // (Of a column, the panel in front in the group at its top.)
+        const LayoutNode *aimedAt = target.node.isNull() ? nullptr
+                                                         : container->tree.findNode(target.node);
+        while (aimedAt && aimedAt->isSplit())
+            aimedAt = &aimedAt->children.front();
+        if (aimedAt)
+            request.targetPanel = aimedAt->active;
         request.area = target.area;
         request.tabIndex = target.area == DockArea::Center ? target.tabIndex : -1;
         if (!dropFilter(request))
@@ -1122,6 +1327,19 @@ void DockManagerPrivate::parkIfHostedBy(DockPanel *panel, const QWidget *host)
         reparentContent(panel, parkingWidget());
 }
 
+// The small forms of panels (DockPanel::setCompactWidget()) that `host` shows
+// in a strip of buttons: out of it, before it is destroyed.
+void DockManagerPrivate::parkCompactWidgets(const QWidget *host)
+{
+    for (DockPanel *panel : std::as_const(panels)) {
+        QWidget *compact = get(panel)->compactWidget;
+        if (compact && host->isAncestorOf(compact)) {
+            compact->hide();
+            compact->setParent(parkingWidget());
+        }
+    }
+}
+
 QWidget *DockManagerPrivate::parkingWidget()
 {
     if (!parking) {
@@ -1262,10 +1480,8 @@ void DockManagerPrivate::panelAppearanceChanged(DockPanel *panel)
             get(workspace)->autoHide->refreshPanel(panel->id());
         return;
     }
-    if (DockAreaWidget *area = areaFor(location->container)) {
-        if (DockTabGroup *group = area->group(location->node))
-            group->refreshPanel(panel->id());
-    }
+    if (DockAreaWidget *area = areaFor(location->container))
+        area->refreshPanel(panel->id());
     if (DockFloatingWindow *window = floatingWindows.value(location->container))
         window->updateTitle();
 }
@@ -1320,6 +1536,7 @@ void DockManagerPrivate::workspaceDestroyed(DockWorkspace *workspace)
         if (widget && workspace->isAncestorOf(widget))
             reparentContent(panel, parkingWidget());
     }
+    parkCompactWidgets(workspace);
     get(workspace)->area->detachFromManager();
     get(workspace)->autoHide->detachFromManager();
 
@@ -1359,6 +1576,35 @@ DockTitleButtons DockManagerPrivate::titleButtonsFor(const QString &containerId)
     const DockWorkspace *workspace = workspaceFor(containerId);
     return workspace && workspace->d->titleButtons ? *workspace->d->titleButtons
                                                    : theme.titleButtons;
+}
+
+bool DockManagerPrivate::centerDropFor(const QString &containerId) const
+{
+    const DockWorkspace *workspace = workspaceFor(containerId);
+    return workspace && workspace->d->centerDrop ? *workspace->d->centerDrop : centerDrop;
+}
+
+bool DockManagerPrivate::columnDockingFor(const QString &containerId) const
+{
+    const DockWorkspace *workspace = workspaceFor(containerId);
+    return workspace && workspace->d->columnDocking;
+}
+
+// Where every column has a bar, that bar is what a floating window is moved
+// by: there is nothing left for a title row to stand for.
+DockManager::FloatingFrame DockManagerPrivate::floatingFrameFor(const QString &owner) const
+{
+    const bool columns = std::any_of(workspaces.cbegin(), workspaces.cend(),
+                                     [&owner](const DockWorkspace *workspace) {
+        return workspace->workspaceId() == owner && workspace->d->columnDocking;
+    });
+    return columns && floatingFrame == DockManager::FloatingFrame::Custom
+        ? DockManager::FloatingFrame::Minimal : floatingFrame;
+}
+
+int DockManagerPrivate::columnBarHeight() const
+{
+    return theme.columnBarHeight > 0 ? theme.columnBarHeight : DefaultColumnBarHeight;
 }
 
 DockWorkspace *DockManagerPrivate::workspaceFor(const QString &containerId) const
@@ -1801,6 +2047,43 @@ PanelId DockManager::maximizedPanel(const DockWorkspace *workspace) const
     return {};
 }
 
+void DockManager::setColumnDocking(DockWorkspace *workspace, bool enabled)
+{
+    if (!workspace || workspace->manager() != this || workspace->d->columnDocking == enabled)
+        return;
+    workspace->d->columnDocking = enabled;
+    // The bars take their room from the tab groups below them.
+    if (const ContainerState *container = d->state.find(workspace->workspaceId()))
+        workspace->d->area->setLayoutState(*container);
+    for (const auto &c : d->state.containers) {
+        if (c.kind == ContainerKind::Floating && c.owner == workspace->workspaceId()) {
+            if (DockFloatingWindow *window = d->floatingWindows.value(c.id))
+                window->area()->setLayoutState(c);
+        }
+    }
+}
+
+bool DockManager::isColumnDocking(const DockWorkspace *workspace) const
+{
+    return workspace && workspace->d->columnDocking;
+}
+
+DockResult DockManager::setColumnIconified(const PanelId &anyPanelOfColumn, bool iconified)
+{
+    return d->setColumnIconified(anyPanelOfColumn, iconified);
+}
+
+bool DockManager::isColumnIconified(const PanelId &anyPanelOfColumn) const
+{
+    const LayoutNode *column = d->columnOf(anyPanelOfColumn);
+    return column && column->iconified;
+}
+
+QStringList DockManager::columnPanels(const PanelId &id) const
+{
+    return panelsOf(d->columnOf(id));
+}
+
 DockResult DockManager::setPanelAutoHide(const PanelId &id, bool autoHide, DockArea edge)
 {
     return d->setAutoHide(id, autoHide, edge);
@@ -2144,6 +2427,27 @@ bool DockManager::isCenterDropEnabled() const
 void DockManager::setCenterDropEnabled(bool enabled)
 {
     d->centerDrop = enabled;
+}
+
+bool DockManager::isCenterDropEnabled(const DockWorkspace *workspace) const
+{
+    return workspace && workspace->d->centerDrop ? *workspace->d->centerDrop : d->centerDrop;
+}
+
+void DockManager::setCenterDropEnabled(DockWorkspace *workspace, bool enabled)
+{
+    if (workspace && workspace->manager() == this)
+        workspace->d->centerDrop = enabled;
+}
+
+bool DockManager::isSplitterPushEnabled() const
+{
+    return d->splitterPush;
+}
+
+void DockManager::setSplitterPushEnabled(bool enabled)
+{
+    d->splitterPush = enabled;
 }
 
 bool DockManager::isTabDragPreviewEnabled() const

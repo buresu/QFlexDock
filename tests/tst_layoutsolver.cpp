@@ -473,6 +473,54 @@ private Q_SLOTS:
         QCOMPARE(rectOf(tree, moved, "c").width(), 500);
     }
 
+    void aPushingHandleGoesOnThroughWhatCannotGive()
+    {
+        // H(a, b, c, d): b is a strip 40 wide, c may be 100 to 300.
+        LayoutTree tree;
+        (void)tree.insertPanel(p("a"), {}, DockArea::Center);
+        (void)tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right);
+        (void)tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Right);
+        (void)tree.insertPanel(p("d"), groupOf(tree, "c"), DockArea::Right);
+        QHash<QString, SizeLimits> table;
+        table[p("a")] = {QSize(200, 0), QSize(UnboundedSize, UnboundedSize)};
+        table[p("b")] = {QSize(40, 0), QSize(40, UnboundedSize)};
+        table[p("c")] = {QSize(100, 0), QSize(300, UnboundedSize)};
+        table[p("d")] = {QSize(150, 0), QSize(UnboundedSize, UnboundedSize)};
+        const QRect bounds(0, 0, 1012, 600);
+        const NodeId root = tree.root()->id;
+        QVERIFY(tree.setWeights(root, {500, 40, 200, 260}));
+        const SolvedLayout start = LayoutSolver::solve(tree, bounds, 4, limitsBy(table));
+        QCOMPARE(rectOf(tree, start, "a").width(), 500);
+        QCOMPARE(rectOf(tree, start, "c").width(), 200);
+        const int handle = handleIndex(tree, start, "b", Qt::Horizontal); // between b and c
+
+        // As a rule it cannot move left at all: b gives nothing.
+        QCOMPARE(SplitterCoordinator::deltaRange(tree, start, {handle}), std::make_pair(0, 0));
+        // Pushing, b is moved along and a gives: 300, until it is 200 wide.
+        // But c takes only 100, and d takes the rest. To the right, c gives
+        // 100 and d 110, which a takes, b being as wide as it gets.
+        QCOMPARE(SplitterCoordinator::deltaRange(tree, start, {handle}, true),
+                 std::make_pair(-300, 210));
+
+        const auto widths = [&](int delta) {
+            LayoutTree moved = tree;
+            applyUpdates(moved, SplitterCoordinator::moveHandles(tree, start, {handle}, delta, true));
+            const SolvedLayout layout = LayoutSolver::solve(moved, bounds, 4, limitsBy(table));
+            return QList<int>{rectOf(moved, layout, "a").width(), rectOf(moved, layout, "b").width(),
+                              rectOf(moved, layout, "c").width(), rectOf(moved, layout, "d").width()};
+        };
+        QCOMPARE(widths(-60), QList<int>({440, 40, 260, 260}));
+        QCOMPARE(widths(-250), QList<int>({250, 40, 300, 410})); // c is full, d has the rest
+        QCOMPARE(widths(-5000), QList<int>({200, 40, 300, 460}));
+        QCOMPARE(widths(80), QList<int>({580, 40, 120, 260}));
+        QCOMPARE(widths(150), QList<int>({650, 40, 100, 210})); // c at its least, d gives too
+        QCOMPARE(widths(5000), QList<int>({710, 40, 100, 150}));
+        // Without it, a handle moves what is next to it and nothing else.
+        LayoutTree plain = tree;
+        applyUpdates(plain, SplitterCoordinator::moveHandles(tree, start, {handle}, 80));
+        QCOMPARE(rectOf(plain, LayoutSolver::solve(plain, bounds, 4, limitsBy(table)), "a").width(), 500);
+    }
+
     void deltaRangeIsTheIntersectionOfAllLimits()
     {
         LayoutTree tree = makeGrid();
@@ -851,6 +899,48 @@ private Q_SLOTS:
         QCOMPARE(dropPreviewRect(target, DockArea::Right, 0.25), QRect(400, 50, 100, 200));
         QCOMPARE(dropPreviewRect(target, DockArea::Top, 0.5), QRect(100, 50, 400, 100));
         QCOMPARE(dropPreviewRect(target, DockArea::Bottom, 0.25), QRect(100, 200, 400, 50));
+    }
+
+    void edgeExtentIsADepthInPixels()
+    {
+        const DropZoneLayout zones = DropZoneLayout::compute(QRect(0, 0, 400, 300), 0.25, 0, 12);
+        QCOMPARE(zones.center, QRect(12, 12, 376, 276));
+        QCOMPARE(zones.hitTest(QPoint(11, 150)), DockArea::Left);
+        QCOMPARE(zones.hitTest(QPoint(12, 150)), DockArea::Center);
+        QCOMPARE(zones.hitTest(QPoint(200, 290)), DockArea::Bottom);
+        // Never more than 0.4 of the target.
+        const DropZoneLayout tiny = DropZoneLayout::compute(QRect(0, 0, 20, 20), 0.25, 0, 12);
+        QCOMPARE(tiny.center, QRect(8, 8, 4, 4));
+    }
+
+    void anIconifiedColumnIsLaidOutAsOneThing()
+    {
+        // H(a, V(b, c)), the column of b and c iconified: 40 pixels wide.
+        LayoutTree tree;
+        (void)tree.insertPanel(p("a"), {}, DockArea::Center);
+        (void)tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right);
+        (void)tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Bottom);
+        const NodeId column = tree.columnOf(groupOf(tree, "b"))->id;
+        QVERIFY(tree.setIconified(column, true));
+
+        int asked = 0;
+        const LimitsProvider provider = [&](const LayoutNode &leaf) {
+            ++asked;
+            SizeLimits limits;
+            if (leaf.id == column) {
+                limits.min = QSize(40, 100);
+                limits.max = QSize(40, UnboundedSize);
+            }
+            return limits;
+        };
+        const SolvedLayout layout = LayoutSolver::solve(tree, QRect(0, 0, 804, 600), 4, provider);
+        QCOMPARE(asked, 2); // a and the column, not b and c
+        QCOMPARE(layout.handles.size(), size_t(1));
+        QCOMPARE(layout.rects.value(column), QRect(764, 0, 40, 600));
+        QCOMPARE(rectOf(tree, layout, "a"), QRect(0, 0, 760, 600));
+        QVERIFY(!layout.rects.contains(groupOf(tree, "b")));
+        QVERIFY(!layout.rects.contains(groupOf(tree, "c")));
+        QCOMPARE(LayoutSolver::limits(*tree.root(), 4, provider).min, QSize(44, 100));
     }
 
     void outerBand()

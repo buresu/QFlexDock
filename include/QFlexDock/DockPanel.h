@@ -87,6 +87,12 @@ public:
     [[nodiscard]] bool isPreviewTab() const;
     void setPreviewTab(bool preview);
 
+    /// Whether the panel's tab has a button to close it, where the panel may
+    /// be closed (default true). Without one it is still closed from its
+    /// menu, with the middle mouse button, or with the window it floats in.
+    [[nodiscard]] bool hasTabCloseButton() const;
+    void setTabCloseButton(bool shown);
+
     /// Whether the tab group shows a header while this panel is alone in it
     /// (default true). Without one there is nothing to drag, close or float
     /// the panel by, which is the point: together with setFeatures({}) it
@@ -108,6 +114,14 @@ public:
     /// DockManager::hidePanels()).
     [[nodiscard]] bool isCollapsible() const;
     void setCollapsible(bool collapsible);
+
+    /// A small form of the panel for where its column is iconified
+    /// (DockManager::setColumnIconified()): shown there in place of the
+    /// button that would bring the panel out, which then is not needed. A
+    /// palette of tools that is one button wide instead of two, say. The
+    /// manager takes ownership; the widget set before is destroyed.
+    [[nodiscard]] QWidget *compactWidget() const;
+    void setCompactWidget(QWidget *widget);
 
     /// Actions of the application's own in the header of the panel's tab
     /// group, shown while the panel is the current one there. An ordinary

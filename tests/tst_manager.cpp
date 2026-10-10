@@ -1114,11 +1114,29 @@ private Q_SLOTS:
         QTRY_VERIFY(bar->tabButton(0, side)
                     && bar->tabButton(0, side)->objectName() != p("dockTabPin"));
 
+        // A tab can do without its close button; the panel is closed otherwise.
+        QVERIFY(a->hasTabCloseButton());
+        a->setTabCloseButton(false);
+        QVERIFY(!bar->tabButton(0, side));
+        QVERIFY(bar->tabButton(1, side));
+        QVERIFY(a->features().testFlag(DockFeature::Closable));
+        a->setTabCloseButton(true);
+        QTRY_VERIFY(bar->tabButton(0, side));
+
         a->setPreviewTab(true);
         QVERIFY(a->isPreviewTab());
         grab(&f.windowA, p("tab-metadata"));
         QIcon icon(QPixmap(16, 16));
         a->setIcon(icon);
+        QVERIFY(!bar->tabIcon(0).isNull());
+        // The theme can keep icons off the tabs.
+        DockTheme theme = f.manager.theme();
+        theme.tabIcons = false;
+        f.manager.setTheme(theme);
+        QVERIFY(bar->tabIcon(0).isNull());
+        QVERIFY(!a->icon().isNull());
+        theme.tabIcons = true;
+        f.manager.setTheme(theme);
         QVERIFY(!bar->tabIcon(0).isNull());
     }
 

@@ -112,6 +112,8 @@ QJsonValue nodeToJson(const LayoutNode &node)
             children.append(nodeToJson(child));
         o.insert(QStringLiteral("children"), children);
     }
+    if (node.iconified)
+        o.insert(QStringLiteral("iconified"), true);
     return o;
 }
 
@@ -225,8 +227,10 @@ struct Reader
             warn(QStringLiteral("unknown layout node type '%1' in %2; skipped").arg(type, where));
             return false;
         }
-        // Bad weights are repaired by normalization.
+        // Bad weights are repaired by normalization, and so is a column that
+        // is iconified inside another.
         out->weight = weight;
+        out->iconified = o.value(QStringLiteral("iconified")).toBool();
         return true;
     }
 };

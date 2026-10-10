@@ -35,6 +35,7 @@ struct DockPanel::Private
     QIcon icon;
     QString toolTip;
     QPointer<QWidget> widget;
+    QPointer<QWidget> compactWidget;
     DockPanelFactory factory;
     DockPolicy policy;
     bool dirty = false;
@@ -42,6 +43,7 @@ struct DockPanel::Private
     bool previewTab = false;
     bool hideContentDuringDrag = false;
     bool headerVisible = true;
+    bool tabCloseButton = true;
     bool collapsible = false;
     /// Indexed by DockTitlePlace.
     std::array<QList<QPointer<QAction>>, 3> titleActions;
@@ -108,6 +110,8 @@ struct DockWorkspace::Private
     /// Set where the workspace is not to have the manager's.
     std::optional<DockManager::GroupHeader> groupHeader;
     std::optional<DockTitleButtons> titleButtons;
+    bool columnDocking = false;
+    std::optional<bool> centerDrop;
 };
 
 class QFLEXDOCK_EXPORT DockManagerPrivate
@@ -134,13 +138,17 @@ public:
 
     // --- Operations shared by the API, drag and drop and the menus ----------
     DockResult placePanel(const PanelId &panel, DropTarget target);
+    /// Before node `leaving` is taken out of `next`: gives it the share of
+    /// its split that it shows as, where a size limit holds it elsewhere.
+    void settleShare(LayoutState &next, const QString &container, NodeId leaving) const;
     /// `sourceNode` null: the tab group `anyPanel` is in. Otherwise that
     /// subtree of the panel's container (the root, for a whole window).
     DockResult placeGroup(const PanelId &anyPanel, DropTarget target, NodeId sourceNode = {});
     /// `adopt`: an existing window (a drag ghost) to use for the new floating
-    /// container instead of creating one.
+    /// container instead of creating one. `sourceNode`, with `wholeGroup`:
+    /// that subtree of the panel's container instead of its tab group.
     DockResult floatPanels(const PanelId &panel, bool wholeGroup, QRect geometry,
-                           DockFloatingWindow *adopt = nullptr);
+                           DockFloatingWindow *adopt = nullptr, NodeId sourceNode = {});
     DockResult dockBack(const PanelId &panel);
     /// Several panels as one change; those that are docked stay.
     DockResult dockBack(const QStringList &panels);
@@ -151,7 +159,12 @@ public:
     DockResult setMaximized(const PanelId &panel, bool maximized);
     DockResult closePanels(const QStringList &panels);
     DockResult showPanels(const QStringList &panels);
-    DockResult activate(const PanelId &panel, bool focus);
+    /// `reveal` false: a panel of an iconified column is made the current
+    /// one of its group there, and stays out of view.
+    DockResult activate(const PanelId &panel, bool focus, bool reveal = true);
+    DockResult setColumnIconified(const PanelId &anyPanel, bool iconified);
+    /// The column of the panel's tab group, if it is in one.
+    [[nodiscard]] const LayoutNode *columnOf(const PanelId &panel) const;
 
     /// Whether the user may do `feature` with the panel.
     [[nodiscard]] bool userMay(const PanelId &panel, DockFeature feature) const;
@@ -203,6 +216,7 @@ public:
     void reparentContent(DockPanel *panel, QWidget *parent);
     /// Moves content that is still a child of `host` to the parking widget.
     void parkIfHostedBy(DockPanel *panel, const QWidget *host);
+    void parkCompactWidgets(const QWidget *host);
     QWidget *parkingWidget();
     QWidget *removePanel(const PanelId &id, DockManager::PlacementMemory memory, bool keepWidget);
     void contentDestroyed(const PanelId &id);
@@ -226,6 +240,13 @@ public:
     [[nodiscard]] DockManager::GroupHeader groupHeaderFor(const QString &container) const;
     /// The built-in buttons their headers have.
     [[nodiscard]] DockTitleButtons titleButtonsFor(const QString &container) const;
+    /// Whether the middle of its tab groups takes a drop.
+    [[nodiscard]] bool centerDropFor(const QString &container) const;
+    /// Whether its tab groups are docked in columns, each under a bar.
+    [[nodiscard]] bool columnDockingFor(const QString &container) const;
+    /// The frame of a floating window that workspace `owner` owns.
+    [[nodiscard]] DockManager::FloatingFrame floatingFrameFor(const QString &owner) const;
+    [[nodiscard]] int columnBarHeight() const;
     [[nodiscard]] QString defaultWorkspaceId() const;
     [[nodiscard]] QWidget *windowFor(const QString &container) const;
 
@@ -252,6 +273,7 @@ public:
     std::shared_ptr<DockOverlayPainter> overlayPainter;
     bool linkedSplitters = true;
     bool cornerResize = true;
+    bool splitterPush = false;
     bool centerDrop = true;
     bool tabDragPreview = false;
     DockManager::GroupHeader groupHeader = DockManager::GroupHeader::Tabs;

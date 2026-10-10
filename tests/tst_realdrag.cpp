@@ -8,6 +8,7 @@
 #include "TestUtils.h"
 
 #include "core/DockDragController.h"
+#include "widgets/DockColumn.h"
 #include "widgets/DockDropOverlay.h"
 #include "widgets/DockFloatingWindow.h"
 #include "widgets/DockTabBar.h"
@@ -398,6 +399,81 @@ private Q_SLOTS:
         QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
         QVERIFY(!f.manager.panel(p("a"))->isFloating());
         QCOMPARE(priv(f.manager)->floatingWindows.size(), 0);
+    }
+
+    void aColumnIsDraggedByItsBarAndAPanelByItsButton()
+    {
+        TwoWindows f;
+        f.windowA.move(20, 20);
+        f.windowB.move(940, 40);
+        f.manager.setColumnDocking(f.a, true);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
+        DockAreaWidget *area = areaOf(f.a);
+        DockDragController *controller = priv(f.manager)->drag;
+        const NodeId column = area->tree().columnOf(area->tree().findPanel(p("b"))->id)->id;
+
+        // The bar above the column of b and c, to the left side of a.
+        DockColumnBar *bar = area->columnBar(column);
+        QVERIFY(bar);
+        const QPoint press(bar->width() / 2, bar->height() / 2);
+        const QRect group = area->groupOfPanel(p("a"))->geometry();
+        const QPoint left = area->mapToGlobal(QPoint(group.left() + 8, group.center().y()));
+        bool wholeColumn = false;
+        bool guideSeen = false;
+        bool done = false;
+        QTest::mousePress(bar, Qt::LeftButton, {}, press);
+        QTest::mouseMove(bar, press + QPoint(-40, 30));
+        script(this, {
+            [&] { moveTo(&f.windowA, left + QPoint(60, 0)); },
+            [&] { moveTo(&f.windowA, left); },
+            [&] {
+                const DragSession *session = controller->session();
+                wholeColumn = session && session->sourceNode == column
+                    && session->panels == QStringList({p("b"), p("c")});
+                guideSeen = area->overlay()->isVisible()
+                    && area->overlay()->scene().preview.isValid();
+            },
+            [&] { releaseAt(&f.windowA, left); },
+        }, &done);
+        QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
+        QVERIFY(wholeColumn);
+        QVERIFY(guideSeen);
+        QCOMPARE(describe(f.a), p("H(V(b, c), a)"));
+
+        // Iconified, one of its buttons is dragged onto a: a tab there, and
+        // its button none the worse for a press that ended elsewhere.
+        QVERIFY(f.manager.setColumnIconified(p("b"), true));
+        DockIconStrip *strip = area->iconStrips().value(0);
+        QVERIFY(strip);
+        DockIconButton *button = strip->button(p("c"));
+        const QPoint middle = area->mapToGlobal(area->groupOfPanel(p("a"))->geometry().center());
+        bool onePanel = false;
+        QTest::mousePress(button, Qt::LeftButton, {}, button->rect().center());
+        QTest::mouseMove(button, button->rect().center() + QPoint(40, 10));
+        script(this, {
+            [&] { moveTo(&f.windowA, middle - QPoint(40, 0)); },
+            [&] { moveTo(&f.windowA, middle); },
+            [&] {
+                const DragSession *session = controller->session();
+                onePanel = session && !session->wholeGroup && session->primary == p("c");
+            },
+            [&] { releaseAt(&f.windowA, middle); },
+        }, &done);
+        QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
+        QVERIFY(onePanel);
+        QCOMPARE(describe(f.a), p("H(b, a|c)"));
+        QVERIFY(f.manager.isColumnIconified(p("b")));
+        QVERIFY(!f.manager.isColumnIconified(p("c")));
+        QVERIFY(f.widgets[p("c")]->isVisible());
+        QVERIFY(area->flyout().isNull());
+
+        // A click on the button that is left still brings its group out.
+        strip = area->iconStrips().value(0);
+        QTest::mouseClick(strip->button(p("b")), Qt::LeftButton);
+        QCOMPARE(area->flyout(), area->tree().findPanel(p("b"))->id);
     }
 };
 

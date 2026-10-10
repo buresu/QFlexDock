@@ -67,6 +67,8 @@ class QFLEXDOCK_EXPORT DockTabGroup : public QFrame
     Q_PROPERTY(bool active READ isActive)
     Q_PROPERTY(bool maximized READ isMaximized)
     Q_PROPERTY(bool headerVisible READ isHeaderVisible)
+    /// The group is out beside the strip of its iconified column.
+    Q_PROPERTY(bool flyout READ isFlyout)
     /// Fill of the pane and of the current tab.
     Q_PROPERTY(QColor paneColor READ paneColor WRITE setPaneColor)
     /// The outline around the two, and what it is while the group is the
@@ -92,6 +94,14 @@ public:
     [[nodiscard]] bool isMaximized() const { return m_maximized; }
     [[nodiscard]] bool isHeaderVisible() const { return m_headerVisible; }
     void setActive(bool active);
+    [[nodiscard]] bool isFlyout() const { return m_flyout; }
+    /// For the group of an iconified column that is out beside the strip of
+    /// that column, which is on its `side`: it has a button that puts it
+    /// away again, and none to maximize it.
+    void setFlyout(bool flyout, DockArea side = DockArea::Right);
+    [[nodiscard]] QToolButton *flyoutButton() const { return m_flyoutButton; }
+    /// The size the group would like where nothing gives it one.
+    [[nodiscard]] QSize preferredSize() const;
 
     [[nodiscard]] QColor paneColor() const { return m_paneColor; }
     void setPaneColor(const QColor &color);
@@ -202,6 +212,8 @@ private:
     bool m_titleMode = false;
     /// The header is the title of the floating window the group is alone in.
     bool m_windowTitle = false;
+    bool m_flyout = false;
+    DockArea m_flyoutSide = DockArea::Right;
 
     // Null until the constructor gets to them: the event filter is asked
     // about the parts created first while the later ones do not exist yet.
@@ -214,6 +226,7 @@ private:
     QToolButton *m_floatButton = nullptr;
     QToolButton *m_autoHideButton = nullptr;
     QToolButton *m_closeButton = nullptr;
+    QToolButton *m_flyoutButton = nullptr;
     /// What is in an action bar: each action with the widget standing for it.
     struct ShownAction
     {

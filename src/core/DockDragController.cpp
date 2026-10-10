@@ -143,6 +143,43 @@ void DockDragController::requestGroupDrag(const PanelId &anyPanelOfGroup, const 
     }, Qt::QueuedConnection);
 }
 
+void DockDragController::requestColumnDrag(const PanelId &anyPanelOfColumn, const QPixmap &pixmap)
+{
+    m_dragStart = QCursor::pos();
+    QMetaObject::invokeMethod(this, [this, anyPanelOfColumn, pixmap] {
+        if (beginColumn(anyPanelOfColumn))
+            run(pixmap);
+        else
+            m_dragStart.reset();
+    }, Qt::QueuedConnection);
+}
+
+const DragSession *DockDragController::beginColumn(const PanelId &anyPanelOfColumn)
+{
+    const LayoutNode *column = m_session ? nullptr : m_manager->columnOf(anyPanelOfColumn);
+    if (!column)
+        return nullptr;
+    const std::optional<PanelLocation> location = m_manager->state.locate(anyPanelOfColumn);
+    const LayoutTree &tree = m_manager->state.find(location->container)->tree;
+
+    DragSession session;
+    session.token = QUuid::createUuid().toRfc4122();
+    session.wholeGroup = true;
+    session.sourceContainer = location->container;
+    session.sourceNode = column->id;
+    session.sourceIsTabs = column->isTabs();
+    for (const LayoutNode *group : tree.tabNodes()) {
+        if (tree.columnOf(group->id) == column)
+            session.panels += group->panels;
+    }
+    session.primary = tree.findNode(location->node)->active;
+    m_session = std::move(session);
+    m_pendingDrop.reset();
+    qApp->installEventFilter(this);
+    m_manager->setDragInProgress(true);
+    return &*m_session;
+}
+
 const DragSession *DockDragController::begin(const PanelId &panel, bool wholeGroup)
 {
     if (m_session)
@@ -294,16 +331,31 @@ DockFloatingWindow *DockDragController::createGhost()
     const DockWorkspace *workspace = m_manager->workspaceFor(m_session->sourceContainer);
     QWidget *owner = workspace ? workspace->window() : nullptr;
     if (DockAreaWidget *area = m_manager->areaFor(m_session->sourceContainer)) {
-        if (DockTabGroup *group = area->group(m_session->sourceNode)) {
-            size = group->size();
+        QWidget *source = area->dragSource(*m_session);
+        QRect part = source ? source->rect() : QRect();
+        if (auto *group = qobject_cast<DockTabGroup *>(source)) {
             picture = pictureOf(group, *m_session);
-            const QPoint pointer = group->mapFromGlobal(QCursor::pos());
-            if (group->rect().contains(pointer))
+        } else if (source) {
+            // The buttons of an iconified column.
+            picture = source->grab();
+        } else if (const QRect column = area->solved().rects.value(m_session->sourceNode);
+                   column.isValid()) {
+            // A column of several tab groups, with the bar above it.
+            source = area;
+            part = column;
+            picture = area->grab(column);
+        }
+        if (source) {
+            size = part.size();
+            const QPoint pointer = source->mapFromGlobal(QCursor::pos()) - part.topLeft();
+            if (QRect(QPoint(0, 0), size).contains(pointer))
                 m_ghostGrip = pointer;
         }
     }
     const DockPanel *primary = m_manager->panels.value(m_session->primary);
-    auto *ghost = new DockFloatingWindow(m_manager, QString(), m_manager->floatingFrame);
+    auto *ghost = new DockFloatingWindow(
+        m_manager, QString(),
+        m_manager->floatingFrameFor(m_manager->workspaceIdFor(m_session->sourceContainer)));
     ghost->beginGhost(picture, primary ? primary->title() : QString(), ghostsGoBare());
     // Where to is the compositor's business, or else known here.
     QPoint position(0, 0);
@@ -423,8 +475,10 @@ DockResult DockDragController::end()
     if (m_session && m_pendingDrop) {
         const DragSession session = *m_session;
         result = m_manager->commitDrop(session, *m_pendingDrop);
+        // (What was dropped among the buttons of an iconified column is a
+        // button there now, and stays one.)
         if (result)
-            (void)m_manager->activate(session.primary, true);
+            (void)m_manager->activate(session.primary, true, false);
     }
     cancel();
     return result;
@@ -658,8 +712,11 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
     } else {
         QSize size(480, 360);
         if (DockAreaWidget *area = m_manager->areaFor(session.sourceContainer)) {
-            if (DockTabGroup *group = area->group(session.sourceNode))
-                size = group->size();
+            if (const QWidget *source = area->dragSource(session))
+                size = source->size();
+            else if (const QRect column = area->solved().rects.value(session.sourceNode);
+                     column.isValid())
+                size = column.size();
         }
         geometry = QRect(pointer - QPoint(40, 12), size);
         frameToAdd = true;
@@ -668,8 +725,9 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
     // A ghost that was moved from here is not a window to keep: the pointer
     // goes through it. The window proper comes to be where it is, first.
     DockFloatingWindow *adopted = ghostMoved ? nullptr : ghost;
-    const DockResult result =
-        m_manager->floatPanels(session.primary, session.wholeGroup, geometry, adopted);
+    const DockResult result = m_manager->floatPanels(
+        session.primary, session.wholeGroup, geometry, adopted,
+        session.wholeGroup ? session.sourceNode : NodeId());
     if (!result || ghostMoved)
         discardGhost();
     if (!result)
@@ -682,7 +740,7 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
             window->resize(geometry.marginsAdded(window->customFrameMargins()).size());
         }
     }
-    (void)m_manager->activate(session.primary, true);
+    (void)m_manager->activate(session.primary, true, false);
 }
 
 // Watches the application for as long as there is a session.

@@ -261,6 +261,18 @@ What the tests cannot drive, to be tried with the examples:
   whose icon follows; the edges resize the window although the page reaches them; the corners at the top
   are round, and square when maximized; with many tabs they all get narrower and the + stays behind the
   last; closing the last window ends the application.
+- **Columns**, `qflexdock-photoshop-style` — a panel tab held over a group outlines that group and tints
+  its tabs, held over its own group the outline goes around the pane and the tab; near the top or bottom
+  of a group a bar shows where a group would go, near the side of a column or the border of the window
+  where a column would; the bar above a column drags all of it, and its button turns the column into
+  icons and back, at the size it had; an icon brings its group out beside the strip and puts it away; a
+  strip dragged wider by its boundary shows the titles; the tools are one column of buttons or two, by
+  the same button, docked at either side or floating; a floating column is moved and closed by its bar,
+  and an icon of a floating strip brings its group out beside the strip, the window growing for it; the
+  boundary of the column at the right, dragged left, moves the strip of icons beside it along; a document
+  becomes a tab by a row of tabs or the title of a document window only, and a window when let go of
+  anywhere else; the bar below the document is a window of its own, moved by its grip; the main window
+  and the floating ones have round corners.
 - **Style** — the Theme menu and the system's light/dark switch are followed at once.
 - **GPU**, `qflexdock-gpu-panel` — rendering continues through tabbing, splitting, floating and moving to the
   other window; the native-window panel hides during a drag.

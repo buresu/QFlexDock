@@ -5,6 +5,7 @@
 
 #include "core/DockDragController.h"
 #include "widgets/DockAutoHide.h"
+#include "widgets/DockColumn.h"
 #include "widgets/DockDropOverlay.h"
 #include "widgets/DockSplitHandle.h"
 #include "widgets/DockTabBar.h"
@@ -545,6 +546,7 @@ private Q_SLOTS:
         QTRY_COMPARE(window->size(), QSize(320, 240));
 
         // Round where the style sheet says so, and only there.
+        QCOMPARE(window->property("owner").toString(), p("A"));
         const QImage image = window->grab().toImage();
         QCOMPARE(image.pixelColor(0, 0).alpha(), 0);
         QCOMPARE(image.pixelColor(image.width() - 1, 0).alpha(), 0);
@@ -552,6 +554,26 @@ private Q_SLOTS:
         QCOMPARE(image.pixelColor(0, image.height() / 2), QColor(0xff, 0x88, 0x00));
         QCOMPARE(image.pixelColor(image.width() / 2, 0), QColor(0xff, 0x88, 0x00));
         grab(window, p("style-qss-round-frame"));
+
+        // The windows of one workspace can be told from those of another.
+        qApp->setStyleSheet(QStringLiteral(R"(
+            QFlexDock--DockFloatingWindow { background: #112233; border: 1px solid #ff8800; }
+            QFlexDock--DockFloatingWindow[owner="B"] { border: 1px solid #0088ff; }
+        )"));
+        QVERIFY(f.b->addPanel(p("c")));
+        QVERIFY(f.manager.floatPanel(p("c"), QRect(420, 60, 320, 240)));
+        auto *other = qobject_cast<DockFloatingWindow *>(f.widgets[p("c")]->window());
+        QVERIFY(other && QTest::qWaitForWindowExposed(other));
+        QCOMPARE(other->owner(), p("B"));
+        QCOMPARE(other->grab().toImage().pixelColor(0, 120), QColor(0, 0x88, 0xff));
+        QCOMPARE(window->grab().toImage().pixelColor(0, 120), QColor(0xff, 0x88, 0x00));
+        qApp->setStyleSheet(QStringLiteral(R"(
+            QFlexDock--DockFloatingWindow {
+                background: #112233; border: 1px solid #ff8800;
+                border-top-left-radius: 12px; border-top-right-radius: 12px;
+            }
+            QFlexDock--DockFloatingWindow[maximized="true"] { border: none; border-radius: 0; }
+        )"));
 
         window->showMaximized();
         const QSize normal(320, 240);
@@ -604,6 +626,84 @@ private Q_SLOTS:
         QEvent leave(QEvent::Leave);
         QCoreApplication::sendEvent(edge, &leave);
         QVERIFY(column(0) != QColor(0, 0xff, 0));
+        qApp->setStyleSheet(QString());
+    }
+
+    void styleSheetsStyleColumnsAndTheirButtons()
+    {
+        TwoWindows f;
+        f.show();
+        f.manager.setColumnDocking(f.a, true);
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right, -1, 0.3));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
+        QVERIFY(f.manager.setColumnIconified(p("b"), true));
+        DockAreaWidget *area = areaOf(f.a);
+        const LayoutNode *column = area->tree().columnOf(area->tree().findPanel(p("b"))->id);
+        DockIconStrip *strip = area->iconStrip(column->id);
+        DockColumnBar *iconified = area->columnBar(column->id);
+        DockColumnBar *open = area->columnBar(area->tree().findPanel(p("a"))->id);
+        QVERIFY(strip && iconified && open);
+
+        qApp->setStyleSheet(QStringLiteral(R"(
+            QFlexDock--DockColumnBar { background: #102030; }
+            QFlexDock--DockColumnBar[iconified="true"] { background: #302010; }
+            #dockIconifyButton { background: #00c000; border: none; }
+            QFlexDock--DockIconStrip { background: #204060; }
+            QFlexDock--DockIconStrip[labelled="true"] { background: #206040; }
+            QFlexDock--DockIconGrip { background: #c000c0; }
+            QFlexDock--DockIconButton { background: #c0c000; border: none; }
+            QFlexDock--DockIconButton:checked { background: #c00000; }
+            QFlexDock--DockTabGroup[flyout="true"] { border: 3px solid #00c0c0; }
+            #dockFlyoutButton { background: #0000c0; border: none; }
+        )"));
+        QCoreApplication::processEvents();
+        const auto colorIn = [&](QWidget *widget, const QPoint &pos) {
+            return picture(&f.windowA).pixelColor(widget->mapTo(&f.windowA, pos));
+        };
+
+        // The bars, by what their column is, and the button in them.
+        QCOMPARE(colorIn(open, QPoint(open->width() / 2, 2)), QColor(0x10, 0x20, 0x30));
+        QVERIFY(iconified->property("iconified").toBool());
+        QVERIFY(containsColor(picture(iconified), QColor(0x30, 0x20, 0x10))
+                || iconified->width() <= iconified->iconifyButton()->width());
+        QCOMPARE(pixel(open->iconifyButton(), QPoint(1, 1)), QColor(0, 0xc0, 0));
+
+        // The strip, wide enough for its titles here, with its grips and buttons.
+        QVERIFY(strip->isLabelled());
+        QCOMPARE(colorIn(strip, QPoint(strip->width() / 2, strip->height() - 3)),
+                 QColor(0x20, 0x60, 0x40));
+        const DockIconGrip *grip = strip->grips().constFirst();
+        QCOMPARE(pixel(strip, grip->mapTo(strip, QPoint(1, 1))), QColor(0xc0, 0, 0xc0));
+        DockIconButton *button = strip->button(p("b"));
+        QCOMPARE(pixel(button, QPoint(1, 1)), QColor(0xc0, 0xc0, 0));
+
+        // The button of what is out, and the group that is.
+        QTest::mouseClick(button, Qt::LeftButton);
+        QCOMPARE(pixel(button, QPoint(1, 1)), QColor(0xc0, 0, 0));
+        DockTabGroup *out = area->groupOfPanel(p("b"));
+        QVERIFY(out && out->property("flyout").toBool());
+        QCOMPARE(pixel(out, QPoint(1, out->height() / 2)), QColor(0, 0xc0, 0xc0));
+        QCOMPARE(pixel(out->flyoutButton(), QPoint(1, 1)), QColor(0, 0, 0xc0));
+
+        // Dragged narrow, the strip is another to the style sheet.
+        area->showFlyout({});
+        area->beginHandleDrag(0, false);
+        area->moveHandleDrag(2000);
+        area->endHandleDrag(false);
+        QVERIFY(!strip->isLabelled());
+        QCOMPARE(colorIn(strip, QPoint(strip->width() / 2, strip->height() - 3)),
+                 QColor(0x20, 0x40, 0x60));
+
+        // The button that closes a floating column.
+        qApp->setStyleSheet(QStringLiteral("#dockColumnCloseButton { background: #c06000; border: none; }"));
+        QVERIFY(f.manager.floatPanel(p("a"), QRect(40, 40, 300, 240)));
+        const DockFloatingWindow *window = priv(f.manager)->floatingWindows.begin().value();
+        QVERIFY(QTest::qWaitForWindowExposed(const_cast<DockFloatingWindow *>(window)));
+        QCOMPARE(window->area()->columnBars().size(), 1);
+        QToolButton *close = window->area()->columnBars().constFirst()->closeButton();
+        QVERIFY(close->isVisible());
+        QCOMPARE(pixel(close, QPoint(1, 1)), QColor(0xc0, 0x60, 0));
         qApp->setStyleSheet(QString());
     }
 

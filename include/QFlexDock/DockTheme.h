@@ -52,6 +52,10 @@ struct QFLEXDOCK_EXPORT DockOverlayStyle
     bool showPreview = false;
     /// Depth of the four edge areas as a share of the target (0.1 - 0.4).
     double edgeFraction = 0.28;
+    /// Their depth in pixels where that is to be the same on every target,
+    /// however large (never more than 0.4 of it); -1: `edgeFraction` of it.
+    /// For DockGuide::Zones and Preview.
+    int edgeExtent = -1;
     /// Width of the band along the workspace border that docks onto the
     /// workspace as a whole. 0 disables outer docking by drag (also with
     /// DockGuide::Buttons, whose buttons at the border are otherwise as
@@ -65,7 +69,12 @@ struct QFLEXDOCK_EXPORT DockOverlayStyle
 };
 
 /// Buttons whose icon can be replaced.
-enum class DockIcon { Close, Maximize, Restore, Float, Dock, Pin, Unpin, Menu };
+enum class DockIcon {
+    Close, Maximize, Restore, Float, Dock, Pin, Unpin, Menu,
+    /// The button of a column bar and of what comes out of an iconified
+    /// column: a mark pointing left, and one pointing right.
+    IconifyLeft, IconifyRight,
+};
 
 /// Buttons in the header of a tab group. Float and Close act on the current
 /// panel and are only shown for a panel that may be floated or closed.
@@ -105,6 +114,10 @@ struct QFLEXDOCK_EXPORT DockTheme
     int iconSize = -1;
     /// Which buttons the header of a tab group shows.
     DockTitleButtons titleButtons = DockTitleButton::Menu | DockTitleButton::Maximize;
+    /// Whether tabs show the icon of their panel beside its title. Without
+    /// it, the icon is for where a panel has no title to show: the button of
+    /// an iconified column, the title of a floating window.
+    bool tabIcons = true;
     /// Width of a tab while there is room for it; -1 makes each as wide as
     /// its icon and title need.
     int tabWidth = -1;
@@ -117,6 +130,9 @@ struct QFLEXDOCK_EXPORT DockTheme
     /// The radius of their corners while they are not maximized; 0 leaves
     /// them square. Used by the windows created from then on.
     int floatingCornerRadius = 0;
+    /// Height of the bar above a column, where a workspace has such bars
+    /// (DockManager::setColumnDocking()); -1 is 14 pixels.
+    int columnBarHeight = -1;
     DockOverlayStyle overlay;
     /// Replacement icons; anything missing comes from the host style.
     QHash<DockIcon, QIcon> icons;
@@ -142,8 +158,23 @@ struct QFLEXDOCK_EXPORT DockOverlayScene
     /// Always filled in; whether to show it is the painter's decision (the
     /// built-in one follows DockOverlayStyle::showPreview).
     QRect preview;
+    /// What the drop is aimed at, all of it whatever part `preview` is: a
+    /// tab group, the column beside which a workspace that docks in columns
+    /// puts what is dropped on the side of a group, or the whole dock area.
+    /// Null when nothing is hovered.
+    QRect target;
     /// Insertion marker inside a tab bar; null unless dropping between tabs.
     QRect tabIndicator;
+    /// For a drop that makes what is dragged a tab of a group: the header of
+    /// that group. Null for any other drop.
+    QRect header;
+    /// Where tab bars show a drag as it would turn out
+    /// (DockManager::setTabDragPreviewEnabled()): the place kept open among
+    /// the tabs for what is dragged.
+    QRect tabGap;
+    /// The drop leaves the dragged panel in the group it comes from: at
+    /// another place among its tabs, or where it was.
+    bool ownGroup = false;
 };
 
 /// Paints the drop overlay. Hit testing is done elsewhere, so a custom painter

@@ -220,6 +220,35 @@ public:
     /// The maximized panel of `workspace`, or of any container when null.
     [[nodiscard]] PanelId maximizedPanel(const DockWorkspace *workspace = nullptr) const;
 
+    // --- Columns ---------------------------------------------------------------
+    /// Whether the tab groups of `workspace`, and of the floating windows it
+    /// owns, are docked in columns (default false). A column is what stands
+    /// above one another: a tab group, or several. Then
+    ///  - a drop on the left or right side of a group docks beside the
+    ///    column that group is in, never into it;
+    ///  - every column of panels that may be moved has a bar above it. The
+    ///    bar is dragged to move the column as it is, and its button shrinks
+    ///    the column to buttons (setColumnIconified()). In a floating window
+    ///    the bar is what the window is moved by and closed with, so such a
+    ///    window has no title row (FloatingFrame::Custom is Minimal there).
+    void setColumnDocking(DockWorkspace *workspace, bool enabled);
+    [[nodiscard]] bool isColumnDocking(const DockWorkspace *workspace) const;
+    /// Shrinks the column `anyPanelOfColumn` is in to a strip of buttons, one
+    /// for each of its panels, or shows the panels again. A button brings its
+    /// tab group out beside the strip, over what is there, and puts it away
+    /// again. A floating window that is nothing but the strip grows by that
+    /// group for as long as it is out. The strip is as narrow as its icons,
+    /// and can be dragged wider for the titles to show.
+    ///
+    /// Works in any workspace; with setColumnDocking() the user has a button
+    /// for it. What is dropped into an iconified column becomes part of it,
+    /// what is taken out of one and floats stays iconified.
+    DockResult setColumnIconified(const PanelId &anyPanelOfColumn, bool iconified);
+    [[nodiscard]] bool isColumnIconified(const PanelId &anyPanelOfColumn) const;
+    /// The panels of the column `id` is in, from the top, each tab group in
+    /// the order of its tabs. Empty if the panel is not in a tab group.
+    [[nodiscard]] QStringList columnPanels(const PanelId &id) const;
+
     /// Collapses the panel into an auto-hide bar of its workspace (`edge` None
     /// picks the nearest border), or pins it back into the layout.
     DockResult setPanelAutoHide(const PanelId &id, bool autoHide, DockArea edge = DockArea::None);
@@ -275,16 +304,31 @@ public:
     /// Whether the point where a vertical and a horizontal split handle meet
     /// can be dragged to move both at once (default true).
     void setCornerResizeEnabled(bool enabled);
+    [[nodiscard]] bool isSplitterPushEnabled() const;
+    /// Whether a split handle that is dragged against a neighbour that can
+    /// get no smaller goes on, and takes the room from what lies behind that
+    /// neighbour, which is moved along as it is (default false: the handle
+    /// stops there). A column that is a strip of buttons, or a palette of
+    /// fixed width, is then no obstacle between two areas that can change.
+    void setSplitterPushEnabled(bool enabled);
     [[nodiscard]] bool isCenterDropEnabled() const;
     /// Whether the middle of a tab group takes a dragged panel (default
     /// true): as a new tab of that group, or, on the group the panel comes
     /// from, to leave it where it is. Turned off, a panel becomes a tab by
-    /// the header of a group only: between two tabs, or anywhere on the title
+    /// the header of a group only: between two tabs, anywhere on the title
     /// row when the sides of the group are not open to it either
-    /// (DockPolicy::allowedAreas). The rest of the group is then no drop
+    /// (DockPolicy::allowedAreas), or on a title bar that names its panel.
+    /// A workspace with nothing in it takes a panel where its tabs will be:
+    /// along its top, as high as a row of tabs. The rest of the group is then no drop
     /// target, and what is let go of there floats like anything dropped
     /// outside every dock area: tabs are torn off by dragging them away.
     void setCenterDropEnabled(bool enabled);
+    /// The same for one workspace, and the floating windows it owns, where
+    /// that is to differ from the others: documents that become tabs of
+    /// each other by their tab rows only, among panels that take a drop
+    /// anywhere.
+    void setCenterDropEnabled(DockWorkspace *workspace, bool enabled);
+    [[nodiscard]] bool isCenterDropEnabled(const DockWorkspace *workspace) const;
     [[nodiscard]] bool isTabDragPreviewEnabled() const;
     /// Whether tab bars show a tab drag as it would turn out (default
     /// false). The tab that is dragged leaves its bar at once, the tabs

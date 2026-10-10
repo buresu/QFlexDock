@@ -36,7 +36,7 @@ class DockAreaWidget;
 /// (DockTheme::floatingBorderWidth, floatingCornerRadius).
 ///
 /// Style sheets: class selector `QFlexDock--DockFloatingWindow`, with the
-/// `customFrame` and `maximized` properties; with the custom frame also
+/// `customFrame`, `maximized` and `owner` properties; with the custom frame also
 /// `#dockFloatingTitleBar`, `#dockFloatingTitle`,
 /// `#dockFloatingMaximizeButton` and `#dockFloatingCloseButton`.
 ///
@@ -48,6 +48,9 @@ class QFLEXDOCK_EXPORT DockFloatingWindow : public QWidget
 {
     Q_OBJECT
     Q_PROPERTY(bool customFrame READ hasCustomFrame CONSTANT)
+    /// The id of the workspace the window belongs to, for style sheets that
+    /// tell the windows of one workspace from those of another.
+    Q_PROPERTY(QString owner READ owner)
 
 public:
     DockFloatingWindow(DockManagerPrivate *manager, const QString &containerId,
@@ -56,6 +59,7 @@ public:
     [[nodiscard]] QString containerId() const { return m_containerId; }
     [[nodiscard]] DockAreaWidget *area() const { return m_area; }
     [[nodiscard]] bool hasCustomFrame() const { return m_customFrame; }
+    [[nodiscard]] QString owner() const { return m_owner; }
     /// A custom frame without a title row (FloatingFrame::Minimal).
     [[nodiscard]] bool hasMinimalFrame() const { return m_customFrame && !m_titleBar; }
     [[nodiscard]] QWidget *titleBar() const { return m_titleBar; }
@@ -91,6 +95,11 @@ public:
     void updateTitle();
     void refreshAppearance();
     void toggleMaximized();
+    /// Gives a window that has come to hold an iconified column and nothing
+    /// else the size of that column's strip of buttons (and of the tab group
+    /// that is out beside it), and one that no longer does the size it had
+    /// before. Called once the layout is applied, and when a group comes out.
+    void fitIconified();
 
     // --- Drag ghost ------------------------------------------------------------
     /// Turns the (not yet presented) window into the ghost of a drag: the
@@ -142,6 +151,7 @@ private:
 
     DockManagerPrivate *m_manager;
     QString m_containerId;
+    QString m_owner;
     DockAreaWidget *m_area;
     bool m_customFrame;
     int m_borderWidth = 0;
@@ -164,6 +174,12 @@ private:
     int m_sizeKept = 0;
     bool m_carriedAlong = false;
     bool m_takesDrops = false;
+    /// The window holds an iconified column and nothing else, and what size
+    /// it had before it did.
+    bool m_iconified = false;
+    QSize m_expandedSize;
+    /// The size last asked for as such a window.
+    QSize m_fitted;
 
     // Custom frame only.
     QWidget *m_titleBar = nullptr;
