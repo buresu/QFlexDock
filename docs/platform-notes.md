@@ -80,6 +80,9 @@ outside, Esc, a window dragged by its only tab). What differs is this.
   and the Escape key while the drag lasts (`CGEventSourceButtonState`, `CGEventSourceKeyState`): the window
   stops following when the button goes up and floats where it was then; on Esc a ghost disappears and a
   window that was itself moved goes back at once. The floating window appears when the drag has returned.
+- To spare a drop outside that wait, the ghost takes the drop itself wherever no window with a dock area
+  is under the pointer (it lets the pointer through only over one): the drag returns at once, and no other
+  application sees it. Over a dock window but on no dock area of it, the wait remains. **Not verified.**
 - The picture that slides back is an empty one: Qt gives a drag without a picture one of its own.
 - **Not verified:** Esc with the button let go of right after it, and what Windows leaves open above.
 

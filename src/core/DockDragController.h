@@ -105,9 +105,10 @@ public:
     /// leave everything as it was. `windowDrag`: an existing floating window
     /// was carried. `ghostMoved`: the ghost was kept at the pointer from here
     /// (movesCarriedWindows()); the action then says no more than it does
-    /// without a ghost, and the ghost, which the pointer goes through, makes
-    /// way for a window proper where it is. Separate from the drag itself so
-    /// tests can drive it.
+    /// without a ghost, unless the ghost took the drop itself
+    /// (noteDropOnGhost()), and the ghost, which the pointer goes through,
+    /// makes way for a window proper where it is. Separate from the drag
+    /// itself so tests can drive it.
     void finish(Qt::DropAction action, DockFloatingWindow *ghost, bool windowDrag,
                 bool ghostMoved = false);
     /// Has the dragged tab shown as gone from its group, where tab drags are
@@ -127,6 +128,9 @@ public:
     /// Only when the pointer travels across the window is it evidently not
     /// being carried; carrying is then given up for good.
     bool noteDragOver(QWidget *receiver, const QPoint &pos);
+    /// The ghost itself took the drop (DockFloatingWindow::setTakesDrops()):
+    /// it was let go of outside every dock area.
+    void noteDropOnGhost() { m_droppedOnGhost = true; }
     /// Carrying windows was found not to work with this compositor.
     [[nodiscard]] bool carryingUnsupported() const { return m_carryingUnsupported; }
     [[nodiscard]] const DragSession *session() const;
@@ -159,6 +163,7 @@ private:
     std::optional<DropTarget> m_pendingDrop;
     bool m_running = false;
     bool m_escapePressed = false;
+    bool m_droppedOnGhost = false;
     bool m_carryingUnsupported = false;
     /// Where the pointer was when the drag was asked for.
     std::optional<QPoint> m_dragStart;

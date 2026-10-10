@@ -248,6 +248,16 @@ void DockFloatingWindow::setCarriedAlong(bool carried)
     setWindowOpacity(carried ? CarriedOpacity : 1.0);
 }
 
+void DockFloatingWindow::setTakesDrops(bool takes)
+{
+    if (takes == m_takesDrops || !m_ghost)
+        return;
+    m_takesDrops = takes;
+    // On the window as it is, as in setCarriedAlong().
+    if (QWindow *handle = windowHandle(); handle && m_carriedAlong)
+        handle->setFlag(Qt::WindowTransparentForInput, !takes);
+}
+
 void DockFloatingWindow::dragEnterEvent(QDragEnterEvent *event)
 {
     // Only a ghost takes drops itself (its dock area is hidden). It accepts
@@ -262,10 +272,23 @@ void DockFloatingWindow::dragEnterEvent(QDragEnterEvent *event)
 
 void DockFloatingWindow::dragMoveEvent(QDragMoveEvent *event)
 {
-    if (m_ghost && m_manager)
-        (void)m_manager->drag->noteDragOver(this, event->position().toPoint());
+    const bool carried =
+        m_ghost && m_manager && m_manager->drag->noteDragOver(this, event->position().toPoint());
     ghostDragMoved();
-    event->ignore();
+    if (carried && m_takesDrops)
+        event->acceptProposedAction();
+    else
+        event->ignore();
+}
+
+void DockFloatingWindow::dropEvent(QDropEvent *event)
+{
+    if (m_ghost && m_takesDrops && m_manager && m_manager->drag->sessionFor(event->mimeData())) {
+        m_manager->drag->noteDropOnGhost();
+        event->acceptProposedAction();
+    } else {
+        event->ignore();
+    }
 }
 
 // A ghost the pointer travels across is not being carried by the compositor;

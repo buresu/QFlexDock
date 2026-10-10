@@ -428,6 +428,7 @@ void DockDragController::cancel()
 {
     m_session.reset();
     m_pendingDrop.reset();
+    m_droppedOnGhost = false;
     qApp->removeEventFilter(this);
     m_manager->hideAllOverlays();
     m_manager->showDraggedOut(nullptr);
@@ -483,8 +484,12 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     // it came from. How the drag ended has to be seen when it does, and by
     // asking the system: Qt hears of neither the button nor the Escape key.
     const bool endsUnseen = onMac();
+    // That wait is not there when somebody takes the drop. So the ghost
+    // does, wherever no window with a dock area is under the pointer: the
+    // drag returns at once, and no other application gets to see it.
+    const bool ghostTakesDrops = onMac();
     QTimer follow;
-    const auto keepAtPointer = [this, followed, hold, origin, endsUnseen,
+    const auto keepAtPointer = [this, followed, hold, origin, endsUnseen, ghostTakesDrops,
                                 isGhost = !carriedWindow] {
         if (m_letGoAt || (endsUnseen && m_escapePressed))
             return; // over already: nothing follows the pointer any more
@@ -509,12 +514,15 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
             return;
         const QPoint frame = followed->geometry().topLeft() - followed->pos();
         followed->move(pointer - hold - frame);
-        // A ghost lets the pointer through all the time. A window that is
+        // A ghost lets the pointer through all the time, unless it is to
+        // take the drop where nothing else of ours would. A window that is
         // itself moved only does over where it could be docked: anywhere
         // else it is a window being moved, which no other application is to
         // take for something dragged over it.
         if (!isGhost)
             followed->setCarriedAlong(dockWindowAt(pointer, followed));
+        else if (ghostTakesDrops)
+            followed->setTakesDrops(!dockWindowAt(pointer, followed));
     };
     if (followed || endsUnseen) {
         follow.setTimerType(Qt::PreciseTimer);
@@ -590,6 +598,7 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
     // "Dropped outside every dock area", as opposed to cancelled:
     //  - with a carried ghost, Qt reports the unclaimed drop as accepted and
     //    only a cancelled drag as ignored;
+    //  - a ghost that was moved from here may have taken the drop itself;
     //  - on Wayland without one, the two cannot be told apart;
     //  - elsewhere, also with a ghost that was moved from here: nobody took
     //    it, no Escape, and the mouse button is up (a drag cancelled from the
@@ -597,6 +606,8 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
     bool droppedOutside = false;
     if (ghost && !ghostMoved) {
         droppedOutside = action != Qt::IgnoreAction;
+    } else if (m_droppedOnGhost) {
+        droppedOutside = true;
     } else if (!onWayland()) {
         droppedOutside = action == Qt::IgnoreAction && !m_escapePressed && !buttonStillDown();
     }

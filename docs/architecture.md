@@ -153,7 +153,8 @@ window, so the controller moves it to the pointer on a timer for as long as the 
 pointer through (`Qt::WindowTransparentForInput`), or the drag would find nothing but it: a ghost always,
 a floating window that is itself moved only while another dock window is at the pointer, so that other
 applications are not offered the drag. A ghost made that way is replaced by a window proper where it was
-dropped. What happens after a drag is all in
+dropped. (On macOS it also takes the drop itself where no dock window is underneath, because a drag that
+nobody took returns late there.) What happens after a drag is all in
 `DockDragController::finish()`, which tests drive without a real drag.
 
 ## Choices worth knowing

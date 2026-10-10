@@ -502,6 +502,84 @@ private Q_SLOTS:
         QVERIFY(!controller->dockWindowAt(corner, window));
     }
 
+    // Such a ghost may take the drop itself, where there is no dock area
+    // (macOS): that is a drop outside whatever else is known of the drag,
+    // and the window proper comes where the ghost is.
+    void ghostThatTakesTheDropFloatsWhereItIs()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        f.manager.setFloatsOnOutsideDrop(true);
+        DockDragController *controller = priv(f.manager)->drag;
+
+        QVERIFY(controller->begin(p("b"), false));
+        QPointer<DockFloatingWindow> ghost = controller->createGhost();
+        QVERIFY(ghost);
+        QVERIFY(QTest::qWaitForWindowExposed(ghost));
+        controller->setCarriedWindow(ghost);
+        const std::unique_ptr<QMimeData> mime(controller->createMimeData());
+        const QPoint at = controller->ghostGrip();
+        // Whether the ghost would take a drop at the pointer.
+        const auto offered = [&] {
+            QT_WARNING_PUSH
+            QT_WARNING_DISABLE_DEPRECATED
+            QDragEnterEvent enter(at, Qt::MoveAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(ghost, &enter);
+            QDragMoveEvent move(at, Qt::MoveAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+            move.ignore();
+            QCoreApplication::sendEvent(ghost, &move);
+            QT_WARNING_POP
+            return move.isAccepted();
+        };
+        // (A drop goes to whoever took the drag when it entered.)
+        const auto dropOnGhost = [&](const QMimeData *data) {
+            (void)offered();
+            QDropEvent drop(at, Qt::MoveAction, data, Qt::LeftButton, Qt::NoModifier);
+            drop.ignore();
+            QCoreApplication::sendEvent(ghost, &drop);
+            return drop.isAccepted();
+        };
+
+        // As it is made, it stays out of the drag.
+        QVERIFY(!ghost->takesDrops());
+        QVERIFY(!offered());
+        QVERIFY(!dropOnGhost(mime.get()));
+
+        ghost->setTakesDrops(true);
+        QVERIFY(offered());
+        // A drop that names no drag of ours is none.
+        QMimeData foreign;
+        foreign.setData(DockDragController::mimeType(), QByteArrayLiteral("someone else's"));
+        QVERIFY(!dropOnGhost(&foreign));
+        ghost->move(300, 200);
+        const QRect put = ghost->geometry();
+        QVERIFY(dropOnGhost(mime.get()));
+        controller->setCarriedWindow(nullptr);
+        // The drag then comes back as accepted, with no dock area named.
+        controller->finish(Qt::MoveAction, ghost, false, true);
+        QVERIFY(!controller->isActive());
+        QVERIFY(f.manager.panel(p("b"))->isFloating());
+        QCOMPARE(describe(f.a), p("H(a, c)"));
+        QCOMPARE(priv(f.manager)->floatingWindows.size(), 1);
+        const DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(window && window != ghost.data() && !window->isGhost());
+        QCOMPARE(priv(f.manager)->state.find(window->containerId())->geometry, put);
+        QTRY_VERIFY(!ghost);
+
+        // That is forgotten with the drag: the next one that comes back
+        // accepted without a drop on its ghost floats nothing.
+        QVERIFY(f.manager.undo());
+        QCOMPARE(describe(f.a), p("H(a, b|c)"));
+        QVERIFY(controller->begin(p("b"), false));
+        ghost = controller->createGhost();
+        QVERIFY(ghost);
+        controller->finish(Qt::MoveAction, ghost, false, true);
+        QCOMPARE(describe(f.a), p("H(a, b|c)"));
+        QCOMPARE(priv(f.manager)->floatingWindows.size(), 0);
+        QTRY_VERIFY(!ghost);
+    }
+
     void windowMovedAlongLetsThePointerThrough()
     {
         TwoWindows f;
@@ -531,6 +609,20 @@ private Q_SLOTS:
         QVERIFY(ghost.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
         QVERIFY(ghost.testAttribute(Qt::WA_ShowWithoutActivating));
         QVERIFY(ghost.windowOpacity() < 1.0);
+
+        // Shown, it stops letting the pointer through for as long as it
+        // takes drops itself, and stays as much of a picture as it was.
+        ghost.beginGhost(QPixmap(), QString());
+        ghost.present(QRect(80, 80, 200, 150), nullptr);
+        QVERIFY(QTest::qWaitForWindowExposed(&ghost));
+        const QPointer<QWindow> ghostHandle(ghost.windowHandle());
+        QVERIFY(ghostHandle->flags().testFlag(Qt::WindowTransparentForInput));
+        ghost.setTakesDrops(true);
+        QCOMPARE(ghost.windowHandle(), ghostHandle.data());
+        QVERIFY(!ghostHandle->flags().testFlag(Qt::WindowTransparentForInput));
+        QVERIFY(ghost.windowOpacity() < 1.0);
+        ghost.setTakesDrops(false);
+        QVERIFY(ghostHandle->flags().testFlag(Qt::WindowTransparentForInput));
     }
 
     void carriedWindowIsNamedInTheMimeData()
