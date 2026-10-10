@@ -9,7 +9,7 @@ work from Qt's documentation, but nobody has checked.
 | Linux Wayland (headless KWin and Weston) | All suites pass | Tab drags tried by hand on KWin; cannot be automated |
 | `offscreen` | All suites pass (no `QOpenGLWidget`) | — |
 | Windows | All suites pass on `offscreen` and with the native platform (on a hidden desktop, see below) | Tried by hand; cannot be automated |
-| macOS | All suites pass on `offscreen`; **never run with the native platform** | Not verified |
+| macOS | All suites pass on `offscreen`; **never run with the native platform** | Tried by hand; not automated |
 
 ## Drag and drop
 
@@ -21,7 +21,7 @@ Dock drags use `QDrag`. The layout never changes during a drag; the drop is comm
 | Wayland, other compositors | A picture of the tab | Nothing |
 | Windows | A ghost, moved by QFlexDock and three quarters opaque | A floating window where the ghost is |
 | X11 | A picture of the tab | The panel floats at the pointer |
-| macOS | A ghost, as on Windows (**not verified**, see below) | A floating window where the ghost is |
+| macOS | A ghost, as on Windows | A floating window where the ghost is |
 
 ### Windows carried by a drag (Wayland)
 
@@ -72,7 +72,8 @@ All of this was tried by hand on Windows 11 at 200% scaling, Esc included. **Not
 `Minimal` window taken by its header, drags by touch or pen (a drop is told from Esc by the mouse button),
 and monitors of different scaling.
 
-**On macOS none of it was tried on screen yet**: it is the same code, and what differs is this.
+On macOS it is the same code, tried by hand on macOS 27 with Qt 6.11 (a ghost docked through, dropped
+outside, Esc, a window dragged by its only tab). What differs is this.
 
 - A drag that nobody took returns to Qt only after the system has slid its picture back to where the drag
   began, a moment after the button was let go of. QFlexDock therefore asks the system for the mouse button
@@ -80,9 +81,7 @@ and monitors of different scaling.
   stops following when the button goes up and floats where it was then; on Esc a ghost disappears and a
   window that was itself moved goes back at once. The floating window appears when the drag has returned.
 - The picture that slides back is an empty one: Qt gives a drag without a picture one of its own.
-- To check by hand, besides "Manual checks": that the drag reaches the dock area under a ghost, that Esc
-  floats nothing (also when the button is let go of right after it), and that the pointer can be moved
-  away after a drop outside without the ghost coming along.
+- **Not verified:** Esc with the button let go of right after it, and what Windows leaves open above.
 
 ### Dropping outside = floating
 
@@ -92,7 +91,7 @@ on Wayland by the drop action Qt reports for a window-carrying drag, on X11 by w
 and whether the mouse button is still down when the drag ends (covered by `tst_realdrag`). On Windows
 the drag loop is the system's: Qt sees neither the key nor, until the drag is over, the release, so the
 system is asked whether the button is still down (tried by hand). On macOS the system is asked for both
-the button and the key, during the drag (**not verified**: check that Esc does not float the panel).
+the button and the key, during the drag (tried by hand).
 
 Content is never offered a dock drag: it goes to the dock area the content is in, also over a widget that
 accepts whatever is dragged onto it (`QQuickWidget` does). Other drags reach the content as usual.
