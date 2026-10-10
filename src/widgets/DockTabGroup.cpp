@@ -170,7 +170,7 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
             toggleMaximized();
     });
     connect(m_menuButton, &QToolButton::clicked, this, &DockTabGroup::showGroupMenu);
-    connect(m_floatButton, &QToolButton::clicked, this, &DockTabGroup::toggleFloating);
+    connect(m_floatButton, &QToolButton::clicked, this, [this] { toggleFloating(); });
     connect(m_autoHideButton, &QToolButton::clicked, this, &DockTabGroup::autoHideGroup);
     connect(m_closeButton, &QToolButton::clicked, this, [this] {
         if (DockFloatingWindow *floating = m_windowTitle ? floatingWindow() : nullptr)
@@ -250,15 +250,20 @@ void DockTabGroup::headerDoubleClicked(bool onTab)
     }
 }
 
-void DockTabGroup::toggleFloating()
+void DockTabGroup::toggleFloating(bool wholeGroup)
 {
-    if (!m_manager || !m_manager->userMay(m_current, DockFeature::Floatable))
+    if (!m_manager)
         return;
+    const QStringList moved = wholeGroup ? m_panels : QStringList{m_current};
+    for (const PanelId &id : moved) {
+        if (!m_manager->userMay(id, DockFeature::Floatable))
+            return;
+    }
     const DockPanel *panel = m_manager->panels.value(m_current);
     if (panel && panel->isFloating())
-        (void)m_manager->dockBack(m_current);
+        (void)m_manager->dockBack(moved);
     else
-        (void)m_manager->floatPanels(m_current, false, QRect());
+        (void)m_manager->floatPanels(m_current, wholeGroup, QRect());
 }
 
 // The whole group goes into the bar of one border, as far as its panels may.
@@ -330,9 +335,10 @@ void DockTabGroup::showPanelMenu(const PanelId &panel, const QPoint &globalPos)
 }
 
 // The title bar of GroupHeader::TitleBar stands for the current panel: drag
-// it to move that panel, double click to float it or dock it again. With
-// tabs in it, whatever of it shows beside them is like the empty part of the
-// tab bar and stands for the group.
+// it to move that panel, double click to float it or dock it again. Or, if
+// the manager says so (setTitleBarMovesGroup()), for all the panels of the
+// group. With tabs in it, whatever of it shows beside them is like the empty
+// part of the tab bar and stands for the group.
 bool DockTabGroup::titleBarEvent(QEvent *event)
 {
     if (!m_manager)
@@ -354,7 +360,7 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
             && (mouse->position().toPoint() - m_titlePress).manhattanLength()
                    >= QApplication::startDragDistance()) {
             m_titlePressed = false; // one drag per press
-            if (m_titleMode)
+            if (m_titleMode && !m_manager->titleBarMovesGroup)
                 startPanelDrag(m_current, m_titleBar->grab());
             else
                 startGroupDrag();
@@ -369,7 +375,7 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
             m_titlePressed = false;
             if (m_manager->groupHeaderFor(m_area->containerId())
                 == DockManager::GroupHeader::TitleBar) {
-                toggleFloating();
+                toggleFloating(m_manager->titleBarMovesGroup);
             } else {
                 headerDoubleClicked(false);
             }

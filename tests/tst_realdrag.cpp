@@ -119,6 +119,62 @@ private Q_SLOTS:
         QVERIFY(!target->overlay()->isVisible());
     }
 
+    // The title bar of a group of stacked panels: dragged, it takes the
+    // current panel along, or all of them (setTitleBarMovesGroup()).
+    void dragATitleBar_data()
+    {
+        QTest::addColumn<bool>("wholeGroup");
+        QTest::addColumn<QString>("left");
+        QTest::addColumn<QString>("arrived");
+        QTest::newRow("the current panel") << false << p("b") << p("H(c, a)");
+        QTest::newRow("the whole group") << true << p("<empty>") << p("H(c, a|b)");
+    }
+
+    void dragATitleBar()
+    {
+        QFETCH(bool, wholeGroup);
+        QFETCH(QString, left);
+        QFETCH(QString, arrived);
+        TwoWindows f;
+        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setTitleBarMovesGroup(wholeGroup);
+        f.windowA.move(20, 20);
+        f.windowB.move(940, 40);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.activatePanel(p("a")));
+        QVERIFY(f.b->addPanel(p("c")));
+        DockAreaWidget *target = areaOf(f.b);
+        QWidget *title = areaOf(f.a)->groupOfPanel(p("a"))->titleBar();
+        DockDragController *controller = priv(f.manager)->drag;
+
+        const QPoint press(40, title->height() / 2);
+        const QPoint start = title->mapToGlobal(press);
+        const QRect group = target->groupOfPanel(p("c"))->geometry();
+        const QPoint over = target->mapToGlobal(QPoint(group.right() - 60, group.center().y()));
+        QStringList dragged;
+        bool done = false;
+
+        QTest::mousePress(title, Qt::LeftButton, {}, press);
+        QTest::mouseMove(title, press + QPoint(40, 40));
+        script(this, {
+            [&] { moveTo(&f.windowA, start + QPoint(80, 80)); },
+            [&] { moveTo(&f.windowB, over - QPoint(30, 0)); },
+            [&] { moveTo(&f.windowB, over); },
+            [&] {
+                if (controller->session())
+                    dragged = controller->session()->panels;
+            },
+            [&] { releaseAt(&f.windowB, over); },
+        }, &done);
+        QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
+
+        QCOMPARE(dragged, wholeGroup ? QStringList({p("a"), p("b")}) : QStringList{p("a")});
+        QCOMPARE(describe(f.a), left);
+        QCOMPARE(describe(f.b), arrived);
+    }
+
     // Content that takes drops of its own (a text editor) must not swallow a
     // dock drag: it refuses the dock mime type and Qt offers the drag to its
     // parents, up to the dock area.

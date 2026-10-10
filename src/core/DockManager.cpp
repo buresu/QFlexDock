@@ -449,32 +449,52 @@ DockResult DockManagerPrivate::floatPanels(const PanelId &panel, bool wholeGroup
 
 DockResult DockManagerPrivate::dockBack(const PanelId &panel)
 {
-    if (!panels.contains(panel))
-        return unknownPanel(panel);
-    const std::optional<PanelLocation> location = state.locate(panel);
-    if (!location)
-        return fail(DockError::NotPlaced, QStringLiteral("panel '%1' is not placed").arg(panel));
-    if (location->isDocked())
-        return DockResult::success();
+    return dockBack(QStringList{panel});
+}
 
+DockResult DockManagerPrivate::dockBack(const QStringList &ids)
+{
     LayoutState next = state;
-    QString fallback = workspaceIdFor(location->container);
-    if (fallback.isEmpty())
-        fallback = defaultWorkspaceId();
-    PanelMemory memory = next.memory.value(panel);
-    if (memory.floating || memory.container.isEmpty()) {
-        // The memory does not describe a docked position.
-        memory = PanelMemory{};
-        memory.container = fallback;
-    }
-    memory.autoHideEdge = DockArea::None;
-    memory.reopen = false;
+    QStringList returning;
+    QString fallback;
+    for (const PanelId &panel : ids) {
+        if (!panels.contains(panel))
+            return unknownPanel(panel);
+        const std::optional<PanelLocation> location = state.locate(panel);
+        if (!location) {
+            return fail(DockError::NotPlaced,
+                        QStringLiteral("panel '%1' is not placed").arg(panel));
+        }
+        if (location->isDocked())
+            continue;
 
-    if (DockResult r = next.detach(panel, false); !r)
-        return r;
-    next.memory.insert(panel, memory);
-    if (DockResult r = next.reattach(panel, fallback); !r)
-        return r;
+        QString workspace = workspaceIdFor(location->container);
+        if (workspace.isEmpty())
+            workspace = defaultWorkspaceId();
+        if (fallback.isEmpty())
+            fallback = workspace;
+        PanelMemory memory = next.memory.value(panel);
+        if (memory.floating || memory.container.isEmpty()) {
+            // The memory does not describe a docked position.
+            memory = PanelMemory{};
+            memory.container = workspace;
+        }
+        memory.autoHideEdge = DockArea::None;
+        memory.reopen = false;
+
+        if (DockResult r = next.detach(panel, false); !r)
+            return r;
+        next.memory.insert(panel, memory);
+        returning.append(panel);
+    }
+    if (returning.isEmpty())
+        return DockResult::success();
+    // Several go back together: all of them out first, or one would find
+    // the others where they are now and stay with them.
+    const DockResult placed = returning.size() == 1 ? next.reattach(returning.first(), fallback)
+                                                    : next.reattachAll(returning, fallback);
+    if (!placed)
+        return placed;
     return apply(std::move(next), true);
 }
 
@@ -2164,6 +2184,16 @@ DockManager::FloatingWindowType DockManager::floatingWindowType() const
 void DockManager::setFloatingWindowType(FloatingWindowType type)
 {
     d->floatingWindowType = type;
+}
+
+bool DockManager::titleBarMovesGroup() const
+{
+    return d->titleBarMovesGroup;
+}
+
+void DockManager::setTitleBarMovesGroup(bool enabled)
+{
+    d->titleBarMovesGroup = enabled;
 }
 
 DockManager::AutoHideReveal DockManager::autoHideReveal() const

@@ -182,7 +182,8 @@ private:
     [[nodiscard]] bool moveWindowInstead(qsizetype draggedPanels, bool byHeader);
     [[nodiscard]] DockFloatingWindow *floatingWindow() const;
     void toggleMaximized();
-    void toggleFloating();
+    /// `wholeGroup`: every panel of the group, not just the current one.
+    void toggleFloating(bool wholeGroup = false);
     void autoHideGroup();
     void closeByUser(const PanelId &panel);
     [[nodiscard]] bool titleBarEvent(QEvent *event);

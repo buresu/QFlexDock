@@ -167,6 +167,9 @@ void Workbench::setUpDocking()
     m_manager.setLinkedSplittersEnabled(false);
     m_manager.setCornerResizeEnabled(false);
     m_manager.setFloatsOnOutsideDrop(true);
+    // A title bar takes all the tool windows stacked under it along; one of
+    // them is taken out by its tab.
+    m_manager.setTitleBarMovesGroup(true);
     m_manager.setFloatingWindowType(DockManager::FloatingWindowType::Tool);
     // What is put away comes out beside the panes, not over them.
     m_manager.setAutoHideReveal(DockManager::AutoHideReveal::Beside);

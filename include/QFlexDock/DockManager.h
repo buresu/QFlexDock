@@ -109,7 +109,8 @@ public:
         /// Its tabs, always.
         Tabs,
         /// A title bar naming the current panel. Tabs appear only once the
-        /// group holds more than one panel, and then at its bottom.
+        /// group holds more than one panel, and then at its bottom. See
+        /// setTitleBarMovesGroup() for what the title bar takes along.
         TitleBar,
     };
     Q_ENUM(GroupHeader)
@@ -320,6 +321,13 @@ public:
     /// windows it owns, in place of the theme's (DockTheme::titleButtons).
     void setTitleButtons(DockWorkspace *workspace, DockTitleButtons buttons);
     [[nodiscard]] DockTitleButtons titleButtons(const DockWorkspace *workspace) const;
+    [[nodiscard]] bool titleBarMovesGroup() const;
+    /// What the title bar of GroupHeader::TitleBar stands for (default
+    /// false): the current panel, or with true all the panels stacked under
+    /// it. Dragging it then moves the whole tab group, and a double click
+    /// floats the group or docks all of it again. One panel is still moved
+    /// by its tab.
+    void setTitleBarMovesGroup(bool enabled);
     [[nodiscard]] AutoHideReveal autoHideReveal() const;
     /// Where a panel that slides out of an auto-hide bar goes (default Over).
     /// Either way a click elsewhere sends it back.

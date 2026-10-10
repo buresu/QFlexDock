@@ -142,6 +142,8 @@ public:
     DockResult floatPanels(const PanelId &panel, bool wholeGroup, QRect geometry,
                            DockFloatingWindow *adopt = nullptr);
     DockResult dockBack(const PanelId &panel);
+    /// Several panels as one change; those that are docked stay.
+    DockResult dockBack(const QStringList &panels);
     DockResult setAutoHide(const PanelId &panel, bool autoHide, DockArea edge);
     /// Several panels into one auto-hide bar, as one change. `edge` None:
     /// the border nearest to the first of them.
@@ -253,6 +255,7 @@ public:
     bool centerDrop = true;
     bool tabDragPreview = false;
     DockManager::GroupHeader groupHeader = DockManager::GroupHeader::Tabs;
+    bool titleBarMovesGroup = false;
     DockManager::AutoHideReveal autoHideReveal = DockManager::AutoHideReveal::Over;
     bool floatOnOutsideDrop = false;
     bool dragGhostEnabled = true;

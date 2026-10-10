@@ -744,6 +744,56 @@ private Q_SLOTS:
         QVERIFY(!group(f.b, "a")->closeButton()->isVisible());
     }
 
+    // setTitleBarMovesGroup(): the title bar stands for all the panels under
+    // it. (Dragging it is in tst_realdrag.)
+    void titleBarCanStandForTheWholeGroup()
+    {
+        TwoWindows f;
+        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QCOMPARE(f.manager.titleBarMovesGroup(), false);
+        const auto groupOfB = [&f]() -> DockTabGroup * {
+            if (DockFloatingWindow *window = onlyFloatingWindow(f.manager))
+                return window->area()->groupOfPanel(p("b"));
+            return areaOf(f.a)->groupOfPanel(p("b"));
+        };
+        const auto doubleClickTitle = [&] {
+            // Beside the title, where a floating window has no button.
+            QTest::mouseDClick(groupOfB()->titleBar(), Qt::LeftButton, {}, QPoint(40, 6));
+            QCoreApplication::processEvents();
+        };
+
+        // As it is: the current panel alone.
+        QVERIFY(f.manager.activatePanel(p("b")));
+        doubleClickTitle();
+        QVERIFY(f.manager.panel(p("b"))->isFloating());
+        QVERIFY(!f.manager.panel(p("c"))->isFloating());
+        QVERIFY(f.manager.undo());
+        QCOMPARE(describe(f.a), p("H(a, b|c)"));
+
+        // All of them, there and back, each way as one change.
+        f.manager.setTitleBarMovesGroup(true);
+        QVERIFY(f.manager.titleBarMovesGroup());
+        QSignalSpy changed(&f.manager, &DockManager::layoutChanged);
+        doubleClickTitle();
+        QCOMPARE(changed.size(), 1);
+        QVERIFY(f.manager.panel(p("b"))->isFloating());
+        QVERIFY(f.manager.panel(p("c"))->isFloating());
+        QCOMPARE(describe(f.a), p("a"));
+        doubleClickTitle();
+        QCOMPARE(changed.size(), 2);
+        QCOMPARE(describe(f.a), p("H(a, b|c)"));
+        QVERIFY(!onlyFloatingWindow(f.manager));
+
+        // Not if one of them may not float.
+        f.manager.panel(p("c"))->setFeatures(AllDockFeatures & ~DockFeatures(DockFeature::Floatable));
+        doubleClickTitle();
+        QCOMPARE(describe(f.a), p("H(a, b|c)"));
+    }
+
     // The button that puts a group away into the bar of the nearest border.
     void autoHideButtonPutsTheGroupAway()
     {

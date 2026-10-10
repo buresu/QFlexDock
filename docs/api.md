@@ -161,6 +161,10 @@ changes; the layout changes with the drop, and Esc puts everything back.
 | `Tabs` (default) | The tabs, always. Drag a tab to move a panel, the empty part of the bar to move the group |
 | `TitleBar` | A title bar naming the current panel; drag it to move that panel, double click to float it or dock it again. Tabs appear below the content once a group holds more than one panel |
 
+With `setTitleBarMovesGroup(true)` the title bar stands for all the panels stacked under it: dragging it
+moves the whole tab group, and a double click floats the group or docks all of it again, as one change.
+A single panel is then moved by its tab.
+
 `setGroupHeader(workspace, header)` gives one workspace, and the floating windows it owns, a header of its
 own: documents under their tabs in the middle of tool panels with title bars. A panel takes the header of
 where it is put.
