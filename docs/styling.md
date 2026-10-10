@@ -119,7 +119,8 @@ three colors.
 Content that paints every pixel of its rectangle (a `QQuickWidget`, a video, a widget that fills its
 background) covers the corners of the pane. `paneCornerColor` names the color behind the group, and the
 corners are then drawn in it on top of the content, with the line around the pane. Nothing but the corners
-is covered, and the mouse goes through them.
+is covered, and the mouse goes through them. `transparent` draws none, for a rule that takes them away
+again from some of the groups.
 
 ### Drop guide properties
 

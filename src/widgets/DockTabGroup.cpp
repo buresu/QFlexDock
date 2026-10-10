@@ -1050,7 +1050,8 @@ void DockTabGroup::paneChanged()
 // draw: a pane with round corners, and a color for what is behind it.
 void DockTabGroup::updatePaneCorners()
 {
-    const bool wanted = drawsPane() && m_paneRadius > 0 && m_paneCornerColor.isValid();
+    const bool wanted = drawsPane() && m_paneRadius > 0 && m_paneCornerColor.isValid()
+        && m_paneCornerColor.alpha() > 0;
     if (!wanted) {
         if (m_paneCorners)
             m_paneCorners->hide();

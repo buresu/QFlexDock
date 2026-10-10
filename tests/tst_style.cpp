@@ -1159,6 +1159,13 @@ private Q_SLOTS:
         QCOMPARE(image.pixelColor(host.bottomRight()), behind);
         QCOMPARE(image.pixelColor(host.right() - 12, host.bottom() - 12), own);
 
+        // Nor does a transparent color draw anything: that is how a rule for
+        // some of the groups takes the corners away again.
+        qApp->setStyleSheet(pane.arg(QStringLiteral("qproperty-paneCornerColor: transparent;")));
+        QCoreApplication::processEvents();
+        host = group->contentHost()->geometry();
+        QCOMPARE(picture(group).pixelColor(host.bottomRight()), own);
+
         // A pane with square corners has none to draw.
         qApp->setStyleSheet(pane.arg(QStringLiteral("qproperty-paneCornerColor: #ffff00;"))
                                 .replace(QStringLiteral("paneRadius: 12"), QStringLiteral("paneRadius: 0")));
