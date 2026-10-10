@@ -46,7 +46,7 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
-        QCOMPARE(f.manager.groupHeader(), DockManager::GroupHeader::Tabs);
+        QCOMPARE(f.manager.groupHeader(), DockGroupHeader::Tabs);
         const DockTabGroup *group = areaOf(f.a)->groupOfPanel(p("a"));
         QVERIFY(group->isHeaderVisible());
         QVERIFY(group->tabBar()->isVisible());
@@ -61,7 +61,7 @@ private Q_SLOTS:
     void titleBarShowsTheCurrentPanelAndTabsOnlyWhenStacked()
     {
         TwoWindows f;
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         f.manager.panel(p("a"))->setTitle(p("Alpha"));
         f.manager.panel(p("b"))->setTitle(p("Beta"));
         f.show();
@@ -105,7 +105,7 @@ private Q_SLOTS:
         QCOMPARE(group->titleLabel()->text(), p("Alpha 2"));
 
         // Back to one: the tabs go again.
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         QTRY_VERIFY(!group->tabBar()->isVisible());
         QTRY_COMPARE(inGroup(group, group->contentHost()).bottom(), group->contentsRect().bottom());
     }
@@ -121,13 +121,13 @@ private Q_SLOTS:
             group->style()->styleHint(QStyle::SH_TabBar_CloseButtonPosition, nullptr, group->tabBar()));
         QVERIFY(group->tabBar()->tabButton(0, side));
 
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         QTRY_VERIFY(group->titleLabel()->isVisible());
         QCOMPARE(group->tabBar()->parentWidget(), group);
         QVERIFY(inGroup(group, group->tabBar()).top() > inGroup(group, group->contentHost()).top());
         QCOMPARE(group->tabBar()->count(), 2);
 
-        f.manager.setGroupHeader(DockManager::GroupHeader::Tabs);
+        f.manager.setGroupHeader(DockGroupHeader::Tabs);
         QTRY_VERIFY(!group->titleLabel()->isVisible());
         QCOMPARE(group->tabBar()->parentWidget(), group->titleBar());
         QTRY_VERIFY(inGroup(group, group->tabBar()).bottom()
@@ -135,13 +135,13 @@ private Q_SLOTS:
         QCOMPARE(group->tabBar()->count(), 2);
         // Closable tabs have their buttons back.
         QTRY_VERIFY(group->tabBar()->tabButton(0, side));
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
     }
 
     void titleButtonsFollowTheThemeAndThePanel()
     {
         TwoWindows f;
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         DockTheme theme;
         theme.titleButtons = DockTitleButton::Float | DockTitleButton::Close;
         f.manager.setTheme(theme);
@@ -268,9 +268,9 @@ private Q_SLOTS:
         QVERIFY(moved->widgetForAction(&split));
         QVERIFY(!group->widgetForAction(&split));
         // With a title bar instead of tabs they are there just the same.
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         QVERIFY(moved->widgetForAction(&split)->isVisible());
-        f.manager.setGroupHeader(DockManager::GroupHeader::Tabs);
+        f.manager.setGroupHeader(DockGroupHeader::Tabs);
 
         // A destroyed action drops out; so does everything on request.
         delete otherAction;
@@ -280,7 +280,7 @@ private Q_SLOTS:
         QVERIFY(!moved->actionBar()->isVisible());
         QVERIFY(!edit->isVisible());
         // The widget of a QWidgetAction survives the group it was shown in.
-        QVERIFY(f.manager.hidePanel(p("a")));
+        QVERIFY(f.manager.closePanel(p("a")));
         QCoreApplication::sendPostedEvents(nullptr, QEvent::DeferredDelete);
         QCOMPARE(filter.defaultWidget(), edit);
     }
@@ -288,7 +288,7 @@ private Q_SLOTS:
     void floatButtonAndDoubleClickToggleFloating()
     {
         TwoWindows f;
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         DockTheme theme;
         theme.titleButtons = DockTitleButton::Float;
         f.manager.setTheme(theme);
@@ -491,7 +491,7 @@ private Q_SLOTS:
 
         // With a title bar the tabs are elsewhere; the actions stay.
         QVERIFY(f.manager.activatePanel(p("a")));
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         QCoreApplication::processEvents();
         QVERIFY(group->widgetForAction(&add)->isVisible());
         QVERIFY(group->widgetForAction(&list)->isVisible());
@@ -499,7 +499,7 @@ private Q_SLOTS:
                 < inGroup(group, group->titleLabel()).left());
         QVERIFY(inGroup(group, group->titleLabel()).right()
                 < inGroup(group, group->widgetForAction(&add)).left());
-        f.manager.setGroupHeader(DockManager::GroupHeader::Tabs);
+        f.manager.setGroupHeader(DockGroupHeader::Tabs);
         a->setTitleActions({}, DockTitlePlace::Start);
         a->setTitleActions({}, DockTitlePlace::AfterTabs);
         a->setTitleActions({});
@@ -575,7 +575,7 @@ private Q_SLOTS:
 
         // With room again, the buttons are back.
         f.windowA.resize(900, 600);
-        QVERIFY(f.manager.hidePanels({p("d"), p("e"), p("f"), p("g"), p("h"), p("i"), p("j"), p("k"),
+        QVERIFY(f.manager.closePanels({p("d"), p("e"), p("f"), p("g"), p("h"), p("i"), p("j"), p("k"),
                                       p("l"), p("m"), p("n")}));
         QTRY_COMPARE(bar->tabRect(0).width(), 150);
         QTRY_VERIFY(closeButton(0)->isVisible());
@@ -592,7 +592,7 @@ private Q_SLOTS:
     void minimalWindowIsMaximizedByItsHeader()
     {
         TwoWindows f;
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.floatPanel(p("b"), QRect(40, 40, 420, 300)));
@@ -637,8 +637,8 @@ private Q_SLOTS:
     void minimalFrameLeavesTheHeadersToMoveTheWindow()
     {
         TwoWindows f;
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
@@ -701,11 +701,11 @@ private Q_SLOTS:
     void aWorkspaceCanHaveAHeaderOfItsOwn()
     {
         TwoWindows f;
-        f.manager.setGroupHeader(f.a, DockManager::GroupHeader::TitleBar);
+        f.a->setGroupHeader(DockGroupHeader::TitleBar);
         f.show();
-        QCOMPARE(f.manager.groupHeader(), DockManager::GroupHeader::Tabs);
-        QCOMPARE(f.manager.groupHeader(f.a), DockManager::GroupHeader::TitleBar);
-        QCOMPARE(f.manager.groupHeader(f.b), DockManager::GroupHeader::Tabs);
+        QCOMPARE(f.manager.groupHeader(), DockGroupHeader::Tabs);
+        QCOMPARE(f.a->groupHeader(), DockGroupHeader::TitleBar);
+        QCOMPARE(f.b->groupHeader(), DockGroupHeader::Tabs);
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.b->addPanel(p("b")));
         const auto group = [](DockWorkspace *workspace, const char *panel) {
@@ -723,9 +723,9 @@ private Q_SLOTS:
         QCOMPARE(group(f.b, "a")->tabBar()->parentWidget(), group(f.b, "a")->titleBar());
 
         // The manager's setting is for the workspaces that have none.
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         QVERIFY(group(f.b, "a")->titleLabel()->isVisible());
-        f.manager.setGroupHeader(f.b, DockManager::GroupHeader::Tabs);
+        f.b->setGroupHeader(DockGroupHeader::Tabs);
         QVERIFY(group(f.b, "a")->tabBar()->isVisible());
         QVERIFY(!group(f.b, "a")->titleLabel()->isVisible());
         QVERIFY(group(f.a, "b")->titleLabel()->isVisible());
@@ -733,15 +733,34 @@ private Q_SLOTS:
         // The same goes for the buttons the headers have.
         QVERIFY(group(f.a, "b")->menuButton()->isVisible());
         QVERIFY(group(f.b, "a")->menuButton()->isVisible());
-        f.manager.setTitleButtons(f.b, DockTitleButton::Close);
-        QCOMPARE(f.manager.titleButtons(f.b), DockTitleButtons(DockTitleButton::Close));
-        QCOMPARE(f.manager.titleButtons(f.a), f.manager.theme().titleButtons);
+        f.b->setTitleButtons(DockTitleButton::Close);
+        QCOMPARE(f.b->titleButtons(), DockTitleButtons(DockTitleButton::Close));
+        QCOMPARE(f.a->titleButtons(), f.manager.theme().titleButtons);
         QVERIFY(!group(f.b, "a")->menuButton()->isVisible());
         QVERIFY(group(f.b, "a")->closeButton()->isVisible());
         QVERIFY(group(f.a, "b")->menuButton()->isVisible());
         QVERIFY(!group(f.a, "b")->closeButton()->isVisible());
-        f.manager.setTitleButtons(f.b, {});
+        f.b->setTitleButtons({});
         QVERIFY(!group(f.b, "a")->closeButton()->isVisible());
+
+        // Unset, they are the manager's again.
+        f.b->unsetTitleButtons();
+        QCOMPARE(f.b->titleButtons(), f.manager.theme().titleButtons);
+        QVERIFY(group(f.b, "a")->menuButton()->isVisible());
+        f.b->unsetGroupHeader();
+        QCOMPARE(f.b->groupHeader(), DockGroupHeader::TitleBar);
+        QVERIFY(group(f.b, "a")->titleLabel()->isVisible());
+
+        // And as properties.
+        QVERIFY(f.b->setProperty("groupHeader", QVariant::fromValue(DockGroupHeader::Tabs)));
+        QCOMPARE(f.b->groupHeader(), DockGroupHeader::Tabs);
+        QVERIFY(group(f.b, "a")->tabBar()->isVisible());
+        const QMetaObject *meta = f.b->metaObject();
+        QVERIFY(meta->property(meta->indexOfProperty("groupHeader")).reset(f.b));
+        QCOMPARE(f.b->property("groupHeader").value<DockGroupHeader>(), DockGroupHeader::TitleBar);
+        QVERIFY(f.b->setProperty("titleButtons",
+                                 QVariant::fromValue(DockTitleButtons(DockTitleButton::Close))));
+        QVERIFY(group(f.b, "a")->closeButton()->isVisible());
     }
 
     // setTitleBarMovesGroup(): the title bar stands for all the panels under
@@ -749,7 +768,7 @@ private Q_SLOTS:
     void titleBarCanStandForTheWholeGroup()
     {
         TwoWindows f;
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.a->addPanel(p("b"), DockArea::Right));

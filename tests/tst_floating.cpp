@@ -61,7 +61,7 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildLayout(f);
-        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingFrame::Custom);
+        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingWindowFrame::Custom);
         QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
         DockFloatingWindow *window = floatingWindowOf(f, "b");
         QVERIFY(window);
@@ -181,7 +181,7 @@ private Q_SLOTS:
         QVERIFY(bare->area()->groupOfPanel(p("e"))->titleLabel()->isVisible());
 
         // The other frames have no title row to leave to a header: a tab is a tab.
-        for (const auto frame : {DockManager::FloatingFrame::Minimal, DockManager::FloatingFrame::Native}) {
+        for (const auto frame : {DockManager::FloatingWindowFrame::Minimal, DockManager::FloatingWindowFrame::Native}) {
             f.manager.setFloatingWindowFrame(frame);
             QVERIFY(f.manager.dockPanel(p("a")));
             QVERIFY(f.manager.floatPanel(p("a"), QRect(100, 100, 300, 200)));
@@ -199,8 +199,8 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildLayout(f);
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
-        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingFrame::Native);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Native);
+        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingWindowFrame::Native);
         QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
         DockFloatingWindow *window = floatingWindowOf(f, "b");
         QVERIFY(window);
@@ -235,7 +235,7 @@ private Q_SLOTS:
         QTRY_COMPARE(window->size(), QSize(360, 260));
         // The frame is another matter.
         QVERIFY(window->windowFlags().testFlag(Qt::FramelessWindowHint));
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Native);
         QVERIFY(f.manager.floatPanel(p("c"), QRect(120, 120, 300, 200)));
         QCOMPARE(floatingWindowOf(f, "c")->windowType(), Qt::Tool);
         QVERIFY(!floatingWindowOf(f, "c")->windowFlags().testFlag(Qt::FramelessWindowHint));
@@ -265,10 +265,10 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildLayout(f);
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Native);
         QVERIFY(f.manager.floatPanel(p("a"), QRect(40, 40, 300, 200)));
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Custom);
-        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingFrame::Custom);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Custom);
+        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingWindowFrame::Custom);
         // Windows that exist keep the frame they were created with.
         QVERIFY(!floatingWindowOf(f, "a")->hasCustomFrame());
 
@@ -345,8 +345,8 @@ private Q_SLOTS:
         QTRY_VERIFY(!guard);
 
         // Shown again, they come back in a window with the frame now in force.
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
-        QVERIFY(f.manager.showPanel(p("b")));
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Native);
+        QVERIFY(f.manager.openPanel(p("b")));
         QVERIFY(f.manager.panel(p("b"))->isFloating());
         QVERIFY(!floatingWindowOf(f, "b")->hasCustomFrame());
     }
@@ -356,7 +356,7 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildLayout(f);
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Custom);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Custom);
         QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
         QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Right)); // for the title row
         DockFloatingWindow *window = floatingWindowOf(f, "b");
@@ -437,19 +437,19 @@ private Q_SLOTS:
         // Torn off again, and closed: shown once more, it has its window back.
         QVERIFY(manager.floatPanel(p("b"), QRect(100, 100, 320, 240)));
         QCOMPARE(d->floatingWindows.size(), 2);
-        QVERIFY(manager.hidePanel(p("b")));
+        QVERIFY(manager.closePanel(p("b")));
         QCOMPARE(d->floatingWindows.size(), 1);
         QVERIFY(manager.floatPanel(p("b")));
         QCOMPARE(d->floatingWindows.size(), 2);
         QCOMPARE(d->state.find(d->state.locate(p("b"))->container)->geometry.size(),
                  QSize(320, 240));
-        QVERIFY(manager.hidePanel(p("b")));
-        QVERIFY(manager.showPanel(p("b")));
+        QVERIFY(manager.closePanel(p("b")));
+        QVERIFY(manager.openPanel(p("b")));
         QVERIFY(manager.panel(p("b"))->isFloating());
 
         // Nothing is left when every panel is closed, and undo brings the
         // windows back.
-        QVERIFY(manager.hidePanels({p("a"), p("b"), p("c")}));
+        QVERIFY(manager.closePanels({p("a"), p("b"), p("c")}));
         QVERIFY(d->floatingWindows.isEmpty());
         QVERIFY(d->state.containers.empty());
         QVERIFY(manager.undo());
@@ -463,7 +463,7 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildLayout(f);
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
         QVERIFY(f.manager.floatPanel(p("a"), QRect(40, 40, 300, 200)));
         DockFloatingWindow *plain = floatingWindowOf(f, "a");
         QCOMPARE(plain->borderWidth(), 4);
@@ -532,7 +532,7 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildLayout(f);
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
         QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 420, 300)));
         DockFloatingWindow *window = floatingWindowOf(f, "b");
         QVERIFY(QTest::qWaitForWindowExposed(window));
@@ -546,7 +546,7 @@ private Q_SLOTS:
         // Another tab, a tab less, another current tab.
         QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
         QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Center));
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         QVERIFY(f.manager.activatePanel(p("b")));
         QTest::qWait(200);
         QVERIFY(window->isMaximized());
@@ -804,7 +804,7 @@ private Q_SLOTS:
         QVERIFY(window->isVisible());
 
         // A ghost is made that way before it is shown, and stays on top.
-        DockFloatingWindow ghost(priv(f.manager), QString(), DockManager::FloatingFrame::Native);
+        DockFloatingWindow ghost(priv(f.manager), QString(), DockManager::FloatingWindowFrame::Native);
         ghost.setCarriedAlong(true);
         QVERIFY(ghost.windowFlags().testFlag(Qt::WindowTransparentForInput));
         QVERIFY(ghost.windowFlags().testFlag(Qt::WindowStaysOnTopHint));
@@ -872,8 +872,8 @@ private Q_SLOTS:
         f.show();
         buildLayout(f);
         f.manager.setFloatsOnOutsideDrop(true);
-        f.manager.setFloatingWindowFrame(customFrame ? DockManager::FloatingFrame::Custom
-                                                     : DockManager::FloatingFrame::Native);
+        f.manager.setFloatingWindowFrame(customFrame ? DockManager::FloatingWindowFrame::Custom
+                                                     : DockManager::FloatingWindowFrame::Native);
         // The window system's frame is left off for as long as the window is
         // a ghost, where it can be had afterwards (on Wayland: from Qt 6.11).
         const bool bare = !customFrame
@@ -969,7 +969,7 @@ private Q_SLOTS:
         buildLayout(f);
         f.manager.setFloatsOnOutsideDrop(true);
         // (The picture alone: places in the ghost are places in the group.)
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Native);
         QAction add(p("+"));
         for (const char *id : {"b", "c"})
             f.manager.panel(p(id))->setTitleActions({&add}, DockTitlePlace::AfterTabs);
@@ -1123,7 +1123,7 @@ private Q_SLOTS:
         QVERIFY(controller->begin(p("b"), false));
         QPointer<DockFloatingWindow> ghost = controller->createGhost();
         QVERIFY(ghost);
-        const DropTarget target{p("B"), f.b->layoutTree().findPanel(p("d"))->id, DockArea::Right, -1, 0.5};
+        const DropTarget target{p("B"), areaOf(f.b)->tree().findPanel(p("d"))->id, DockArea::Right, -1, 0.5};
         QVERIFY(controller->drop(target));
         controller->finish(Qt::MoveAction, ghost, false);
         QCOMPARE(describe(f.b), p("H(d, b)"));
@@ -1254,7 +1254,7 @@ private Q_SLOTS:
         QVERIFY(!controller->carryingUnsupported());
 
         // Docked by dropping it on the workspace.
-        const NodeId group = f.a->layoutTree().findPanel(p("b"))->id;
+        const NodeId group = areaOf(f.a)->tree().findPanel(p("b"))->id;
         QVERIFY(controller->drop(DropTarget{p("A"), group, DockArea::Left, -1, 0.5}));
         controller->setCarriedWindow(nullptr);
         controller->finish(Qt::MoveAction, nullptr, true);
@@ -1333,7 +1333,7 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildLayout(f);
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Custom);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Custom);
         DockDragController *controller = priv(f.manager)->drag;
 
         // A floating window with a split inside: b above d.
@@ -1353,7 +1353,7 @@ private Q_SLOTS:
 
         // A split cannot become the tabs of a group, but docks on any edge.
         DockAreaWidget *area = areaOf(f.a);
-        const NodeId groupA = f.a->layoutTree().findPanel(p("a"))->id;
+        const NodeId groupA = areaOf(f.a)->tree().findPanel(p("a"))->id;
         const DockAreas onGroup = priv(f.manager)->allowedDropAreas(*session, p("A"), groupA);
         QVERIFY(!onGroup.testFlag(DockArea::Center));
         QCOMPARE(onGroup & EdgeDockAreas, EdgeDockAreas);
@@ -1384,7 +1384,7 @@ private Q_SLOTS:
         QVERIFY(session && session->sourceIsTabs);
         QVERIFY(priv(f.manager)->allowedDropAreas(*session, p("A"), groupA).testFlag(DockArea::Center));
         QVERIFY(controller->drop(DropTarget{p("A"), groupA, DockArea::Center, -1, -1}));
-        QCOMPARE(f.a->layoutTree().findPanel(p("a"))->panels, QStringList({p("a"), p("d"), p("e")}));
+        QCOMPARE(areaOf(f.a)->tree().findPanel(p("a"))->panels, QStringList({p("a"), p("d"), p("e")}));
         QCOMPARE(priv(f.manager)->floatingWindows.size(), 0);
 
         // Panels that may not be moved keep their window from being docked.

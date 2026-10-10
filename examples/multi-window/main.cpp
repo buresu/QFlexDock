@@ -37,7 +37,7 @@ QMainWindow *createWindow(DockManager &manager, const QString &workspaceId)
         // Show it here if it is closed, close it if it is open anywhere.
         QObject::connect(action, &QAction::triggered, workspace, [&manager, panel, workspace] {
             if (panel->isOpen())
-                manager.hidePanel(panel->id());
+                manager.closePanel(panel->id());
             else
                 manager.movePanel(panel->id(), workspace, DockArea::Center);
         });

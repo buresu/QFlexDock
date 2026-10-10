@@ -283,7 +283,7 @@ void Workbench::addViews()
                                      const std::function<QList<QAction *>(DockPanel *)> &own) {
         DockPanel *panel = addView(m_panel, id, title, content);
         QAction *maximize = action(panel, Glyph::ChevronUp, u"Maximize Panel Size"_s, [this, id] {
-            if (m_manager.maximizedPanel(m_workspace).isEmpty())
+            if (m_workspace->maximizedPanel().isEmpty())
                 (void)m_manager.maximizePanel(id);
             else
                 (void)m_manager.restoreMaximizedPanel();
@@ -407,13 +407,12 @@ void Workbench::setOpen(Area &area, bool open)
     // together: where they were, as wide as they were, in the same order.
     // The same goes for the user pulling them out of the edge they went to.
     if (!open) {
-        (void)m_manager.hidePanels(area.views);
+        (void)m_manager.closePanels(area.views);
         return;
     }
     const QStringList back = area.lastOpen.isEmpty() ? area.views : area.lastOpen;
-    (void)m_manager.showPanels(back);
-    if (const LayoutNode *group = m_workspace->layoutTree().findPanel(back.constFirst()))
-        (void)m_manager.activatePanel(group->active);
+    (void)m_manager.openPanels(back);
+    (void)m_manager.activatePanel(m_manager.currentPanel(back.constFirst()));
 }
 
 // An area is also put away by the user pushing its boundary against it, so
@@ -451,7 +450,7 @@ void Workbench::showSideView(const PanelId &id)
     const PanelId current = shown();
     if (current != id) {
         (void)m_manager.movePanel(id, current, DockArea::Center);
-        (void)m_manager.hidePanel(current);
+        (void)m_manager.closePanel(current);
     }
     (void)m_manager.activatePanel(id);
 }
@@ -459,7 +458,7 @@ void Workbench::showSideView(const PanelId &id)
 void Workbench::showView(Area &area, const PanelId &id)
 {
     setOpen(area, true);
-    (void)m_manager.showPanel(id);
+    (void)m_manager.openPanel(id);
 }
 
 // --- Documents ---------------------------------------------------------------------------
@@ -509,13 +508,13 @@ void Workbench::openFile(const QString &path, bool preview)
 
     if (!panel->isOpen()) {
         // Into the group the user worked in last.
-        (void)m_manager.addPanel(id, m_editors, DockArea::Center);
+        (void)m_editors->addPanel(id);
         panel->setPreviewTab(preview);
         if (preview) {
             // There is one preview; the next file looked at replaces it.
             DockPanel *previous = m_manager.panel(m_preview);
             if (previous && previous != panel && previous->isPreviewTab())
-                (void)m_manager.hidePanel(m_preview);
+                (void)m_manager.closePanel(m_preview);
             m_preview = id;
         }
     } else if (!preview) {
@@ -533,8 +532,7 @@ PanelId Workbench::currentDocument()
     const DockPanel *document = m_manager.panel(m_document);
     if (!document || !document->isOpen()) {
         // It was closed: whatever is in front in the middle now.
-        const auto groups = m_editors->layoutTree().tabNodes();
-        m_document = groups.empty() ? PanelId() : groups.front()->active;
+        m_document = m_manager.currentPanel(m_editors->panels().value(0));
     }
     return m_document;
 }
@@ -544,14 +542,12 @@ void Workbench::closeDocument()
     const PanelId id = currentDocument();
     if (id.isEmpty())
         return;
-    const LayoutNode *group = m_editors->layoutTree().findPanel(id);
-    QStringList others = group ? group->panels : QStringList();
+    QStringList others = m_manager.tabGroupPanels(id);
     others.removeAll(id);
-    (void)m_manager.hidePanel(id);
+    (void)m_manager.closePanel(id);
     // The tab that comes to the front in its place is the one worked in now.
     if (!others.isEmpty()) {
-        if (const LayoutNode *left = m_editors->layoutTree().findPanel(others.constFirst()))
-            (void)m_manager.activatePanel(left->active);
+        (void)m_manager.activatePanel(m_manager.currentPanel(others.constFirst()));
     } else if (const PanelId next = currentDocument(); !next.isEmpty()) {
         (void)m_manager.activatePanel(next);
     }
@@ -560,25 +556,20 @@ void Workbench::closeDocument()
 // One tab of several moves into a group of its own, right of the others.
 void Workbench::splitEditor(const PanelId &id)
 {
-    const LayoutNode *group = m_editors->layoutTree().findPanel(id);
-    if (!group || group->panels.size() < 2)
+    const QStringList group = m_manager.tabGroupPanels(id);
+    if (group.size() < 2)
         return;
-    const PanelId other = group->panels.constFirst() == id ? group->panels.at(1)
-                                                           : group->panels.constFirst();
+    const PanelId other = group.constFirst() == id ? group.at(1) : group.constFirst();
     (void)m_manager.movePanel(id, other, DockArea::Right);
     (void)m_manager.activatePanel(id);
 }
 
 void Workbench::closeEditors(const PanelId &id, bool others)
 {
-    QStringList group;
-    for (const LayoutNode *node : m_editors->layoutTree().tabNodes()) {
-        if (node->panels.contains(id))
-            group = node->panels;
-    }
-    for (const PanelId &panel : std::as_const(group)) {
+    const QStringList group = m_manager.tabGroupPanels(id);
+    for (const PanelId &panel : group) {
         if (!others || panel != id)
-            (void)m_manager.hidePanel(panel);
+            (void)m_manager.closePanel(panel);
     }
 }
 
@@ -591,7 +582,7 @@ void Workbench::syncChrome()
     m_sideBarButton->setChecked(isOpen(m_sideBar));
     m_panelButton->setChecked(isOpen(m_panel));
     m_auxBarButton->setChecked(isOpen(m_auxBar));
-    const bool maximized = !m_manager.maximizedPanel(m_workspace).isEmpty();
+    const bool maximized = !m_workspace->maximizedPanel().isEmpty();
     for (QAction *maximize : std::as_const(m_maximizeActions)) {
         maximize->setIcon(icon(maximized ? Glyph::ChevronDown : Glyph::ChevronUp));
         maximize->setToolTip(maximized ? u"Restore Panel Size"_s : u"Maximize Panel Size"_s);

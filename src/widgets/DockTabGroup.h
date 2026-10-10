@@ -27,15 +27,15 @@ class DockTabBar;
 
 /// View of one tab node: a header above the content of the current panel.
 ///
-/// The header is a title row holding either the tabs (GroupHeader::Tabs) or
-/// the current panel's title (GroupHeader::TitleBar; the tabs then go below
+/// The header is a title row holding either the tabs (DockGroupHeader::Tabs) or
+/// the current panel's title (DockGroupHeader::TitleBar; the tabs then go below
 /// the content, and only show when there is more than one), followed by the
 /// group's buttons. A panel can do without a header altogether
 /// (DockPanel::setHeaderVisible()).
 ///
 /// The only group of a floating window that has no title row for it
 /// (DockFloatingWindow::headerIsTitle()) is that window's title: one panel
-/// is named as by GroupHeader::TitleBar, without a tab, and the maximize and
+/// is named as by DockGroupHeader::TitleBar, without a tab, and the maximize and
 /// close buttons are there and act on the window.
 ///
 /// A group mirrors its LayoutNode and never decides anything itself: clicks
@@ -208,7 +208,7 @@ private:
     bool m_active = false;
     bool m_maximized = false;
     bool m_headerVisible = true;
-    /// The header names the current panel, as with GroupHeader::TitleBar.
+    /// The header names the current panel, as with DockGroupHeader::TitleBar.
     bool m_titleMode = false;
     /// The header is the title of the floating window the group is alone in.
     bool m_windowTitle = false;

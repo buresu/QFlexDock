@@ -165,9 +165,9 @@ Workbench::Workbench()
 
     // Panels in columns, each under its bar; the documents just under tabs,
     // which are also the one place where a document becomes a tab.
-    m_manager.setColumnDocking(m_panels, true);
-    m_manager.setTitleButtons(m_documents, {});
-    m_manager.setCenterDropEnabled(m_documents, false);
+    m_panels->setColumnDocking(true);
+    m_documents->setTitleButtons({});
+    m_documents->setCenterDropEnabled(false);
 
     m_titleBar = new TitleBar(&m_window);
     m_optionsBar = new OptionsBar;
@@ -202,7 +202,7 @@ Workbench::Workbench()
         const PanelId id = panel->id();
         menu->addSeparator();
         menu->addAction(u"Close Tab Group"_s, &m_window, [this, id] {
-            (void)m_manager.hidePanels(m_manager.tabGroupPanels(id));
+            (void)m_manager.closePanels(m_manager.tabGroupPanels(id));
         });
         const bool iconified = m_manager.isColumnIconified(id);
         menu->addAction(iconified ? u"Expand Panels"_s : u"Collapse to Icons"_s, &m_window,
@@ -362,8 +362,8 @@ void Workbench::togglePanel(const PanelId &id)
     if (!panel)
         return;
     if (panel->isOpen())
-        (void)m_manager.hidePanel(id);
-    else if (m_manager.showPanel(id))
+        (void)m_manager.closePanel(id);
+    else if (m_manager.openPanel(id))
         (void)m_manager.activatePanel(id);
 }
 
@@ -436,7 +436,7 @@ void Workbench::addMenus()
     file->addAction(u"&New..."_s, QKeySequence::New, &m_window, [this] { newDocument(); });
     file->addAction(u"&Close"_s, QKeySequence(Qt::CTRL | Qt::Key_W), &m_window, [this] {
         if (const DockPanel *document = currentDocument())
-            (void)m_manager.hidePanel(document->id());
+            (void)m_manager.closePanel(document->id());
     });
     file->addSeparator();
     file->addAction(u"E&xit"_s, &m_window, &QWidget::close);

@@ -15,7 +15,7 @@ QFlexDock has no theme of its own. Looks are decided in three layers, each overr
 | Tab group frame | `QFrame::StyledPanel` |
 | Title row buttons | `QToolButton`s with line icons in the palette's `WindowText` color; a panel's own actions as `QToolButton`s with the icons they bring |
 | Drop guide | Translucent colors derived from the palette's `Highlight` |
-| Floating windows | A thin border, and a title row once the window holds more than one tab group (`FloatingFrame::Minimal`: the border alone), or with `FloatingFrame::Native` the platform's window frame |
+| Floating windows | A thin border, and a title row once the window holds more than one tab group (`FloatingWindowFrame::Minimal`: the border alone), or with `FloatingWindowFrame::Native` the platform's window frame |
 
 Changes to the style, palette, font or style sheet, and the system's light/dark switch, are picked up
 through Qt's change events; there is nothing to call. All sizes are device-independent pixels.
@@ -29,7 +29,7 @@ There are no sub-controls or pseudo-states beyond these.
 |---|---|---|
 | `QFlexDock--DockTabGroup` | A tab group (`QFrame`) | `border`, `background`, …; properties `active`, `maximized`, `headerVisible`; or the `qproperty-pane*` below |
 | `QFlexDock--DockTabGroup #dockTitleBar` | Its title row | `background`, … |
-| `#dockTitle` | The title in it (`QLabel`, with `GroupHeader::TitleBar`) | `color`, `font`, `background`, … |
+| `#dockTitle` | The title in it (`QLabel`, with `DockGroupHeader::TitleBar`) | `color`, `font`, `background`, … |
 | `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton`, `#dockAutoHideButton`, `QFlexDock--DockTabGroup #dockCloseButton` | Title row buttons | As `QToolButton` |
 | `#dockTitleActions`, `#dockTitleStartActions`, `#dockTabActions` | What holds a panel's own actions (`DockPanel::setTitleActions()`): at the end of the header, at its start, behind the tabs | `background`, … |
 | `#dockActionButton`, `#dockActionSeparator` | Their buttons, and the lines between them | As `QToolButton` / `background`, `margin`, `min-width`; a button has the object name of its action as property `action` |
@@ -41,7 +41,7 @@ There are no sub-controls or pseudo-states beyond these.
 | `QFlexDock--DockAutoHidePopup` | The panel that slides out (`QFrame`) | `background`, `border`; buttons `#dockPinButton`, `#dockCloseButton` |
 | `#dockAutoHideBody` | Its title and content (`QFrame`): all of it but the grip it is resized by | `background`, `border`, `border-radius`; with one, the grip is a gap in the background of the whole |
 | `QFlexDock--DockTabGroup[flyout="true"]`, `#dockFlyoutButton` | The tab group that is out beside the strip of its iconified column, and the button that puts it away | `border`, … / as `QToolButton` |
-| `QFlexDock--DockColumnBar` | The bar above a column (`DockManager::setColumnDocking()`) | `background`, …; property `iconified` |
+| `QFlexDock--DockColumnBar` | The bar above a column (`DockWorkspace::setColumnDocking()`) | `background`, …; property `iconified` |
 | `#dockIconifyButton`, `#dockColumnCloseButton` | Its buttons: iconify the column or show it again, close the floating window the bar stands for | As `QToolButton` |
 | `QFlexDock--DockIconStrip` | An iconified column | `background`; property `labelled` (wide enough for the titles) |
 | `QFlexDock--DockIconGrip` | The grip above the buttons of one tab group in it | `background` |
@@ -108,7 +108,7 @@ QFlexDock--DockTabGroup #dockTitleBar { background: transparent; }
 QFlexDock--DockTabBar::tab { background: transparent; border: none; margin: 0; padding: 6px 12px; }
 ```
 
-With tabs above the content, the pane is the content. With `GroupHeader::TitleBar` it is title bar and
+With tabs above the content, the pane is the content. With `DockGroupHeader::TitleBar` it is title bar and
 content, and the tabs are below it. A group with one of these set no longer draws a `border` or
 `background` of its own, and keeps one pixel around the pane for the line. Tabs and title row have to be
 transparent and the tabs without a margin, as above; the content shows the pane where it paints no

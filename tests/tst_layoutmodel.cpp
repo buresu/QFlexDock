@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include <QFlexDock/LayoutModel.h>
+#include "core/LayoutModel.h"
 
 #include <QtCore/QRandomGenerator>
 #include <QtTest/QtTest>

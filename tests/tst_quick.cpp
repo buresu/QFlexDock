@@ -35,7 +35,7 @@ Rectangle {
     property string titleOfA: dock.panel("a") ? dock.panel("a").title : ""
     property bool aIsOpen: dock.panel("a") ? dock.panel("a").open : false
     property bool aIsCurrent: dock.panel("a") ? dock.panel("a").current : false
-    property int openCount: dock.openPanels.length
+    property int openCount: dock.openPanelIds.length
     property var opened: []
 
     Connections {
@@ -43,10 +43,11 @@ Rectangle {
         function onPanelOpenChanged(id, open) { root.opened = root.opened.concat([id + ":" + open]) }
     }
 
-    function hide(id) { return dock.hidePanel(id) }
-    function hideBoth(a, b) { return dock.hidePanels([a, b]) }
-    function showBoth(a, b) { return dock.showPanels([a, b]) }
+    function hide(id) { return dock.closePanel(id) }
+    function hideBoth(a, b) { return dock.closePanels([a, b]) }
+    function showBoth(a, b) { return dock.openPanels([a, b]) }
     function tabsOf(id) { return dock.tabGroupPanels(id) }
+    function currentOf(id) { return dock.currentPanel(id) }
     function toggle(id) { return dock.togglePanel(id) }
     function activate(id) { return dock.activatePanel(id) }
     function raise(id) { return dock.raisePanel(id) }
@@ -151,8 +152,8 @@ private Q_SLOTS:
         QVERIFY(f.manager.movePanel(p("q"), p("a"), DockArea::Center));
         QVERIFY(f.manager.activatePanel(p("a")));
         QVERIFY(!quick->isVisible());
-        QVERIFY(f.manager.hidePanel(p("q")));
-        QVERIFY(f.manager.showPanel(p("q")));
+        QVERIFY(f.manager.closePanel(p("q")));
+        QVERIFY(f.manager.openPanel(p("q")));
         QVERIFY(quick->isVisible());
         QCOMPARE(quick->rootObject(), root.data());
         QTRY_COMPARE(quick->grab().toImage().pixelColor(quick->width() / 2, quick->height() / 2),
@@ -208,7 +209,7 @@ private Q_SLOTS:
         QCOMPARE(root->property("titleOfA").toString(), p("Renamed"));
         QCOMPARE(root->property("aIsOpen").toBool(), true);
         const int open = root->property("openCount").toInt();
-        QVERIFY(f.manager.hidePanel(p("a")));
+        QVERIFY(f.manager.closePanel(p("a")));
         QCOMPARE(root->property("aIsOpen").toBool(), false);
         QCOMPARE(root->property("aIsCurrent").toBool(), false);
         QCOMPARE(root->property("openCount").toInt(), open - 1);
@@ -223,6 +224,8 @@ private Q_SLOTS:
         QCOMPARE(describe(f.b), p("b"));
         QCOMPARE(call(root, "tabsOf", {p("b")}).toStringList(), QStringList{p("b")});
         QVERIFY(call(root, "tabsOf", {p("nope")}).toStringList().isEmpty());
+        QCOMPARE(call(root, "currentOf", {p("b")}).toString(), p("b"));
+        QVERIFY(call(root, "currentOf", {p("nope")}).toString().isEmpty());
 
         // Failures are reported, not thrown, and change nothing.
         const QString before = describe(f.a);
@@ -235,7 +238,7 @@ private Q_SLOTS:
         QCOMPARE(call(root, "activate", {p("q")}).toBool(), true);
         QVERIFY(controller.lastError().isEmpty());
 
-        QCOMPARE(controller.panels().size(), 7);
+        QCOMPARE(controller.panelIds().size(), 7);
         QVERIFY(controller.hasPanel(p("q")));
         QVERIFY(!controller.isPanelOpen(p("a")));
         QVERIFY(!controller.panel(p("nope")));
@@ -259,13 +262,13 @@ private Q_SLOTS:
         QCOMPARE(quick->status(), QQuickWidget::Ready);
         const QPointer<QQuickItem> root = quick->rootObject();
 
-        QSignalSpy panelsChanged(&controller, &QmlDockController::panelsChanged);
+        QSignalSpy panelsChanged(&controller, &QmlDockController::panelIdsChanged);
         QVERIFY(f.manager.unregisterPanel(p("lazy")));
         QVERIFY(!quick);
         QVERIFY(!root);
         QCOMPARE(describe(f.a), p("a"));
         QTRY_COMPARE(panelsChanged.size(), 1);
-        QVERIFY(!controller.panels().contains(p("lazy")));
+        QVERIFY(!controller.panelIds().contains(p("lazy")));
 
         // Bad arguments register nothing and load nothing.
         QVERIFY(!QmlPanelAdapter::registerPanel(&f.manager, p("a"), &engine, m_source));
@@ -287,8 +290,8 @@ private Q_SLOTS:
         delete manager;
         QVERIFY(!widget);
         QVERIFY(!second.manager());
-        QVERIFY(!second.showPanel(p("q"))); // a controller without manager fails politely
-        QVERIFY(second.panels().isEmpty());
+        QVERIFY(!second.openPanel(p("q"))); // a controller without manager fails politely
+        QVERIFY(second.panelIds().isEmpty());
     }
 
     // The controller has to be there for as long as a scene reads `dock`. As
@@ -392,7 +395,7 @@ Rectangle {
             parent.clicks++
             if (parent.action === "float") dock.floatPanel("q")
             else if (parent.action === "dock") dock.dockPanel("q")
-            else dock.hidePanel("q")
+            else dock.closePanel("q")
         }
     }
 }
@@ -443,7 +446,7 @@ Rectangle {
         QVERIFY(quick);
 
         // The scene is still good for the next click.
-        QVERIFY(f.manager.showPanel(p("q")));
+        QVERIFY(f.manager.openPanel(p("q")));
         root->setProperty("action", p("float"));
         click();
         QCOMPARE(root->property("clicks").toInt(), 4);

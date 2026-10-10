@@ -131,11 +131,11 @@ private Q_SLOTS:
         QTRY_COMPARE(created.size(), destroyed.size() + 1);
         qInfo("%s: hiding behind a tab and showing again recreated the surface %d time(s)",
               qPrintable(QGuiApplication::platformName()), int(created.size()) - createdBeforeHide);
-        QVERIFY(f.manager.hidePanel(p("native")));
+        QVERIFY(f.manager.closePanel(p("native")));
         QTRY_VERIFY(!window->isVisible());
         QCOMPARE(visibilityChanged.constLast().at(0).toBool(), false);
         QVERIFY(windowGuard); // closed is not destroyed
-        QVERIFY(f.manager.showPanel(p("native")));
+        QVERIFY(f.manager.openPanel(p("native")));
         QTRY_VERIFY(window->isVisible());
         Q_UNUSED(exposed);
 
@@ -168,7 +168,7 @@ private Q_SLOTS:
         const QPoint pos = area->groupOfPanel(p("native"))->geometry().center();
         const DropCandidate candidate = area->candidateAt(pos, *controller->session());
         QVERIFY(candidate.valid);
-        QCOMPARE(candidate.target.node, f.a->layoutTree().findPanel(p("native"))->id);
+        QCOMPARE(candidate.target.node, areaOf(f.a)->tree().findPanel(p("native"))->id);
         area->showOverlay(candidate);
         QVERIFY(area->overlay()->isVisible());
 
@@ -179,7 +179,7 @@ private Q_SLOTS:
         // Also when the drag ends in a drop that moves the native panel itself.
         QVERIFY(controller->begin(p("native"), false));
         QTRY_VERIFY(!window->isVisible());
-        const DropTarget target{p("A"), f.a->layoutTree().findPanel(p("a"))->id, DockArea::Bottom,
+        const DropTarget target{p("A"), areaOf(f.a)->tree().findPanel(p("a"))->id, DockArea::Bottom,
                                 -1, 0.5};
         QVERIFY(controller->drop(target));
         QCOMPARE(describe(f.a), p("V(a, native)"));
@@ -287,9 +287,9 @@ private Q_SLOTS:
         QVERIFY(f.manager.floatPanel(p("gl"), QRect(30, 30, 300, 200)));
         QTRY_VERIFY(gl->isValid() && gl->hasResources);
         QVERIFY(f.manager.dockPanel(p("gl")));
-        QVERIFY(f.manager.hidePanel(p("gl")));
+        QVERIFY(f.manager.closePanel(p("gl")));
         const int paintedWhileHidden = gl->painted;
-        QVERIFY(f.manager.showPanel(p("gl")));
+        QVERIFY(f.manager.openPanel(p("gl")));
         QTRY_VERIFY(gl->painted > paintedWhileHidden);
         QVERIFY(gl->isValid());
         QVERIFY(gl->hasResources);

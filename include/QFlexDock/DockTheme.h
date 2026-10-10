@@ -76,20 +76,6 @@ enum class DockIcon {
     IconifyLeft, IconifyRight,
 };
 
-/// Buttons in the header of a tab group. Float and Close act on the current
-/// panel and are only shown for a panel that may be floated or closed.
-/// AutoHide puts every panel of the group that allows it into the auto-hide
-/// bar of the nearest border, and is only shown in a workspace.
-enum class DockTitleButton {
-    Menu = 0x1,
-    Maximize = 0x2,
-    Float = 0x4,
-    Close = 0x8,
-    AutoHide = 0x10,
-};
-Q_DECLARE_FLAGS(DockTitleButtons, DockTitleButton)
-Q_DECLARE_OPERATORS_FOR_FLAGS(DockTitleButtons)
-
 /// What the tabs of a group do when there is not room for all of them.
 enum class DockTabOverflow {
     /// They keep their width, and arrows scroll the bar.
@@ -122,7 +108,7 @@ struct QFLEXDOCK_EXPORT DockTheme
     /// its icon and title need.
     int tabWidth = -1;
     DockTabOverflow tabOverflow = DockTabOverflow::Scroll;
-    /// Floating windows whose frame is drawn by QFlexDock (FloatingFrame
+    /// Floating windows whose frame is drawn by QFlexDock (FloatingWindowFrame
     /// Custom and Minimal). The width of the border around their content;
     /// -1 is 4 pixels. The border is what such a window is resized by: a
     /// thinner one is grabbed a few pixels into the content as well.

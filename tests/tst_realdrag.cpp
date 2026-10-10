@@ -137,7 +137,7 @@ private Q_SLOTS:
         QFETCH(QString, left);
         QFETCH(QString, arrived);
         TwoWindows f;
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         f.manager.setTitleBarMovesGroup(wholeGroup);
         f.windowA.move(20, 20);
         f.windowB.move(940, 40);
@@ -260,7 +260,7 @@ private Q_SLOTS:
     void tabsBetweenWindowsOfTabs()
     {
         DockManager manager;
-        manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
         manager.setCenterDropEnabled(false);
         QVERIFY(manager.floatsOnOutsideDrop());
         QHash<QString, QLabel *> labels;
@@ -269,7 +269,7 @@ private Q_SLOTS:
         for (const char *id : {"a", "b", "c"}) {
             labels.insert(p(id), new QLabel(p(id)));
             QVERIFY(manager.registerPanel(p(id), labels.value(p(id))));
-            QVERIFY(manager.setDockPolicy(p(id), policy));
+            manager.panel(p(id))->setPolicy(policy);
         }
         DockManagerPrivate *d = priv(manager);
         DockDragController *controller = d->drag;
@@ -406,7 +406,7 @@ private Q_SLOTS:
         TwoWindows f;
         f.windowA.move(20, 20);
         f.windowB.move(940, 40);
-        f.manager.setColumnDocking(f.a, true);
+        f.a->setColumnDocking(true);
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));

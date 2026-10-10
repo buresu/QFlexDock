@@ -122,10 +122,12 @@ struct DockWorkspace::Private
     DockAreaWidget *area = nullptr;
     DockAutoHideContainer *autoHide = nullptr;
     /// Set where the workspace is not to have the manager's.
-    std::optional<DockManager::GroupHeader> groupHeader;
+    std::optional<DockGroupHeader> groupHeader;
     std::optional<DockTitleButtons> titleButtons;
     bool columnDocking = false;
     std::optional<bool> centerDrop;
+
+    void settingChanged() const;
 };
 
 class QFLEXDOCK_EXPORT DockManagerPrivate
@@ -172,7 +174,7 @@ public:
     DockResult autoHidePanels(const QStringList &panels, DockArea edge);
     DockResult setMaximized(const PanelId &panel, bool maximized);
     DockResult closePanels(const QStringList &panels);
-    DockResult showPanels(const QStringList &panels);
+    DockResult openPanels(const QStringList &panels);
     /// `reveal` false: a panel of an iconified column is made the current
     /// one of its group there, and stays out of view.
     DockResult activate(const PanelId &panel, Activation how, bool reveal = true);
@@ -251,15 +253,18 @@ public:
     [[nodiscard]] DockWorkspace *workspaceFor(const QString &container) const;
     [[nodiscard]] QString workspaceIdFor(const QString &container) const;
     /// What the tab groups of a container have at their top.
-    [[nodiscard]] DockManager::GroupHeader groupHeaderFor(const QString &container) const;
+    [[nodiscard]] DockGroupHeader groupHeaderFor(const QString &container) const;
     /// The built-in buttons their headers have.
     [[nodiscard]] DockTitleButtons titleButtonsFor(const QString &container) const;
     /// Whether the middle of its tab groups takes a drop.
     [[nodiscard]] bool centerDropFor(const QString &container) const;
     /// Whether its tab groups are docked in columns, each under a bar.
     [[nodiscard]] bool columnDockingFor(const QString &container) const;
+    /// The bars above the columns are there now, or gone: the tab groups of
+    /// the workspace, and of the floating windows it owns, are laid out anew.
+    void columnDockingChanged(const DockWorkspace *workspace);
     /// The frame of a floating window that workspace `owner` owns.
-    [[nodiscard]] DockManager::FloatingFrame floatingFrameFor(const QString &owner) const;
+    [[nodiscard]] DockManager::FloatingWindowFrame floatingFrameFor(const QString &owner) const;
     [[nodiscard]] int columnBarHeight() const;
     [[nodiscard]] QString defaultWorkspaceId() const;
     [[nodiscard]] QWidget *windowFor(const QString &container) const;
@@ -290,12 +295,12 @@ public:
     bool splitterPush = false;
     bool centerDrop = true;
     bool tabDragPreview = false;
-    DockManager::GroupHeader groupHeader = DockManager::GroupHeader::Tabs;
+    DockGroupHeader groupHeader = DockGroupHeader::Tabs;
     bool titleBarMovesGroup = false;
     DockManager::AutoHideReveal autoHideReveal = DockManager::AutoHideReveal::Over;
     bool floatOnOutsideDrop = false;
     bool dragGhostEnabled = true;
-    DockManager::FloatingFrame floatingFrame = DockManager::FloatingFrame::Custom;
+    DockManager::FloatingWindowFrame floatingFrame = DockManager::FloatingWindowFrame::Custom;
     DockManager::FloatingWindowType floatingWindowType = DockManager::FloatingWindowType::Window;
     bool restoreWindowGeometry = true;
 

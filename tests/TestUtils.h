@@ -41,19 +41,19 @@ inline QString describe(const LayoutTree &tree)
     return tree.root() ? describe(*tree.root()) : QStringLiteral("<empty>");
 }
 
-inline QString describe(const DockWorkspace *workspace)
+inline DockAreaWidget *areaOf(DockWorkspace *workspace)
 {
-    return describe(workspace->layoutTree());
+    return DockManagerPrivate::get(workspace)->area;
+}
+
+inline QString describe(DockWorkspace *workspace)
+{
+    return describe(areaOf(workspace)->tree());
 }
 
 inline DockManagerPrivate *priv(DockManager &manager)
 {
     return DockManagerPrivate::get(&manager);
-}
-
-inline DockAreaWidget *areaOf(DockWorkspace *workspace)
-{
-    return DockManagerPrivate::get(workspace)->area;
 }
 
 /// Saves a screenshot of `widget` when QFLEXDOCK_TEST_GRABS names a directory.

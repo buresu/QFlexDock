@@ -69,9 +69,9 @@ private Q_SLOTS:
         auto *inspectorWidget = new QLabel;
         manager.registerPanel(p("scene"), sceneWidget);
         manager.registerPanel(p("inspector"), inspectorWidget);
-        QVERIFY(workspaceA->addPanel(p("scene"), DockPosition::Center));
-        QVERIFY(workspaceB->addPanel(p("inspector"), DockPosition::Center));
-        QVERIFY(manager.movePanel(p("inspector"), workspaceA, DockPosition::Right));
+        QVERIFY(workspaceA->addPanel(p("scene"), DockArea::Center));
+        QVERIFY(workspaceB->addPanel(p("inspector"), DockArea::Center));
+        QVERIFY(manager.movePanel(p("inspector"), workspaceA, DockArea::Right));
         QCOMPARE(describe(workspaceA), p("H(scene, inspector)"));
         QCOMPARE(describe(workspaceB), p("<empty>"));
         QVERIFY(manager.togglePanel(p("inspector")));
@@ -90,7 +90,7 @@ private Q_SLOTS:
         QVERIFY(f.a->addPanel(p("f"), DockArea::Bottom));
         QCOMPARE(describe(f.a), p("V(H(e, a|d, V(b, c)), f)"));
         QCOMPARE(f.a->panels(), QStringList({p("e"), p("a"), p("d"), p("b"), p("c"), p("f")}));
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
 
         // The widgets follow: groups and handles tile the dock area exactly.
         DockAreaWidget *area = areaOf(f.a);
@@ -208,29 +208,29 @@ private Q_SLOTS:
 
         DockPanel *c = f.manager.panel(p("c"));
         QSignalSpy openChanged(c, &DockPanel::openChanged);
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         QVERIFY(!c->isOpen());
         QVERIFY(!f.widgets[p("c")]->isVisible());
         QCOMPARE(describe(f.a), p("H(a, V(b, d))"));
-        QVERIFY(f.manager.hidePanel(p("c"))); // closing a closed panel is fine
+        QVERIFY(f.manager.closePanel(p("c"))); // closing a closed panel is fine
 
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QCOMPARE(describe(f.a), p("H(a, V(b|c, d))"));
         QCOMPARE(openChanged.size(), 2);
         QCOMPARE(f.manager.activePanel(), c);
 
         // Close the whole group: the first one back re-creates the split, the
         // second finds its former tab neighbour.
-        QVERIFY(f.manager.hidePanel(p("c")));
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("b")));
         QCOMPARE(describe(f.a), p("H(a, d)"));
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QCOMPARE(describe(f.a), p("H(a, V(b, d))"));
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QCOMPARE(describe(f.a), p("H(a, V(b|c, d))"));
 
         // A panel that was never placed goes to the first workspace.
-        QVERIFY(f.manager.showPanel(p("e")));
+        QVERIFY(f.manager.openPanel(p("e")));
         QVERIFY(f.a->panels().contains(p("e")));
     }
 
@@ -261,22 +261,22 @@ private Q_SLOTS:
         };
 
         // The left side goes: its room goes to the middle, the right stays.
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         QCOMPARE(describe(f.a), p("H(V(a, d), c|e)"));
         QVERIFY(same(sizes().value(p("c")), before.value(p("c"))));
         QVERIFY(sizes().value(p("a")).width()
                 >= before.value(p("a")).width() + before.value(p("b")).width());
         // Then the right side, tab by tab, and the bottom.
-        QVERIFY(f.manager.hidePanel(p("c")));
-        QVERIFY(f.manager.hidePanel(p("e")));
-        QVERIFY(f.manager.hidePanel(p("d")));
+        QVERIFY(f.manager.closePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("e")));
+        QVERIFY(f.manager.closePanel(p("d")));
         QCOMPARE(describe(f.a), p("a"));
 
         // Back in another order.
-        QVERIFY(f.manager.showPanel(p("d")));
-        QVERIFY(f.manager.showPanel(p("e")));
-        QVERIFY(f.manager.showPanel(p("c")));
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("d")));
+        QVERIFY(f.manager.openPanel(p("e")));
+        QVERIFY(f.manager.openPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QCOMPARE(describe(f.a), p("H(b, V(a, d), c|e)"));
         const auto unchanged = [&] {
             const QHash<QString, QSize> now = sizes();
@@ -292,16 +292,16 @@ private Q_SLOTS:
 
         // One side comes back while the other is away: it has its own size,
         // not a share of whatever its neighbour has grown to.
-        QVERIFY(f.manager.hidePanel(p("b")));
-        QVERIFY(f.manager.hidePanel(p("c")));
-        QVERIFY(f.manager.hidePanel(p("e")));
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("e")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QVERIFY(same(sizes().value(p("b")), before.value(p("b"))));
-        QVERIFY(f.manager.hidePanel(p("b")));
-        QVERIFY(f.manager.showPanel(p("e")));
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("e")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QVERIFY(same(sizes().value(p("c")), before.value(p("c"))));
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QCOMPARE(describe(f.a), p("H(b, V(a, d), c|e)"));
         QVERIFY(unchanged());
     }
@@ -322,12 +322,12 @@ private Q_SLOTS:
         f.manager.clearUndoHistory();
         QSignalSpy changed(&f.manager, &DockManager::layoutChanged);
 
-        QVERIFY(f.manager.hidePanels({p("b"), p("c"), p("d")}));
+        QVERIFY(f.manager.closePanels({p("b"), p("c"), p("d")}));
         QCOMPARE(describe(f.a), p("a"));
         QCOMPARE(changed.size(), 1);
         // In any order they are asked for: the tabs in their old order, the
         // same one in front, the group as wide as it was.
-        QVERIFY(f.manager.showPanels({p("d"), p("b"), p("c")}));
+        QVERIFY(f.manager.openPanels({p("d"), p("b"), p("c")}));
         QCOMPARE(changed.size(), 2);
         QCOMPARE(describe(f.a), p("H(a, b|c|d)"));
         QCOMPARE(area->groupOfPanel(p("b"))->currentPanel(), p("c"));
@@ -341,16 +341,16 @@ private Q_SLOTS:
 
         // Closed one after the other, they still find their order.
         for (const char *id : {"b", "c", "d"})
-            QVERIFY(f.manager.hidePanel(p(id)));
-        QVERIFY(f.manager.showPanels({p("b"), p("c"), p("d")}));
+            QVERIFY(f.manager.closePanel(p(id)));
+        QVERIFY(f.manager.openPanels({p("b"), p("c"), p("d")}));
         QCOMPARE(describe(f.a), p("H(a, b|c|d)"));
 
         // Open ones are left alone, unknown ones refused with nothing done.
-        QVERIFY(f.manager.showPanels({p("b")}));
-        QVERIFY(f.manager.hidePanels({p("b")}));
-        QVERIFY(!f.manager.showPanels({p("b"), p("nope")}));
+        QVERIFY(f.manager.openPanels({p("b")}));
+        QVERIFY(f.manager.closePanels({p("b")}));
+        QVERIFY(!f.manager.openPanels({p("b"), p("nope")}));
         QVERIFY(!f.manager.panel(p("b"))->isOpen());
-        QVERIFY(!f.manager.hidePanels({p("c"), p("nope")}));
+        QVERIFY(!f.manager.closePanels({p("c"), p("nope")}));
         QVERIFY(f.manager.panel(p("c"))->isOpen());
     }
 
@@ -387,7 +387,7 @@ private Q_SLOTS:
         QVERIFY(f.manager.dockPanel(p("b")));
         QVERIFY(!b->isFloating());
         QCOMPARE(describe(f.a), p("H(a, b)"));
-        QVERIFY(qAbs(f.a->layoutTree().root()->children[1].weight - 0.3) < 1e-9);
+        QVERIFY(qAbs(areaOf(f.a)->tree().root()->children[1].weight - 0.3) < 1e-9);
         QVERIFY(f.manager.dockPanel(p("c")));
         QCOMPARE(priv(f.manager)->floatingWindows.size(), 0);
         QTRY_VERIFY(!guard); // the emptied window is gone
@@ -422,7 +422,7 @@ private Q_SLOTS:
         QTRY_VERIFY(!window);
 
         // Showing it again brings back the floating window where it was.
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QVERIFY(b->isFloating());
         QCOMPARE(content->window()->size(), QSize(320, 240));
         QCOMPARE(describe(f.a), p("a"));
@@ -443,7 +443,7 @@ private Q_SLOTS:
         QVERIFY(window->isVisible());
         QVERIFY(f.manager.panel(p("b"))->isOpen());
         // The application itself may still close it.
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         QVERIFY(!f.manager.panel(p("b"))->isOpen());
     }
 
@@ -460,8 +460,8 @@ private Q_SLOTS:
 
         QVERIFY(f.manager.maximizePanel(p("b")));
         QCOMPARE(f.manager.maximizedPanel(), p("b"));
-        QCOMPARE(f.manager.maximizedPanel(f.a), p("b"));
-        QCOMPARE(f.manager.maximizedPanel(f.b), QString());
+        QCOMPARE(f.a->maximizedPanel(), p("b"));
+        QCOMPARE(f.b->maximizedPanel(), QString());
         QCOMPARE(describe(f.a), before); // the tree is untouched
         QCOMPARE(area->groupOfPanel(p("b"))->geometry(), area->contentsRect());
         QVERIFY(area->groupOfPanel(p("b"))->isMaximized());
@@ -483,7 +483,7 @@ private Q_SLOTS:
 
         // Closing the maximized panel ends the maximized state.
         QVERIFY(f.manager.maximizePanel(p("c")));
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         QCOMPARE(f.manager.maximizedPanel(), QString());
         QVERIFY(area->groupOfPanel(p("a"))->isVisible());
     }
@@ -505,7 +505,7 @@ private Q_SLOTS:
 
         // Activating a background tab brings it to the front.
         QVERIFY(f.manager.activatePanel(p("b")));
-        QCOMPARE(f.a->layoutTree().findPanel(p("b"))->active, p("b"));
+        QCOMPARE(areaOf(f.a)->tree().findPanel(p("b"))->active, p("b"));
         QVERIFY(f.widgets[p("b")]->isVisible());
         QVERIFY(!f.widgets[p("c")]->isVisible());
         QVERIFY(!f.manager.panel(p("a"))->isActive());
@@ -534,7 +534,7 @@ private Q_SLOTS:
 
         // Click a tab.
         QTest::mouseClick(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
-        QCOMPARE(f.a->layoutTree().findPanel(p("a"))->active, p("a"));
+        QCOMPARE(areaOf(f.a)->tree().findPanel(p("a"))->active, p("a"));
         QVERIFY(f.widgets[p("a")]->isVisible());
         QCOMPARE(f.manager.activePanel(), f.manager.panel(p("a")));
 
@@ -624,7 +624,7 @@ private Q_SLOTS:
         delete f.widgets[p("a")];
         QVERIFY(!f.manager.hasPanel(p("a")));
         QCOMPARE(describe(f.a), p("b"));
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
     }
 
     void destroyingAWorkspaceClosesItsPanels()
@@ -658,7 +658,7 @@ private Q_SLOTS:
         QVERIFY(!manager.panel(p("b"))->isOpen());
 
         // They can be shown in a workspace that still exists.
-        QVERIFY(manager.showPanel(p("a")));
+        QVERIFY(manager.openPanel(p("a")));
         QCOMPARE(describe(first), p("a"));
         QCOMPARE(a->window(), &keep);
     }
@@ -708,6 +708,45 @@ private Q_SLOTS:
         QCOMPARE(describe(f.a), p("b"));
     }
 
+    // Every setting of the manager is a property, and tells when it changes.
+    void settingsAreProperties()
+    {
+        DockManager manager;
+        const QMetaObject *meta = manager.metaObject();
+        int settings = 0;
+        for (int i = meta->propertyOffset(); i < meta->propertyCount(); ++i) {
+            const QMetaProperty property = meta->property(i);
+            if (!property.isWritable())
+                continue;
+            ++settings;
+            QVERIFY2(property.hasNotifySignal(), property.name());
+            QSignalSpy changed(&manager, property.notifySignal());
+            const QVariant before = property.read(&manager);
+            QVariant other;
+            if (property.isEnumType()) {
+                const QMetaEnum values = property.enumerator();
+                for (int key = 0; key < values.keyCount(); ++key) {
+                    if (values.value(key) != before.toInt())
+                        other = values.value(key);
+                }
+            } else if (property.metaType() == QMetaType::fromType<bool>()) {
+                other = !before.toBool();
+            } else {
+                QCOMPARE(property.metaType(), QMetaType::fromType<int>());
+                other = before.toInt() + 1;
+            }
+            QVERIFY2(property.write(&manager, other), property.name());
+            const QVariant after = property.read(&manager);
+            QVERIFY2(after != before, property.name());
+            QCOMPARE(changed.size(), 1);
+            QCOMPARE(changed.constFirst().constFirst(), after);
+            // The value it has is no change.
+            QVERIFY(property.write(&manager, after));
+            QCOMPARE(changed.size(), 1);
+        }
+        QCOMPARE(settings, 14);
+    }
+
     void raisingATabLeavesTheActivePanelAlone()
     {
         TwoWindows f;
@@ -720,7 +759,7 @@ private Q_SLOTS:
         QSignalSpy activeChanged(&f.manager, &DockManager::activePanelChanged);
 
         QVERIFY(f.manager.raisePanel(p("b")));
-        QCOMPARE(f.a->layoutTree().findPanel(p("b"))->active, p("b"));
+        QCOMPARE(areaOf(f.a)->tree().findPanel(p("b"))->active, p("b"));
         QVERIFY(f.widgets[p("b")]->isVisible());
         QVERIFY(!f.widgets[p("c")]->isVisible());
         f.manager.panel(p("c"))->raise();
@@ -734,7 +773,7 @@ private Q_SLOTS:
         QVERIFY(f.manager.maximizePanel(p("a")));
         QVERIFY(f.manager.raisePanel(p("b")));
         QCOMPARE(f.manager.maximizedPanel(), p("a"));
-        QCOMPARE(f.a->layoutTree().findPanel(p("b"))->active, p("b"));
+        QCOMPARE(areaOf(f.a)->tree().findPanel(p("b"))->active, p("b"));
         QVERIFY(!f.widgets[p("b")]->isVisible());
         QVERIFY(f.manager.restoreMaximizedPanel());
         QVERIFY(f.widgets[p("b")]->isVisible());
@@ -786,6 +825,12 @@ private Q_SLOTS:
         QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Right));
         QCOMPARE(taken(), QStringList{p("c+")});
         QVERIFY(b->isCurrent() && c->isCurrent() && !a->isCurrent());
+        QCOMPARE(f.manager.currentPanel(p("a")), p("b"));
+        QCOMPARE(f.manager.currentPanel(p("b")), p("b"));
+        QCOMPARE(f.manager.currentPanel(p("c")), p("c"));
+        // Closed or unknown: in no group.
+        QVERIFY(f.manager.currentPanel(p("d")).isEmpty());
+        QVERIFY(f.manager.currentPanel(p("nope")).isEmpty());
 
         // Moving with its place in front, it stays what it is.
         QVERIFY(f.manager.floatPanel(p("c")));
@@ -794,14 +839,15 @@ private Q_SLOTS:
         QVERIFY(c->isCurrent());
 
         // The tab behind the one that is closed takes over.
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         QCOMPARE(taken(), (QStringList{p("b-"), p("a+")}));
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QCOMPARE(taken(), (QStringList{p("a-"), p("b+")}));
 
         // In an auto-hide bar a panel is in no group.
         QVERIFY(f.manager.setPanelAutoHide(p("c"), true));
         QCOMPARE(taken(), QStringList{p("c-")});
+        QVERIFY(f.manager.currentPanel(p("c")).isEmpty());
         QVERIFY(f.manager.setPanelAutoHide(p("c"), false));
         QCOMPARE(taken(), QStringList{p("c+")});
 
@@ -833,16 +879,16 @@ private Q_SLOTS:
         QVERIFY(!action->isChecked());
 
         // It follows what happens to the panel elsewhere.
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QVERIFY(action->isChecked());
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         QVERIFY(!action->isChecked());
         QVERIFY(f.manager.panel(p("a"))->toggleViewAction()->isChecked());
 
         // A change that is refused leaves it as the panel is.
         const QMetaObject::Connection during = connect(
             &f.manager, &DockManager::layoutAboutToChange, action, &QAction::trigger);
-        QVERIFY(f.manager.hidePanel(p("a")));
+        QVERIFY(f.manager.closePanel(p("a")));
         disconnect(during);
         QVERIFY(!b->isOpen());
         QVERIFY(!action->isChecked());
@@ -883,7 +929,7 @@ private Q_SLOTS:
                  DockError::UnknownPanel);
         QCOMPARE(f.manager.movePanel(p("a"), p("zzz"), DockArea::Left).error(),
                  DockError::NotPlaced);
-        QCOMPARE(f.manager.addPanel(p("a"), nullptr).error(), DockError::UnknownWorkspace);
+        QCOMPARE(f.manager.movePanel(p("a"), nullptr, DockArea::Center).error(), DockError::UnknownWorkspace);
         QCOMPARE(f.manager.movePanel(p("a"), f.a, DockArea::None).error(),
                  DockError::InvalidArgument);
         QCOMPARE(f.manager.movePanel(p("a"), p("a"), DockArea::Left).error(),
@@ -895,7 +941,7 @@ private Q_SLOTS:
         QMainWindow otherWindow;
         DockWorkspace *foreign = other.createWorkspace();
         otherWindow.setCentralWidget(foreign);
-        QCOMPARE(f.manager.addPanel(p("a"), foreign).error(), DockError::UnknownWorkspace);
+        QCOMPARE(f.manager.movePanel(p("a"), foreign, DockArea::Center).error(), DockError::UnknownWorkspace);
 
         QCOMPARE(describe(f.a), before);
         QCOMPARE(aboutToChange.size(), 0);
@@ -916,7 +962,7 @@ private Q_SLOTS:
         QVERIFY(f.a->addPanel(p("a")));
         DockResult nested;
         const auto connection = connect(&f.manager, &DockManager::layoutAboutToChange, this,
-                                        [&] { nested = f.manager.hidePanel(p("a")); });
+                                        [&] { nested = f.manager.closePanel(p("a")); });
         QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
         // The windows going away at the end of this test change the layout too.
         disconnect(connection);
@@ -949,8 +995,8 @@ private Q_SLOTS:
 
         // The same instance from then on.
         QWidget *content = lazy->widget();
-        QVERIFY(f.manager.hidePanel(p("lazy")));
-        QVERIFY(f.manager.showPanel(p("lazy")));
+        QVERIFY(f.manager.closePanel(p("lazy")));
+        QVERIFY(f.manager.openPanel(p("lazy")));
         QVERIFY(f.manager.movePanel(p("lazy"), f.b, DockArea::Center));
         QCOMPARE(created, 1);
         QCOMPARE(lazy->widget(), content);
@@ -990,13 +1036,13 @@ private Q_SLOTS:
 
         // A new change discards what could have been redone.
         QVERIFY(f.manager.undo());
-        QVERIFY(f.manager.hidePanel(p("a")));
+        QVERIFY(f.manager.closePanel(p("a")));
         QVERIFY(!f.manager.canRedo());
 
         // Undo copes with panels that have been unregistered since.
         QVERIFY(f.manager.unregisterPanel(p("c")));
         QVERIFY(f.manager.undo());
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
         QVERIFY(!f.a->panels().contains(p("c")));
         QVERIFY(f.a->panels().contains(p("a")));
 
@@ -1051,7 +1097,7 @@ private Q_SLOTS:
         QVERIFY(f.manager.applyPreset(p("coding")));
         QCOMPARE(describe(f.a), p("H(a, b)"));
 
-        QVERIFY(f.manager.hidePanel(p("a")));
+        QVERIFY(f.manager.closePanel(p("a")));
         QVERIFY(f.manager.resetLayout());
         QCOMPARE(describe(f.a), p("H(a, b)"));
     }
@@ -1112,9 +1158,9 @@ private Q_SLOTS:
         // An explicit edge, closing from the bar, and showing again.
         QVERIFY(f.manager.setPanelAutoHide(p("c"), true, DockArea::Top));
         QCOMPARE(autoHide->bar(DockArea::Top)->tabs().size(), 1);
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         QVERIFY(!autoHide->bar(DockArea::Top)->isVisible());
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QVERIFY(f.manager.panel(p("c"))->isAutoHidden());
         QCOMPARE(autoHide->expandedPanel(), p("c"));
         QVERIFY(f.manager.setPanelAutoHide(p("c"), false));
@@ -1132,7 +1178,7 @@ private Q_SLOTS:
         QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom));
         QVERIFY(f.manager.setPanelAutoHide(p("c"), true, DockArea::Bottom));
         QVERIFY(f.manager.setPanelAutoHide(p("b"), true, DockArea::Right));
-        QVERIFY(f.manager.addPanel(p("d"), f.a, DockArea::Right));
+        QVERIFY(f.a->addPanel(p("d"), DockArea::Right));
         const QString before = describe(f.a);
         DockAreaWidget *area = areaOf(f.a);
         DockAutoHideContainer *autoHide = DockManagerPrivate::get(f.a)->autoHide;

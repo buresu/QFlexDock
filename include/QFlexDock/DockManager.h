@@ -59,8 +59,33 @@ class QFLEXDOCK_EXPORT DockManager : public QObject
     Q_PROPERTY(QFlexDock::DockPanel *activePanel READ activePanel NOTIFY activePanelChanged)
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY undoStateChanged)
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY undoStateChanged)
+    Q_PROPERTY(int undoLimit READ undoLimit WRITE setUndoLimit NOTIFY undoLimitChanged)
+    Q_PROPERTY(bool restoresWindowGeometry READ restoresWindowGeometry
+               WRITE setRestoresWindowGeometry NOTIFY restoresWindowGeometryChanged)
     Q_PROPERTY(bool linkedSplittersEnabled READ linkedSplittersEnabled
                WRITE setLinkedSplittersEnabled NOTIFY linkedSplittersEnabledChanged)
+    Q_PROPERTY(bool cornerResizeEnabled READ isCornerResizeEnabled WRITE setCornerResizeEnabled
+               NOTIFY cornerResizeEnabledChanged)
+    Q_PROPERTY(bool splitterPushEnabled READ isSplitterPushEnabled WRITE setSplitterPushEnabled
+               NOTIFY splitterPushEnabledChanged)
+    Q_PROPERTY(bool centerDropEnabled READ isCenterDropEnabled WRITE setCenterDropEnabled
+               NOTIFY centerDropEnabledChanged)
+    Q_PROPERTY(bool tabDragPreviewEnabled READ isTabDragPreviewEnabled
+               WRITE setTabDragPreviewEnabled NOTIFY tabDragPreviewEnabledChanged)
+    Q_PROPERTY(bool floatsOnOutsideDrop READ floatsOnOutsideDrop WRITE setFloatsOnOutsideDrop
+               NOTIFY floatsOnOutsideDropChanged)
+    Q_PROPERTY(bool dragGhostEnabled READ isDragGhostEnabled WRITE setDragGhostEnabled
+               NOTIFY dragGhostEnabledChanged)
+    Q_PROPERTY(FloatingWindowFrame floatingWindowFrame READ floatingWindowFrame
+               WRITE setFloatingWindowFrame NOTIFY floatingWindowFrameChanged)
+    Q_PROPERTY(FloatingWindowType floatingWindowType READ floatingWindowType
+               WRITE setFloatingWindowType NOTIFY floatingWindowTypeChanged)
+    Q_PROPERTY(QFlexDock::DockGroupHeader groupHeader READ groupHeader WRITE setGroupHeader
+               NOTIFY groupHeaderChanged)
+    Q_PROPERTY(bool titleBarMovesGroup READ titleBarMovesGroup WRITE setTitleBarMovesGroup
+               NOTIFY titleBarMovesGroupChanged)
+    Q_PROPERTY(AutoHideReveal autoHideReveal READ autoHideReveal WRITE setAutoHideReveal
+               NOTIFY autoHideRevealChanged)
 
 public:
     /// What happens to a panel's remembered position when it is unregistered.
@@ -72,7 +97,7 @@ public:
     Q_ENUM(PlacementMemory)
 
     /// Who draws the frame of floating windows.
-    enum class FloatingFrame {
+    enum class FloatingWindowFrame {
         /// The window system: its title bar, buttons, borders and behaviour.
         Native,
         /// QFlexDock (the default): a frameless window with a title row and
@@ -85,10 +110,10 @@ public:
         Custom,
         /// QFlexDock, without a title row: just a resizable border around
         /// the content. The headers of the tab groups inside are what the
-        /// user takes hold of, which suits GroupHeader::TitleBar.
+        /// user takes hold of, which suits DockGroupHeader::TitleBar.
         Minimal,
     };
-    Q_ENUM(FloatingFrame)
+    Q_ENUM(FloatingWindowFrame)
 
     /// What kind of window a floating window is to the window system.
     enum class FloatingWindowType {
@@ -103,17 +128,6 @@ public:
         Tool,
     };
     Q_ENUM(FloatingWindowType)
-
-    /// What a tab group has at its top.
-    enum class GroupHeader {
-        /// Its tabs, always.
-        Tabs,
-        /// A title bar naming the current panel. Tabs appear only once the
-        /// group holds more than one panel, and then at its bottom. See
-        /// setTitleBarMovesGroup() for what the title bar takes along.
-        TitleBar,
-    };
-    Q_ENUM(GroupHeader)
 
     /// How a panel that was put away at a border (auto-hide) is shown while
     /// it is out.
@@ -143,7 +157,7 @@ public:
     /// Registers `content` as panel `id`. The manager takes ownership of the
     /// widget. Returns nullptr (see lastError()) if the id is empty or taken,
     /// or the widget is null or already registered. A registered panel is not
-    /// shown until it is placed (addPanel(), showPanel(), a restored layout).
+    /// shown until it is placed (movePanel(), openPanel(), a restored layout).
     DockPanel *registerPanel(const PanelId &id, QWidget *content, const QString &title = {});
     /// Registers a panel whose content is created on first use.
     DockPanel *registerPanelFactory(const PanelId &id, DockPanelFactory factory,
@@ -164,8 +178,6 @@ public:
     /// outside of everything already there, Center as a tab of its current tab
     /// group. `fraction` is the share of the space taken (edge areas only).
     /// A panel that is already placed is moved.
-    DockResult addPanel(const PanelId &id, DockWorkspace *workspace,
-                        DockArea area = DockArea::Center, double fraction = -1.0);
     DockResult movePanel(const PanelId &id, DockWorkspace *workspace, DockArea area,
                          double fraction = -1.0);
     /// Docks a panel relative to the tab group `relativeTo` is in: an edge area
@@ -193,17 +205,17 @@ public:
 
     /// Shows a closed panel where it last was (or in the first workspace) and
     /// activates it.
-    DockResult showPanel(const PanelId &id);
+    DockResult openPanel(const PanelId &id);
     /// Closes the panel: it leaves the layout but stays registered, and its
-    /// position is remembered for showPanel().
-    DockResult hidePanel(const PanelId &id);
+    /// position is remembered for openPanel().
+    DockResult closePanel(const PanelId &id);
     /// The same for several panels as one change (and one undo step): the
     /// way to put a whole area away and bring it back. Panels closed together
     /// return together: in their old order, with the same tab in front, and
     /// as one when the user pulls them back out of the edge they went to
-    /// (see DockPanel::setCollapsible()). showPanels() activates none of them.
-    DockResult showPanels(const QStringList &ids);
-    DockResult hidePanels(const QStringList &ids);
+    /// (see DockPanel::setCollapsible()). openPanels() activates none of them.
+    DockResult openPanels(const QStringList &ids);
+    DockResult closePanels(const QStringList &ids);
     DockResult togglePanel(const PanelId &id);
     /// Makes the panel the current tab of its group, raises its window and
     /// gives it keyboard focus.
@@ -216,27 +228,19 @@ public:
     /// The panels that share a tab group with `id`, itself included, in the
     /// order of their tabs. Empty if the panel is not in a tab group.
     [[nodiscard]] QStringList tabGroupPanels(const PanelId &id) const;
+    /// The panel in front of the tab group `anyPanelOfGroup` is in (see
+    /// DockPanel::isCurrent()). Empty if the panel is not in a tab group.
+    [[nodiscard]] PanelId currentPanel(const PanelId &anyPanelOfGroup) const;
 
     /// Lets the panel's tab group fill its workspace (or floating window). The
     /// layout tree is left untouched, so restoring brings everything back.
     DockResult maximizePanel(const PanelId &id);
     DockResult restoreMaximizedPanel();
-    /// The maximized panel of `workspace`, or of any container when null.
-    [[nodiscard]] PanelId maximizedPanel(const DockWorkspace *workspace = nullptr) const;
+    /// The maximized panel of any workspace or floating window, or an empty
+    /// id. DockWorkspace::maximizedPanel() tells about one workspace.
+    [[nodiscard]] PanelId maximizedPanel() const;
 
     // --- Columns ---------------------------------------------------------------
-    /// Whether the tab groups of `workspace`, and of the floating windows it
-    /// owns, are docked in columns (default false). A column is what stands
-    /// above one another: a tab group, or several. Then
-    ///  - a drop on the left or right side of a group docks beside the
-    ///    column that group is in, never into it;
-    ///  - every column of panels that may be moved has a bar above it. The
-    ///    bar is dragged to move the column as it is, and its button shrinks
-    ///    the column to buttons (setColumnIconified()). In a floating window
-    ///    the bar is what the window is moved by and closed with, so such a
-    ///    window has no title row (FloatingFrame::Custom is Minimal there).
-    void setColumnDocking(DockWorkspace *workspace, bool enabled);
-    [[nodiscard]] bool isColumnDocking(const DockWorkspace *workspace) const;
     /// Shrinks the column `anyPanelOfColumn` is in to a strip of buttons, one
     /// for each of its panels, or shows the panels again. A button brings its
     /// tab group out beside the strip, over what is there, and puts it away
@@ -244,7 +248,8 @@ public:
     /// group for as long as it is out. The strip is as narrow as its icons,
     /// and can be dragged wider for the titles to show.
     ///
-    /// Works in any workspace; with setColumnDocking() the user has a button
+    /// Works in any workspace; with DockWorkspace::setColumnDocking() the
+    /// user has a button
     /// for it. What is dropped into an iconified column becomes part of it,
     /// what is taken out of one and floats stays iconified.
     DockResult setColumnIconified(const PanelId &anyPanelOfColumn, bool iconified);
@@ -258,8 +263,6 @@ public:
     DockResult setPanelAutoHide(const PanelId &id, bool autoHide, DockArea edge = DockArea::None);
 
     // --- Policies ------------------------------------------------------------
-    DockResult setDockPolicy(const PanelId &id, const DockPolicy &policy);
-    [[nodiscard]] DockPolicy dockPolicy(const PanelId &id) const;
     void setDropFilter(DockDropFilter filter);
 
     // --- Persistence ---------------------------------------------------------
@@ -326,13 +329,9 @@ public:
     /// along its top, as high as a row of tabs. The rest of the group is then no drop
     /// target, and what is let go of there floats like anything dropped
     /// outside every dock area: tabs are torn off by dragging them away.
+    ///
+    /// DockWorkspace::setCenterDropEnabled() says so for one workspace.
     void setCenterDropEnabled(bool enabled);
-    /// The same for one workspace, and the floating windows it owns, where
-    /// that is to differ from the others: documents that become tabs of
-    /// each other by their tab rows only, among panels that take a drop
-    /// anywhere.
-    void setCenterDropEnabled(DockWorkspace *workspace, bool enabled);
-    [[nodiscard]] bool isCenterDropEnabled(const DockWorkspace *workspace) const;
     [[nodiscard]] bool isTabDragPreviewEnabled() const;
     /// Whether tab bars show a tab drag as it would turn out (default
     /// false). The tab that is dragged leaves its bar at once, the tabs
@@ -348,29 +347,20 @@ public:
     /// docs/platform-notes.md.
     void setFloatsOnOutsideDrop(bool enabled);
 
-    [[nodiscard]] FloatingFrame floatingWindowFrame() const;
+    [[nodiscard]] FloatingWindowFrame floatingWindowFrame() const;
     /// Frame of floating windows created from now on (default Custom).
     /// Existing floating windows keep theirs.
-    void setFloatingWindowFrame(FloatingFrame frame);
+    void setFloatingWindowFrame(FloatingWindowFrame frame);
     [[nodiscard]] FloatingWindowType floatingWindowType() const;
     /// Kind of floating windows created from now on (default Window).
     /// Existing floating windows keep theirs.
     void setFloatingWindowType(FloatingWindowType type);
-    [[nodiscard]] GroupHeader groupHeader() const;
+    [[nodiscard]] DockGroupHeader groupHeader() const;
     /// Header of every tab group (default Tabs). Can be changed at any time.
-    void setGroupHeader(GroupHeader header);
-    /// The header of the tab groups of one workspace, and of the floating
-    /// windows it owns, where that is to differ from the others: documents
-    /// under their tabs in the middle of tool panels with title bars, say.
-    /// A panel takes the header of where it is put.
-    void setGroupHeader(DockWorkspace *workspace, GroupHeader header);
-    [[nodiscard]] GroupHeader groupHeader(const DockWorkspace *workspace) const;
-    /// The built-in header buttons of one workspace and of the floating
-    /// windows it owns, in place of the theme's (DockTheme::titleButtons).
-    void setTitleButtons(DockWorkspace *workspace, DockTitleButtons buttons);
-    [[nodiscard]] DockTitleButtons titleButtons(const DockWorkspace *workspace) const;
+    /// DockWorkspace::setGroupHeader() says so for one workspace.
+    void setGroupHeader(DockGroupHeader header);
     [[nodiscard]] bool titleBarMovesGroup() const;
-    /// What the title bar of GroupHeader::TitleBar stands for (default
+    /// What the title bar of DockGroupHeader::TitleBar stands for (default
     /// false): the current panel, or with true all the panels stacked under
     /// it. Dragging it then moves the whole tab group, and a double click
     /// floats the group or docks all of it again. One panel is still moved
@@ -420,7 +410,21 @@ Q_SIGNALS:
     void undoStateChanged();
     void presetsChanged();
     void themeChanged();
+
+    void undoLimitChanged(int limit);
+    void restoresWindowGeometryChanged(bool enabled);
     void linkedSplittersEnabledChanged(bool enabled);
+    void cornerResizeEnabledChanged(bool enabled);
+    void splitterPushEnabledChanged(bool enabled);
+    void centerDropEnabledChanged(bool enabled);
+    void tabDragPreviewEnabledChanged(bool enabled);
+    void floatsOnOutsideDropChanged(bool enabled);
+    void dragGhostEnabledChanged(bool enabled);
+    void floatingWindowFrameChanged(QFlexDock::DockManager::FloatingWindowFrame frame);
+    void floatingWindowTypeChanged(QFlexDock::DockManager::FloatingWindowType type);
+    void groupHeaderChanged(QFlexDock::DockGroupHeader header);
+    void titleBarMovesGroupChanged(bool enabled);
+    void autoHideRevealChanged(QFlexDock::DockManager::AutoHideReveal reveal);
 
 private:
     friend class DockManagerPrivate;

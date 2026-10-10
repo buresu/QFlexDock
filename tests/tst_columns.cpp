@@ -20,7 +20,7 @@ namespace {
 /// H(a, V(b, c)) in workspace A, which docks in columns.
 void buildColumns(TwoWindows &f)
 {
-    f.manager.setColumnDocking(f.a, true);
+    f.a->setColumnDocking(true);
     QVERIFY(f.a->addPanel(p("a")));
     QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right, -1, 0.3));
     QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
@@ -59,11 +59,12 @@ private Q_SLOTS:
     void aWorkspaceDocksInColumnsOnRequest()
     {
         TwoWindows f;
-        QVERIFY(!f.manager.isColumnDocking(f.a));
-        f.manager.setColumnDocking(f.a, true);
-        QVERIFY(f.manager.isColumnDocking(f.a));
-        QVERIFY(!f.manager.isColumnDocking(f.b));
-        QVERIFY(!f.manager.isColumnDocking(nullptr));
+        QVERIFY(!f.a->isColumnDocking());
+        f.a->setColumnDocking(true);
+        QVERIFY(f.a->isColumnDocking());
+        QVERIFY(!f.b->isColumnDocking());
+        QVERIFY(f.b->setProperty("columnDocking", true));
+        QVERIFY(f.b->isColumnDocking());
     }
 
     void everyColumnHasABar()
@@ -97,7 +98,7 @@ private Q_SLOTS:
         QCOMPARE(f.manager.columnPanels(p("a")), QStringList({p("a")}));
 
         // Turned off, they are gone and the groups have their room.
-        f.manager.setColumnDocking(f.a, false);
+        f.a->setColumnDocking(false);
         QVERIFY(area->columnBars().isEmpty());
         QVERIFY(!left->isVisible());
         QCOMPARE(a->y(), 0);
@@ -319,7 +320,7 @@ private Q_SLOTS:
         // (Group and column are one node then.)
         TwoWindows f;
         f.show();
-        f.manager.setColumnDocking(f.a, true);
+        f.a->setColumnDocking(true);
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right, -1, 0.3));
         QVERIFY(f.manager.setColumnIconified(p("b"), true));
@@ -340,7 +341,7 @@ private Q_SLOTS:
     {
         TwoWindows f;
         f.show();
-        f.manager.setColumnDocking(f.a, true);
+        f.a->setColumnDocking(true);
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Left, -1, 0.3));
         QVERIFY(f.manager.setColumnIconified(p("b"), true));
@@ -407,12 +408,12 @@ private Q_SLOTS:
         QVERIFY(!strip->button(p("c"))->icon().isNull());
 
         // Closed, a panel has no button; shown again, it is back among them.
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         strip = stripOf(f.a, f.manager, "c");
         QVERIFY(strip && !strip->button(p("b")) && strip->button(p("c")));
         QCOMPARE(areaOf(f.a)->iconStrips().size(), 1);
         QVERIFY(f.manager.isColumnIconified(p("c")));
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("b")));
         strip = stripOf(f.a, f.manager, "b");
         QVERIFY(strip && strip->button(p("b")));
         QVERIFY(f.manager.isColumnIconified(p("b")));
@@ -448,7 +449,7 @@ private Q_SLOTS:
         QVERIFY(area->flyout().isNull());
 
         // Without the other panel, the strip is as wide as that form.
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         strip = stripOf(f.a, f.manager, "b");
         QCOMPARE(strip->sizeLimits().min.width(), 30);
         QCOMPARE(strip->sizeLimits().max.width(), 30);
@@ -476,7 +477,7 @@ private Q_SLOTS:
         buildColumns(f);
         QVERIFY(f.manager.maximizePanel(p("b")));
         QVERIFY(f.manager.setColumnIconified(p("b"), true));
-        QVERIFY(f.manager.maximizedPanel(f.a).isEmpty());
+        QVERIFY(f.a->maximizedPanel().isEmpty());
         QVERIFY(areaOf(f.a)->groupOfPanel(p("a"))->isVisible());
         QVERIFY(!f.manager.maximizePanel(p("c")));
         // Another one is, and the strip is out of the way for that.
@@ -491,7 +492,7 @@ private Q_SLOTS:
     {
         TwoWindows f;
         f.show();
-        f.manager.setColumnDocking(f.a, true);
+        f.a->setColumnDocking(true);
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Right, -1, 0.3));
         QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right, -1, 0.01));
@@ -572,9 +573,9 @@ private Q_SLOTS:
         QVERIFY(f.manager.dockPanel(p("c")));
         QCOMPARE(describe(f.a), p("H(c, a, b)"));
         QVERIFY(qAbs(area->groupOfPanel(p("a"))->width() - a2) <= near);
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         QVERIFY(qAbs(area->groupOfPanel(p("b"))->width() - b2) <= near);
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QVERIFY(qAbs(area->groupOfPanel(p("a"))->width() - a2) <= near);
         QVERIFY(qAbs(area->groupOfPanel(p("b"))->width() - b2) <= near);
 
@@ -600,7 +601,7 @@ private Q_SLOTS:
         TwoWindows f;
         f.show();
         buildColumns(f);
-        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingFrame::Custom);
+        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingWindowFrame::Custom);
         QVERIFY(f.manager.floatPanel(p("c"), QRect(60, 60, 300, 260)));
         DockFloatingWindow *window = onlyFloatingWindow(f.manager);
         QVERIFY(window);
@@ -624,7 +625,7 @@ private Q_SLOTS:
         QCOMPARE(area->columnBars().size(), 2);
         for (const DockColumnBar *each : area->columnBars())
             QVERIFY(!each->closeButton()->isVisible());
-        QVERIFY(f.manager.hidePanel(p("d")));
+        QVERIFY(f.manager.closePanel(p("d")));
 
         // Closing by the bar closes the panels of the window.
         bar = area->columnBars().constFirst();
@@ -726,7 +727,7 @@ private Q_SLOTS:
             QMainWindow window;
             DockWorkspace *workspace = manager.createWorkspace(p("W"));
             window.setCentralWidget(workspace);
-            manager.setColumnDocking(workspace, true);
+            workspace->setColumnDocking(true);
             manager.registerPanel(p("x"), content)->setCompactWidget(compact);
             manager.registerPanel(p("y"), new QLabel(p("y")));
             QVERIFY(workspace->addPanel(p("x")));

@@ -245,7 +245,7 @@ private Q_SLOTS:
         QVERIFY(drag.drop(area, pos));
 
         QCOMPARE(describe(f.a), expected);
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
         QVERIFY(!area->overlay()->isVisible());
         QCOMPARE(f.manager.panel(p("c"))->widget(), widget);
         QVERIFY(widget->isVisible());
@@ -268,7 +268,7 @@ private Q_SLOTS:
         QVERIFY(drag.enter(area, pos));
         QVERIFY(drag.drop(area, pos));
         QCOMPARE(describe(f.a), p("V(H(a, b), c)"));
-        QVERIFY(qAbs(f.a->layoutTree().root()->children[1].weight - 0.25) < 1e-9);
+        QVERIFY(qAbs(areaOf(f.a)->tree().root()->children[1].weight - 0.25) < 1e-9);
     }
 
     void dropOnTabBarInsertsAndReorders()
@@ -314,7 +314,7 @@ private Q_SLOTS:
             QVERIFY(drag.begin("c"));
             QVERIFY(drag.drop(area, tabEdge(2, false)));
             QCOMPARE(describe(f.a), p("a|d|c|b"));
-            QCOMPARE(f.a->layoutTree().root()->active, p("c"));
+            QCOMPARE(areaOf(f.a)->tree().root()->active, p("c"));
         }
     }
 
@@ -407,7 +407,7 @@ private Q_SLOTS:
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
-        const LayoutTree before = f.a->layoutTree();
+        const LayoutTree before = areaOf(f.a)->tree();
         QSignalSpy changed(&f.manager, &DockManager::layoutChanged);
         DockAreaWidget *area = areaOf(f.a);
         DockDragController *controller = priv(f.manager)->drag;
@@ -425,7 +425,7 @@ private Q_SLOTS:
             QVERIFY(!drag.drop(area, zonePoint(area, "b", DockArea::Bottom)));
         }
         QCOMPARE(describe(f.a), describe(before));
-        QCOMPARE(f.a->layoutTree().root()->id, before.root()->id);
+        QCOMPARE(areaOf(f.a)->tree().root()->id, before.root()->id);
         QCOMPARE(changed.size(), 0);
         QVERIFY(f.widgets[p("a")]->isVisible());
         QVERIFY(!f.manager.canUndo() || f.manager.undo()); // only the setup is on the stack
@@ -488,8 +488,8 @@ private Q_SLOTS:
         // Left and right only.
         DockPolicy policy;
         policy.allowedAreas = DockArea::Left | DockArea::Right;
-        QVERIFY(f.manager.setDockPolicy(p("c"), policy));
-        QCOMPARE(f.manager.dockPolicy(p("c")), policy);
+        f.manager.panel(p("c"))->setPolicy(policy);
+        QCOMPARE(f.manager.panel(p("c"))->policy(), policy);
         {
             Drag drag(f.manager);
             QVERIFY(drag.begin("c"));
@@ -818,7 +818,7 @@ private Q_SLOTS:
         QVERIFY(!middle.tabIndicator.isValid());
         QVERIFY(!middle.outer);
         QCOMPARE(middle.target.area, DockArea::Top);
-        QCOMPARE(middle.target.node, f.a->layoutTree().findPanel(p("c"))->id);
+        QCOMPARE(middle.target.node, areaOf(f.a)->tree().findPanel(p("c"))->id);
         QVERIFY(drag.drop(area, titlePoint("c", false)));
         QCOMPARE(describe(f.a), p("V(a|b, d, c)"));
     }
@@ -838,22 +838,22 @@ private Q_SLOTS:
             Drag drag(f.manager);
             QVERIFY(drag.begin("a"));
             QVERIFY(drag.move(area, zonePoint(area, "c", DockArea::Left)));
-            QVERIFY(f.manager.hidePanel(p("a")));
+            QVERIFY(f.manager.closePanel(p("a")));
             const QString before = describe(f.a);
             changed.clear();
             QVERIFY(!drag.drop(area, zonePoint(area, "c", DockArea::Left)));
             QCOMPARE(describe(f.a), before);
             QCOMPARE(changed.size(), 0);
-            QVERIFY(f.a->layoutTree().validate());
+            QVERIFY(areaOf(f.a)->tree().validate());
         }
         // The target group disappears before the drop is committed.
         {
             Drag drag(f.manager);
             QVERIFY(drag.begin("b"));
-            const DropTarget target{p("A"), f.a->layoutTree().findPanel(p("c"))->id,
+            const DropTarget target{p("A"), areaOf(f.a)->tree().findPanel(p("c"))->id,
                                     DockArea::Left, -1, 0.5};
             QVERIFY(priv(f.manager)->dropAllowed(drag.session(), target));
-            QVERIFY(f.manager.hidePanel(p("c")));
+            QVERIFY(f.manager.closePanel(p("c")));
             const QString before = describe(f.a);
             const DockResult result = priv(f.manager)->drag->drop(target);
             QVERIFY(!result);
@@ -864,10 +864,10 @@ private Q_SLOTS:
         {
             Drag drag(f.manager);
             QVERIFY(drag.begin("b"));
-            QVERIFY(f.manager.showPanel(p("c")));
+            QVERIFY(f.manager.openPanel(p("c")));
             QVERIFY(f.manager.unregisterPanel(p("b")));
             QVERIFY(!drag.drop(area, zonePoint(area, "c", DockArea::Left)));
-            QVERIFY(f.a->layoutTree().validate());
+            QVERIFY(areaOf(f.a)->tree().validate());
             QVERIFY(!f.a->panels().contains(p("b")));
         }
     }
@@ -941,7 +941,7 @@ private Q_SLOTS:
         const DropCandidate candidate = area->candidateAt(QPoint(3, area->height() / 2),
                                                           drag.session());
         QVERIFY(candidate.valid);
-        QCOMPARE(candidate.target.node, f.a->layoutTree().findPanel(p("a"))->id);
+        QCOMPARE(candidate.target.node, areaOf(f.a)->tree().findPanel(p("a"))->id);
         QVERIFY(drag.drop(area, QPoint(3, area->height() / 2)));
         QCOMPARE(describe(f.a), p("H(c, a, b)"));
         QCOMPARE(f.manager.maximizedPanel(), QString()); // the new panel must be visible
@@ -1037,7 +1037,7 @@ private Q_SLOTS:
         DockPolicy policy;
         policy.allowedAreas = DockArea::Center;
         for (const char *id : {"a", "b", "c"})
-            QVERIFY(f.manager.setDockPolicy(p(id), policy));
+            f.manager.panel(p(id))->setPolicy(policy);
         {
             Drag drag(f.manager);
             QVERIFY(drag.begin("c"));
@@ -1096,7 +1096,7 @@ private Q_SLOTS:
         // An empty workspace takes the panel where its tabs will be: along
         // its top, as high as a row of tabs. All of it is shown as aimed at.
         const int row = bar->height();
-        QVERIFY(f.manager.hidePanels({p("a"), p("b")}));
+        QVERIFY(f.manager.closePanels({p("a"), p("b")}));
         QVERIFY(!drag.move(area, area->rect().center()));
         QVERIFY(!drag.move(area, QPoint(area->width() / 2, row + 4)));
         QVERIFY(drag.move(area, QPoint(area->width() / 2, row - 2)));
@@ -1109,7 +1109,7 @@ private Q_SLOTS:
         QVERIFY(drag.move(area, area->rect().center()));
         QVERIFY(area->overlay()->scene().header.isNull());
         f.manager.setCenterDropEnabled(false);
-        QVERIFY(f.manager.showPanels({p("a"), p("b")}));
+        QVERIFY(f.manager.openPanels({p("a"), p("b")}));
         drag.leave(area);
 
         // A drop that names the middle directly is refused as well.
@@ -1125,7 +1125,7 @@ private Q_SLOTS:
         // but the mark between two tabs, and the whole title row takes them.
         DockPolicy policy;
         policy.allowedAreas = DockArea::Center;
-        QVERIFY(f.manager.setDockPolicy(p("c"), policy));
+        f.manager.panel(p("c"))->setPolicy(policy);
         QVERIFY(!drag.move(area, zonePoint(area, "a", DockArea::Left)));
         QVERIFY(area->overlay()->scene().zones.isEmpty());
         const QPoint beside = bar->mapTo(area, QPoint(bar->tabRect(1).right() + 200, bar->height() / 2));
@@ -1278,7 +1278,7 @@ private Q_SLOTS:
         {
             // The last tab of a group stays in it, and so does a group that
             // is dragged whole.
-            QVERIFY(f.manager.hidePanel(p("b")));
+            QVERIFY(f.manager.closePanel(p("b")));
             Drag last(f.manager);
             QVERIFY(last.begin("c"));
             controller->showSourcePreview();
@@ -1509,7 +1509,7 @@ private Q_SLOTS:
         DockTheme theme;
         theme.overlay.guide = DockGuide::Buttons;
         f.manager.setTheme(theme);
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
@@ -1706,10 +1706,17 @@ private Q_SLOTS:
         QVERIFY(f.manager.movePanel(p("d"), p("c"), DockArea::Center));
         DockAreaWidget *area = areaOf(f.a);
         DockAreaWidget *areaB = areaOf(f.b);
-        f.manager.setCenterDropEnabled(f.a, false);
+        f.a->setCenterDropEnabled(false);
         QVERIFY(f.manager.isCenterDropEnabled());
-        QVERIFY(!f.manager.isCenterDropEnabled(f.a));
-        QVERIFY(f.manager.isCenterDropEnabled(f.b));
+        QVERIFY(!f.a->isCenterDropEnabled());
+        QVERIFY(f.b->isCenterDropEnabled());
+        // Unset, a workspace has the manager's.
+        f.a->unsetCenterDropEnabled();
+        QVERIFY(f.a->isCenterDropEnabled());
+        f.manager.setCenterDropEnabled(false);
+        QVERIFY(!f.a->isCenterDropEnabled());
+        f.manager.setCenterDropEnabled(true);
+        f.a->setCenterDropEnabled(false);
 
         // Into A by the tabs only; its own tab does not stay by the middle.
         Drag drag(f.manager);
@@ -1764,7 +1771,7 @@ private Q_SLOTS:
         }
 
         // In a workspace that docks in columns, it is the side of the column.
-        f.manager.setColumnDocking(f.a, true);
+        f.a->setColumnDocking(true);
         Drag drag(f.manager);
         QVERIFY(drag.begin("d"));
         const QPoint left = zonePoint(area, "c", DockArea::Left);
@@ -1794,7 +1801,7 @@ private Q_SLOTS:
     {
         TwoWindows f;
         f.show();
-        f.manager.setColumnDocking(f.a, true);
+        f.a->setColumnDocking(true);
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
         QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
@@ -1827,7 +1834,7 @@ private Q_SLOTS:
     {
         TwoWindows f;
         f.show();
-        f.manager.setColumnDocking(f.a, true);
+        f.a->setColumnDocking(true);
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right));
         QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));

@@ -112,7 +112,7 @@ private Q_SLOTS:
         QVERIFY(f.manager.floatPanel(p("d"), QRect(70, 80, 300, 220)));
         QVERIFY(f.manager.setPanelAutoHide(p("e"), true, DockArea::Bottom));
         QVERIFY(f.manager.movePanel(p("f"), f.b, DockArea::Center));
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         QVERIFY(f.manager.maximizePanel(p("a")));
         const QByteArray saved = f.manager.saveLayout();
         QWidget *contentA = f.widgets[p("a")];
@@ -121,9 +121,9 @@ private Q_SLOTS:
         QVERIFY(f.manager.restoreMaximizedPanel());
         QVERIFY(f.manager.dockPanel(p("d")));
         QVERIFY(f.manager.movePanel(p("a"), f.b, DockArea::Top));
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QVERIFY(f.manager.setPanelAutoHide(p("e"), false));
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         QVERIFY(f.manager.saveLayout() != saved);
 
         DockRestoreReport report;
@@ -135,14 +135,14 @@ private Q_SLOTS:
 
         QCOMPARE(describe(f.a), p("H(a, b)"));
         QCOMPARE(describe(f.b), p("f"));
-        QCOMPARE(f.manager.maximizedPanel(f.a), p("a"));
+        QCOMPARE(f.a->maximizedPanel(), p("a"));
         QVERIFY(f.manager.panel(p("d"))->isFloating());
         QTRY_COMPARE(f.widgets[p("d")]->window()->size(), QSize(300, 220));
         if (windowPositionsWork())
             QCOMPARE(f.widgets[p("d")]->window()->geometry().topLeft(), QPoint(70, 80));
         QVERIFY(f.manager.panel(p("e"))->isAutoHidden());
         QVERIFY(!f.manager.panel(p("c"))->isOpen());
-        QVERIFY(qAbs(f.a->layoutTree().root()->children[1].weight - 0.3) < 1e-9);
+        QVERIFY(qAbs(areaOf(f.a)->tree().root()->children[1].weight - 0.3) < 1e-9);
         // The same widgets, not copies.
         QCOMPARE(f.manager.panel(p("a"))->widget(), contentA);
         QCOMPARE(contentA->window(), &f.windowA);
@@ -152,7 +152,7 @@ private Q_SLOTS:
 
         // The hidden panel still knows it belongs next to b.
         QVERIFY(f.manager.restoreMaximizedPanel());
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QCOMPARE(describe(f.a), p("H(a, b|c)"));
 
         // And the restore itself can be undone.
@@ -177,7 +177,7 @@ private Q_SLOTS:
         QCOMPARE(saved.count("iconified"), 2); // only where it is
 
         QVERIFY(f.manager.setColumnIconified(p("b"), false));
-        QVERIFY(f.manager.hidePanel(p("d")));
+        QVERIFY(f.manager.closePanel(p("d")));
         DockRestoreReport report;
         QVERIFY(f.manager.restoreLayout(saved, &report));
         QVERIFY(report.warnings.isEmpty());
@@ -215,7 +215,7 @@ private Q_SLOTS:
         QCOMPARE(describe(f.a), p("H(a, b|c)"));
         QCOMPARE(describe(f.b), p("e"));
         QVERIFY(f.manager.panel(p("d"))->isFloating());
-        QCOMPARE(f.a->layoutTree().findPanel(p("b"))->active, p("b"));
+        QCOMPARE(areaOf(f.a)->tree().findPanel(p("b"))->active, p("b"));
         QVERIFY(f.widgets[p("b")]->isVisible());
         QCOMPARE(f.manager.saveLayout(), saved);
     }
@@ -230,7 +230,7 @@ private Q_SLOTS:
         buildRichLayout(f);
         QVERIFY(f.manager.saveLayout(path));
         const QString before = describe(f.a);
-        QVERIFY(f.manager.hidePanel(p("a")));
+        QVERIFY(f.manager.closePanel(p("a")));
         QVERIFY(f.manager.loadLayout(path));
         QCOMPARE(describe(f.a), before);
 
@@ -292,14 +292,14 @@ private Q_SLOTS:
         QCOMPARE(missing, QStringList({p("b"), p("d"), p("e")}));
         QCOMPARE(report.unknownWorkspaces, QStringList{p("B")});
         QCOMPARE(describe(a), p("H(a, c)"));
-        QVERIFY(a->layoutTree().validate());
+        QVERIFY(areaOf(a)->tree().validate());
 
         // The plugin arrives: its panels go where the layout had them.
         manager.registerPanel(p("b"), new QLabel(p("B")));
         QCOMPARE(describe(a), p("H(a, b|c)"));
         manager.registerPanel(p("d"), new QLabel(p("D")));
         QCOMPARE(describe(a), p("H(V(a, d), b|c)"));
-        QVERIFY(qAbs(a->layoutTree().findPanel(p("d"))->weight - 0.4) < 1e-9);
+        QVERIFY(qAbs(areaOf(a)->tree().findPanel(p("d"))->weight - 0.4) < 1e-9);
 
         // Saving while panels are missing does not lose their place either.
         const QByteArray again = manager.saveLayout();
@@ -448,7 +448,7 @@ private Q_SLOTS:
         const DockResult result = f.manager.restoreLayout(bytes(document(layout)), &report);
         QVERIFY2(result, qPrintable(result.message()));
         QCOMPARE(describe(f.a), expected);
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
         QVERIFY2(report.warnings.size() >= minWarnings, qPrintable(report.warnings.join(u'\n')));
         // Every placed panel is shown exactly once.
         for (const PanelId &panel : f.a->panels())

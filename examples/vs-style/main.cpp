@@ -108,9 +108,9 @@ Workbench::Workbench()
 
     // Title bars among the tools, tabs among the documents, where a header
     // has only the buttons the documents bring themselves.
-    m_manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
-    m_manager.setGroupHeader(m_documents, DockManager::GroupHeader::Tabs);
-    m_manager.setTitleButtons(m_documents, {});
+    m_manager.setGroupHeader(DockGroupHeader::TitleBar);
+    m_documents->setGroupHeader(DockGroupHeader::Tabs);
+    m_documents->setTitleButtons({});
 
     addChrome();
     addToolWindows();
@@ -209,7 +209,7 @@ DockPanel *Workbench::addDocument(const QString &name, const QString &text)
                     [this] { splitDocuments(DockArea::Bottom); });
     menu->addSeparator();
     menu->addAction(u"Close All Tabs"_s, panel, [this, id] {
-        (void)m_manager.hidePanels(m_manager.tabGroupPanels(id));
+        (void)m_manager.closePanels(m_manager.tabGroupPanels(id));
     });
     more->setMenu(menu);
     auto *settings = new QAction(icon(Glyph::Gear), u"Tab Settings"_s, panel);
@@ -253,7 +253,7 @@ void Workbench::showToolWindow(const PanelId &id)
 {
     const DockPanel *panel = m_manager.panel(id);
     if (panel && !panel->isOpen())
-        (void)m_manager.showPanel(id);
+        (void)m_manager.openPanel(id);
     (void)m_manager.activatePanel(id);
 }
 
@@ -353,7 +353,7 @@ void Workbench::addMenus()
     file->addAction(u"&New File"_s, QKeySequence::New, &m_window, [this] { newDocument(); });
     file->addAction(u"&Close"_s, QKeySequence(Qt::CTRL | Qt::Key_F4), &m_window, [this] {
         if (const DockPanel *document = currentDocument())
-            (void)m_manager.hidePanel(document->id());
+            (void)m_manager.closePanel(document->id());
     });
     file->addSeparator();
     file->addAction(u"E&xit"_s, &m_window, &QWidget::close);

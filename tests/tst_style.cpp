@@ -351,7 +351,7 @@ private Q_SLOTS:
         QVERIFY(QTest::qWaitForWindowExposed(floating));
         QCOMPARE(pixel(floating, QPoint(floating->width() / 2, floating->height() - 12)),
                  QColor(0x11, 0x22, 0x33));
-        QVERIFY(f.manager.hidePanel(p("e")));
+        QVERIFY(f.manager.closePanel(p("e")));
         QVERIFY(f.manager.activatePanel(p("a")));
 
         // Drop overlay: set through qproperty-.
@@ -383,12 +383,12 @@ private Q_SLOTS:
         QCOMPARE(area->overlay()->effectiveStyle().borderWidth, 4.0); // qproperty values persist
     }
 
-    // The parts that come with GroupHeader::TitleBar, with the title buttons
+    // The parts that come with DockGroupHeader::TitleBar, with the title buttons
     // and with a panel that has no header.
     void styleSheetsStyleTheTitleBarHeader()
     {
         TwoWindows f;
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         DockTheme theme;
         theme.titleButtons = DockTitleButton::Float | DockTitleButton::Close;
         f.manager.setTheme(theme);
@@ -531,7 +531,7 @@ private Q_SLOTS:
         theme.floatingBorderWidth = 1;
         theme.floatingCornerRadius = 12;
         f.manager.setTheme(theme);
-        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
         qApp->setStyleSheet(QStringLiteral(R"(
             QFlexDock--DockFloatingWindow {
                 background: #112233; border: 1px solid #ff8800;
@@ -597,7 +597,7 @@ private Q_SLOTS:
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.a->addPanel(p("b"), DockArea::Left));
         f.manager.panel(p("b"))->setCollapsible(true);
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         DockAreaWidget *area = areaOf(f.a);
         QCOMPARE(area->visibleEdgeHandles().size(), 1);
         DockEdgeHandle *edge = area->visibleEdgeHandles().constFirst();
@@ -633,7 +633,7 @@ private Q_SLOTS:
     {
         TwoWindows f;
         f.show();
-        f.manager.setColumnDocking(f.a, true);
+        f.a->setColumnDocking(true);
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right, -1, 0.3));
         QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom));
@@ -1077,7 +1077,7 @@ private Q_SLOTS:
         QVERIFY(untouched(pixel(bare, QPoint(0, bare->height() / 2))));
 
         // With a title bar: that is part of the pane, and the tabs are below.
-        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
         QCoreApplication::processEvents();
         QTRY_VERIFY(group->tabBar()->isVisible());
         host = group->contentHost()->geometry();

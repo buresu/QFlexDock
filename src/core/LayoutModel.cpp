@@ -1,13 +1,20 @@
 // SPDX-License-Identifier: MIT
-#include <QFlexDock/LayoutModel.h>
+#include "core/LayoutModel.h"
 
 #include <QtCore/QSet>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <utility>
 
 namespace QFlexDock {
+
+NodeId NodeId::create()
+{
+    static std::atomic<quint64> counter{0};
+    return NodeId{++counter};
+}
 
 namespace {
 

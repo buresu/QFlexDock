@@ -3,10 +3,30 @@
 
 #include <QFlexDock/Global.h>
 
+#include <QtCore/QHashFunctions>
+
+#include <compare>
 #include <optional>
 #include <vector>
 
 namespace QFlexDock {
+
+/// Identifier of a node of a layout tree. Unique within the process and never
+/// reused; it is not persisted (restored layouts get fresh ids).
+struct QFLEXDOCK_EXPORT NodeId
+{
+    quint64 value = 0;
+
+    [[nodiscard]] bool isNull() const { return value == 0; }
+    [[nodiscard]] static NodeId create();
+
+    friend auto operator<=>(const NodeId &, const NodeId &) = default;
+};
+
+inline size_t qHash(NodeId id, size_t seed = 0) noexcept
+{
+    return ::qHash(id.value, seed);
+}
 
 /// One node of a layout tree: either a tab group (leaf) or an n-ary split.
 ///
@@ -128,3 +148,5 @@ private:
 };
 
 } // namespace QFlexDock
+
+Q_DECLARE_METATYPE(QFlexDock::NodeId)

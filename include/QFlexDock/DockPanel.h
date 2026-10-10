@@ -109,14 +109,14 @@ public:
     /// Whether dragging a split handle far enough against the panel's tab
     /// group closes it (default false): once the group would be left less
     /// than half of its minimum size, it gives way, and comes back if the
-    /// drag returns. Released there, its panels are closed; showPanel()
+    /// drag returns. Released there, its panels are closed; openPanel()
     /// brings each back at the size the group had before the drag. Every
     /// panel of a group has to allow this for the group to go.
     ///
     /// Collapsible panels that are closed, in whatever way, can also be
     /// pulled back out: dragging inwards from the edge they went to shows
     /// them again (those that were closed together, see
-    /// DockManager::hidePanels()).
+    /// DockManager::closePanels()).
     [[nodiscard]] bool isCollapsible() const;
     void setCollapsible(bool collapsible);
 

@@ -763,7 +763,7 @@ DockResult DockManagerPrivate::closePanels(const QStringList &ids)
     return leaving.isEmpty() ? DockResult::success() : apply(std::move(next), true);
 }
 
-DockResult DockManagerPrivate::showPanels(const QStringList &ids)
+DockResult DockManagerPrivate::openPanels(const QStringList &ids)
 {
     for (const PanelId &id : ids) {
         if (!panels.contains(id))
@@ -1591,7 +1591,7 @@ QString DockManagerPrivate::workspaceIdFor(const QString &containerId) const
     return container->kind == ContainerKind::Floating ? container->owner : container->id;
 }
 
-DockManager::GroupHeader DockManagerPrivate::groupHeaderFor(const QString &containerId) const
+DockGroupHeader DockManagerPrivate::groupHeaderFor(const QString &containerId) const
 {
     const DockWorkspace *workspace = workspaceFor(containerId);
     return workspace && workspace->d->groupHeader ? *workspace->d->groupHeader : groupHeader;
@@ -1616,16 +1616,29 @@ bool DockManagerPrivate::columnDockingFor(const QString &containerId) const
     return workspace && workspace->d->columnDocking;
 }
 
+void DockManagerPrivate::columnDockingChanged(const DockWorkspace *workspace)
+{
+    // The bars take their room from the tab groups below them.
+    if (const ContainerState *container = state.find(workspace->workspaceId()))
+        workspace->d->area->setLayoutState(*container);
+    for (const auto &c : state.containers) {
+        if (c.kind == ContainerKind::Floating && c.owner == workspace->workspaceId()) {
+            if (DockFloatingWindow *window = floatingWindows.value(c.id))
+                window->area()->setLayoutState(c);
+        }
+    }
+}
+
 // Where every column has a bar, that bar is what a floating window is moved
 // by: there is nothing left for a title row to stand for.
-DockManager::FloatingFrame DockManagerPrivate::floatingFrameFor(const QString &owner) const
+DockManager::FloatingWindowFrame DockManagerPrivate::floatingFrameFor(const QString &owner) const
 {
     const bool columns = std::any_of(workspaces.cbegin(), workspaces.cend(),
                                      [&owner](const DockWorkspace *workspace) {
         return workspace->workspaceId() == owner && workspace->d->columnDocking;
     });
-    return columns && floatingFrame == DockManager::FloatingFrame::Custom
-        ? DockManager::FloatingFrame::Minimal : floatingFrame;
+    return columns && floatingFrame == DockManager::FloatingWindowFrame::Custom
+        ? DockManager::FloatingWindowFrame::Minimal : floatingFrame;
 }
 
 int DockManagerPrivate::columnBarHeight() const
@@ -1918,12 +1931,6 @@ DockResult DockManager::lastError() const
 
 // --- Placement ---------------------------------------------------------------
 
-DockResult DockManager::addPanel(const PanelId &id, DockWorkspace *workspace, DockArea area,
-                                 double fraction)
-{
-    return movePanel(id, workspace, area, fraction);
-}
-
 DockResult DockManager::movePanel(const PanelId &id, DockWorkspace *workspace, DockArea area,
                                   double fraction)
 {
@@ -2001,7 +2008,7 @@ DockResult DockManager::dockPanel(const PanelId &id)
     return d->dockBack(id);
 }
 
-DockResult DockManager::showPanel(const PanelId &id)
+DockResult DockManager::openPanel(const PanelId &id)
 {
     if (!d->panels.contains(id))
         return unknownPanel(id);
@@ -2015,17 +2022,17 @@ DockResult DockManager::showPanel(const PanelId &id)
     return d->activate(id, Activation::Focus);
 }
 
-DockResult DockManager::hidePanel(const PanelId &id)
+DockResult DockManager::closePanel(const PanelId &id)
 {
     return d->closePanels({id});
 }
 
-DockResult DockManager::showPanels(const QStringList &ids)
+DockResult DockManager::openPanels(const QStringList &ids)
 {
-    return d->showPanels(ids);
+    return d->openPanels(ids);
 }
 
-DockResult DockManager::hidePanels(const QStringList &ids)
+DockResult DockManager::closePanels(const QStringList &ids)
 {
     return d->closePanels(ids);
 }
@@ -2034,7 +2041,7 @@ DockResult DockManager::togglePanel(const PanelId &id)
 {
     if (!d->panels.contains(id))
         return unknownPanel(id);
-    return d->state.isPlaced(id) ? hidePanel(id) : showPanel(id);
+    return d->state.isPlaced(id) ? closePanel(id) : openPanel(id);
 }
 
 DockResult DockManager::activatePanel(const PanelId &id)
@@ -2057,6 +2064,14 @@ QStringList DockManager::tabGroupPanels(const PanelId &id) const
     return d->groupPanels(id);
 }
 
+PanelId DockManager::currentPanel(const PanelId &anyPanelOfGroup) const
+{
+    const std::optional<PanelLocation> location = d->state.locate(anyPanelOfGroup);
+    const ContainerState *container = location ? d->state.find(location->container) : nullptr;
+    const LayoutNode *group = container ? container->tree.findNode(location->node) : nullptr;
+    return group ? group->active : PanelId();
+}
+
 DockResult DockManager::maximizePanel(const PanelId &id)
 {
     return d->setMaximized(id, true);
@@ -2067,36 +2082,13 @@ DockResult DockManager::restoreMaximizedPanel()
     return d->setMaximized({}, false);
 }
 
-PanelId DockManager::maximizedPanel(const DockWorkspace *workspace) const
+PanelId DockManager::maximizedPanel() const
 {
     for (const auto &c : d->state.containers) {
-        if (c.maximized.isEmpty())
-            continue;
-        if (!workspace || c.id == workspace->workspaceId())
+        if (!c.maximized.isEmpty())
             return c.maximized;
     }
     return {};
-}
-
-void DockManager::setColumnDocking(DockWorkspace *workspace, bool enabled)
-{
-    if (!workspace || workspace->manager() != this || workspace->d->columnDocking == enabled)
-        return;
-    workspace->d->columnDocking = enabled;
-    // The bars take their room from the tab groups below them.
-    if (const ContainerState *container = d->state.find(workspace->workspaceId()))
-        workspace->d->area->setLayoutState(*container);
-    for (const auto &c : d->state.containers) {
-        if (c.kind == ContainerKind::Floating && c.owner == workspace->workspaceId()) {
-            if (DockFloatingWindow *window = d->floatingWindows.value(c.id))
-                window->area()->setLayoutState(c);
-        }
-    }
-}
-
-bool DockManager::isColumnDocking(const DockWorkspace *workspace) const
-{
-    return workspace && workspace->d->columnDocking;
 }
 
 DockResult DockManager::setColumnIconified(const PanelId &anyPanelOfColumn, bool iconified)
@@ -2121,21 +2113,6 @@ DockResult DockManager::setPanelAutoHide(const PanelId &id, bool autoHide, DockA
 }
 
 // --- Policies ----------------------------------------------------------------
-
-DockResult DockManager::setDockPolicy(const PanelId &id, const DockPolicy &policy)
-{
-    DockPanel *p = panel(id);
-    if (!p)
-        return unknownPanel(id);
-    p->setPolicy(policy);
-    return DockResult::success();
-}
-
-DockPolicy DockManager::dockPolicy(const PanelId &id) const
-{
-    const DockPanel *p = panel(id);
-    return p ? p->policy() : DockPolicy{};
-}
 
 void DockManager::setDropFilter(DockDropFilter filter)
 {
@@ -2226,7 +2203,10 @@ bool DockManager::restoresWindowGeometry() const
 
 void DockManager::setRestoresWindowGeometry(bool enabled)
 {
+    if (d->restoreWindowGeometry == enabled)
+        return;
     d->restoreWindowGeometry = enabled;
+    Q_EMIT restoresWindowGeometryChanged(enabled);
 }
 
 // --- Presets -----------------------------------------------------------------
@@ -2374,10 +2354,14 @@ int DockManager::undoLimit() const
 
 void DockManager::setUndoLimit(int limit)
 {
-    d->undoLimit = qMax(0, limit);
+    limit = qMax(0, limit);
+    if (d->undoLimit == limit)
+        return;
+    d->undoLimit = limit;
     while (int(d->undoStack.size()) > d->undoLimit)
         d->undoStack.erase(d->undoStack.begin());
     Q_EMIT undoStateChanged();
+    Q_EMIT undoLimitChanged(limit);
 }
 
 // --- Behaviour and look ------------------------------------------------------
@@ -2408,46 +2392,21 @@ void DockManager::setCornerResizeEnabled(bool enabled)
         return;
     d->cornerResize = enabled;
     d->refreshAllAppearance();
+    Q_EMIT cornerResizeEnabledChanged(enabled);
 }
 
-DockManager::GroupHeader DockManager::groupHeader() const
+DockGroupHeader DockManager::groupHeader() const
 {
     return d->groupHeader;
 }
 
-void DockManager::setGroupHeader(GroupHeader header)
+void DockManager::setGroupHeader(DockGroupHeader header)
 {
     if (d->groupHeader == header)
         return;
     d->groupHeader = header;
     d->refreshAllAppearance();
-}
-
-DockManager::GroupHeader DockManager::groupHeader(const DockWorkspace *workspace) const
-{
-    return workspace && workspace->d->groupHeader ? *workspace->d->groupHeader : d->groupHeader;
-}
-
-void DockManager::setGroupHeader(DockWorkspace *workspace, GroupHeader header)
-{
-    if (!workspace || workspace->manager() != this || workspace->d->groupHeader == header)
-        return;
-    workspace->d->groupHeader = header;
-    d->refreshAllAppearance();
-}
-
-DockTitleButtons DockManager::titleButtons(const DockWorkspace *workspace) const
-{
-    return workspace && workspace->d->titleButtons ? *workspace->d->titleButtons
-                                                   : d->theme.titleButtons;
-}
-
-void DockManager::setTitleButtons(DockWorkspace *workspace, DockTitleButtons buttons)
-{
-    if (!workspace || workspace->manager() != this || workspace->d->titleButtons == buttons)
-        return;
-    workspace->d->titleButtons = buttons;
-    d->refreshAllAppearance();
+    Q_EMIT groupHeaderChanged(header);
 }
 
 bool DockManager::isCenterDropEnabled() const
@@ -2457,18 +2416,10 @@ bool DockManager::isCenterDropEnabled() const
 
 void DockManager::setCenterDropEnabled(bool enabled)
 {
+    if (d->centerDrop == enabled)
+        return;
     d->centerDrop = enabled;
-}
-
-bool DockManager::isCenterDropEnabled(const DockWorkspace *workspace) const
-{
-    return workspace && workspace->d->centerDrop ? *workspace->d->centerDrop : d->centerDrop;
-}
-
-void DockManager::setCenterDropEnabled(DockWorkspace *workspace, bool enabled)
-{
-    if (workspace && workspace->manager() == this)
-        workspace->d->centerDrop = enabled;
+    Q_EMIT centerDropEnabledChanged(enabled);
 }
 
 bool DockManager::isSplitterPushEnabled() const
@@ -2478,7 +2429,10 @@ bool DockManager::isSplitterPushEnabled() const
 
 void DockManager::setSplitterPushEnabled(bool enabled)
 {
+    if (d->splitterPush == enabled)
+        return;
     d->splitterPush = enabled;
+    Q_EMIT splitterPushEnabledChanged(enabled);
 }
 
 bool DockManager::isTabDragPreviewEnabled() const
@@ -2488,7 +2442,10 @@ bool DockManager::isTabDragPreviewEnabled() const
 
 void DockManager::setTabDragPreviewEnabled(bool enabled)
 {
+    if (d->tabDragPreview == enabled)
+        return;
     d->tabDragPreview = enabled;
+    Q_EMIT tabDragPreviewEnabledChanged(enabled);
 }
 
 bool DockManager::floatsOnOutsideDrop() const
@@ -2498,17 +2455,23 @@ bool DockManager::floatsOnOutsideDrop() const
 
 void DockManager::setFloatsOnOutsideDrop(bool enabled)
 {
+    if (d->floatOnOutsideDrop == enabled)
+        return;
     d->floatOnOutsideDrop = enabled;
+    Q_EMIT floatsOnOutsideDropChanged(enabled);
 }
 
-DockManager::FloatingFrame DockManager::floatingWindowFrame() const
+DockManager::FloatingWindowFrame DockManager::floatingWindowFrame() const
 {
     return d->floatingFrame;
 }
 
-void DockManager::setFloatingWindowFrame(FloatingFrame frame)
+void DockManager::setFloatingWindowFrame(FloatingWindowFrame frame)
 {
+    if (d->floatingFrame == frame)
+        return;
     d->floatingFrame = frame;
+    Q_EMIT floatingWindowFrameChanged(frame);
 }
 
 DockManager::FloatingWindowType DockManager::floatingWindowType() const
@@ -2518,7 +2481,10 @@ DockManager::FloatingWindowType DockManager::floatingWindowType() const
 
 void DockManager::setFloatingWindowType(FloatingWindowType type)
 {
+    if (d->floatingWindowType == type)
+        return;
     d->floatingWindowType = type;
+    Q_EMIT floatingWindowTypeChanged(type);
 }
 
 bool DockManager::titleBarMovesGroup() const
@@ -2528,7 +2494,10 @@ bool DockManager::titleBarMovesGroup() const
 
 void DockManager::setTitleBarMovesGroup(bool enabled)
 {
+    if (d->titleBarMovesGroup == enabled)
+        return;
     d->titleBarMovesGroup = enabled;
+    Q_EMIT titleBarMovesGroupChanged(enabled);
 }
 
 DockManager::AutoHideReveal DockManager::autoHideReveal() const
@@ -2543,6 +2512,7 @@ void DockManager::setAutoHideReveal(AutoHideReveal reveal)
     d->autoHideReveal = reveal;
     for (DockWorkspace *workspace : std::as_const(d->workspaces))
         DockManagerPrivate::get(workspace)->autoHide->refreshAppearance();
+    Q_EMIT autoHideRevealChanged(reveal);
 }
 
 bool DockManager::isDragGhostEnabled() const
@@ -2552,7 +2522,10 @@ bool DockManager::isDragGhostEnabled() const
 
 void DockManager::setDragGhostEnabled(bool enabled)
 {
+    if (d->dragGhostEnabled == enabled)
+        return;
     d->dragGhostEnabled = enabled;
+    Q_EMIT dragGhostEnabledChanged(enabled);
 }
 
 DockTheme DockManager::theme() const

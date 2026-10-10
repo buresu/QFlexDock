@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <QFlexDock/LayoutModel.h>
+#include "core/LayoutModel.h"
 
 #include <QtCore/QHash>
 #include <QtCore/QRect>

@@ -72,18 +72,18 @@ private:
 } // namespace
 
 DockFloatingWindow::DockFloatingWindow(DockManagerPrivate *manager, const QString &containerId,
-                                       DockManager::FloatingFrame frame)
-    : QWidget(nullptr, frame == DockManager::FloatingFrame::Native
+                                       DockManager::FloatingWindowFrame frame)
+    : QWidget(nullptr, frame == DockManager::FloatingWindowFrame::Native
                            ? Qt::Window : Qt::Window | Qt::FramelessWindowHint)
     , m_manager(manager)
     , m_containerId(containerId)
-    , m_customFrame(frame != DockManager::FloatingFrame::Native)
+    , m_customFrame(frame != DockManager::FloatingWindowFrame::Native)
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
 
-    if (frame == DockManager::FloatingFrame::Custom) {
+    if (frame == DockManager::FloatingWindowFrame::Custom) {
         m_titleBar = new QWidget(this);
         m_titleBar->setObjectName(QStringLiteral("dockFloatingTitleBar"));
         m_titleBar->setAttribute(Qt::WA_StyledBackground);

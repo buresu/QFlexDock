@@ -32,9 +32,9 @@ int main(int argc, char *argv[])
     DockManager manager;
 
     // Docks have a title bar; tabs show up only where docks are stacked.
-    manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+    manager.setGroupHeader(DockGroupHeader::TitleBar);
     // A floating dock is just the dock: no window title above its own.
-    manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+    manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
     // Every boundary is dragged on its own.
     manager.setLinkedSplittersEnabled(false);
     manager.setCornerResizeEnabled(false);

@@ -10,9 +10,8 @@ overview and the rules that are hard to see from the headers.
 | `<QFlexDock/DockPanel.h>` | `DockPanel` |
 | `<QFlexDock/DockPolicy.h>` | `DockPolicy`, `DockDropRequest`, `DockDropFilter` |
 | `<QFlexDock/DockTheme.h>` | `DockTheme`, `DockOverlayStyle`, `DockOverlayPainter` |
-| `<QFlexDock/LayoutModel.h>` | `LayoutNode`, `LayoutTree` (for reading and inspecting a layout) |
 | `<QFlexDock/NativeWindowAdapter.h>` | `NativeWindowAdapter` |
-| `<QFlexDock/Global.h>` | `PanelId`, `NodeId`, `DockArea`, `DockFeature`, `DockGuide`, `DockError`, `DockResult` |
+| `<QFlexDock/Global.h>` | `PanelId`, `DockArea`, `DockFeature`, `DockGuide`, `DockGroupHeader`, `DockTitleButton`, `DockError`, `DockResult` |
 | `<QFlexDockQuick/QmlDockController.h>`, `<QFlexDockQuick/QmlPanelAdapter.h>` | The `QFlexDock::Quick` module |
 
 ## Conventions
@@ -57,31 +56,31 @@ Registering does not show a panel.
 
 | Function | |
 |---|---|
-| `addPanel(id, workspace, area, fraction)`, `movePanel(id, workspace, area, fraction)` | Dock against the whole workspace: an edge, or `Center` to join the tab group used last |
+| `movePanel(id, workspace, area, fraction)`, `DockWorkspace::addPanel(id, area, fraction)` | Dock against the whole workspace: an edge, or `Center` to join the tab group used last |
 | `movePanel(id, relativeTo, area, tabIndex, fraction)` | Dock against the tab group of `relativeTo`: split it on an edge, or `Center` to become a tab |
 | `moveTabGroup(anyPanel, …)` | The same for a whole tab group |
 | `floatPanel(id, geometry)`, `floatTabGroup(anyPanel, geometry)` | Into a new floating window; a closed panel is shown in one |
 | `dockPanel(id)` | From floating or auto-hide back to where it was docked last |
-| `showPanel(id)`, `hidePanel(id)`, `togglePanel(id)` | Reopen a closed panel in its old place / close it (it stays registered) |
-| `showPanels(ids)`, `hidePanels(ids)` | The same for several panels as one change and one undo step |
+| `openPanel(id)`, `closePanel(id)`, `togglePanel(id)` | Reopen a closed panel in its old place / close it (it stays registered) |
+| `openPanels(ids)`, `closePanels(ids)` | The same for several panels as one change and one undo step |
 | `activatePanel(id)`, `activePanel()` | Bring the tab to the front, raise the window, give focus |
 | `raisePanel(id)` | Bring the tab to the front and nothing else: the active panel and keyboard focus stay where they are |
-| `tabGroupPanels(id)` | The panels sharing a tab group with `id`, in the order of their tabs |
+| `tabGroupPanels(id)`, `currentPanel(id)` | The panels sharing a tab group with `id`, in the order of their tabs, and the one of them in front |
 | `maximizePanel(id)`, `restoreMaximizedPanel()` | Let the tab group fill its container; the layout tree is not changed |
 | `setPanelAutoHide(id, on, edge)` | Collapse into an auto-hide bar / pin back |
 
 `fraction` is the share the new side takes: 0.25 by default against a workspace, 0.5 when splitting a group.
 
 A panel that is closed leaves its room to the neighbour it was split off from; nothing else changes size.
-`showPanel()` puts it back at the size it had. Side areas that can be put away are just that:
-`hidePanels()` on what is in them, `showPanels()` to bring them back, in any order. Panels closed together
+`openPanel()` puts it back at the size it had. Side areas that can be put away are just that:
+`closePanels()` on what is in them, `openPanels()` to bring them back, in any order. Panels closed together
 return in their old tab order, with the same tab in front. With `DockPanel::setCollapsible(true)` the user
 can put them away as well, by pushing a split handle against them, and pull them out again.
 
 A panel that leaves a split leaves the room it shows as: where a size limit held it narrower than its
 share (a palette of fixed width docked at a quarter of the window), what goes to its neighbour is that width.
 
-**Policies** — `setDockPolicy(id, policy)`, `setDropFilter(filter)` (called for every drop; return `false` to
+**Policies** — `DockPanel::setPolicy(policy)`, `setDropFilter(filter)` (called for every drop; return `false` to
 refuse). The request names the panels, the target and its area, and for a drop on a header the position
 among the tabs there (`tabIndex`, -1 elsewhere).
 
@@ -90,7 +89,7 @@ QFlexDock::DockPolicy policy;
 policy.features = QFlexDock::AllDockFeatures & ~QFlexDock::DockFeatures(QFlexDock::DockFeature::Closable);
 policy.allowedAreas = QFlexDock::DockArea::Left | QFlexDock::DockArea::Right;
 policy.allowedWorkspaces = {"main"};      // empty: no restriction
-manager.setDockPolicy("scene", policy);
+manager.panel("scene")->setPolicy(policy);
 ```
 
 Features: `Movable`, `Closable`, `Floatable`, `Tabbable` (both the dragged and the receiving panel must allow it),
@@ -101,11 +100,18 @@ Features: `Movable`, `Closable`, `Floatable`, `Tabbable` (both the dragged and t
 floating window are none.
 
 **Behaviour and looks** — `setLinkedSplittersEnabled()`, `setCornerResizeEnabled()`, `setSplitterPushEnabled()`, `setFloatsOnOutsideDrop()`,
-`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setColumnDocking()`, `setFloatingWindowFrame(FloatingFrame::Custom | Minimal | Native)`,
-`setFloatingWindowType(FloatingWindowType::Window | Tool)`, `setGroupHeader()`, `setTitleButtons()`,
+`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setFloatingWindowFrame(FloatingWindowFrame::Custom | Minimal | Native)`,
+`setFloatingWindowType(FloatingWindowType::Window | Tool)`, `setGroupHeader()`, `setTitleBarMovesGroup()`,
 `setAutoHideReveal(AutoHideReveal::Over | Beside)`,
 `setDragGhostEnabled()`, `setTheme()`, `setOverlayPainter()`. See [styling.md](styling.md) and
-[platform-notes.md](platform-notes.md).
+[platform-notes.md](platform-notes.md). Each setting with a getter is a property of the manager and has a
+signal for its changes (`groupHeaderChanged()`, …).
+
+**One workspace.** What differs from one workspace to the next is set on the `DockWorkspace`, for it and
+the floating windows it owns: `setColumnDocking()`, and three that take the place of what the manager says
+for all of them, `setGroupHeader()`, `setTitleButtons()` and `setCenterDropEnabled()`. Each of the three is
+the manager's again after `unsetGroupHeader()`, `unsetTitleButtons()`, `unsetCenterDropEnabled()`.
+`maximizedPanel()` and `panels()` tell what the workspace holds.
 
 A panel that is put away at a border (`setPanelAutoHide()`) comes out when its name in the bar is chosen,
 and goes back with a click elsewhere. `AutoHideReveal::Over` (the default) shows it over the dock area.
@@ -143,13 +149,13 @@ every boundary is on its own in both respects.
 With `setCenterDropEnabled(false)` the middle of a tab group takes no drop: a panel becomes a tab by the
 header only, and let go of anywhere else it floats. Panels that allow `DockArea::Center` only never split a
 window, and for them the whole title row takes a tab, not just the tabs. A title bar that names its panel
-(`GroupHeader::TitleBar`, or the title of a floating window) takes one as well, and a workspace with
+(`DockGroupHeader::TitleBar`, or the title of a floating window) takes one as well, and a workspace with
 nothing in it where its tabs will be: along its top, as high as a row of tabs. `examples/chrome-style` is
-built this way. `setCenterDropEnabled(workspace, false)` does it for one workspace and the floating
+built this way. `DockWorkspace::setCenterDropEnabled(false)` does it for one workspace and the floating
 windows it owns: the documents of `examples/photoshop-style`, among panels that take a drop anywhere.
 
 ```cpp
-manager.setFloatingWindowFrame(QFlexDock::DockManager::FloatingFrame::Minimal);  // the tabs are the title
+manager.setFloatingWindowFrame(QFlexDock::DockManager::FloatingWindowFrame::Minimal);  // the tabs are the title
 manager.setCenterDropEnabled(false);
 manager.setFloatsOnOutsideDrop(true);
 manager.setTabDragPreviewEnabled(true);                       // tabs show the drag as it will turn out
@@ -170,7 +176,7 @@ it would turn out: the dragged tab is out of its bar at once and the tabs behind
 it is held over make room where it would go, in place of the mark between two tabs. Only what is shown
 changes; the layout changes with the drop, and Esc puts everything back.
 
-**Columns.** `setColumnDocking(workspace, true)` has a workspace, and the floating windows it owns, dock in
+**Columns.** `DockWorkspace::setColumnDocking(true)` has a workspace, and the floating windows it owns, dock in
 columns. A column is what stands above one another: a tab group, or several.
 
 - A drop on the left or right side of a group goes beside the column that group is in, never into it; on
@@ -178,7 +184,7 @@ columns. A column is what stands above one another: a tab group, or several.
 - Every column of panels that may be moved has a bar above it. Dragged, it moves the column as it is. Its
   button, or a double click, iconifies the column (below).
 - A floating window that is one column is moved and closed by that bar and has no title row:
-  `FloatingFrame::Custom` is `Minimal` there.
+  `FloatingWindowFrame::Custom` is `Minimal` there.
 
 `setColumnIconified(anyPanelOfColumn, true)` shrinks a column to a strip of buttons, one for each panel,
 those of a tab group under a grip; `false` shows the panels again, at their size. It works in any
@@ -196,7 +202,7 @@ neither saved nor undone. That a column is iconified is both.
 `examples/photoshop-style` is built this way:
 
 ```cpp
-manager.setColumnDocking(panels, true);                      // bars, and sides that mean the column
+panels->setColumnDocking(true);                              // bars, and sides that mean the column
 manager.movePanel("layers", "documents", QFlexDock::DockArea::Right);
 manager.movePanel("channels", "layers", QFlexDock::DockArea::Center);
 manager.movePanel("history", "layers", QFlexDock::DockArea::Bottom);   // one column, two groups
@@ -208,7 +214,7 @@ tools->setCompactWidget(toolsInOneColumn);                   // what it is in a 
 
 `setGroupHeader()` chooses what tab groups have at their top:
 
-| `GroupHeader` | |
+| `DockGroupHeader` | |
 |---|---|
 | `Tabs` (default) | The tabs, always. Drag a tab to move a panel, the empty part of the bar to move the group |
 | `TitleBar` | A title bar naming the current panel; drag it to move that panel, double click to float it or dock it again. Tabs appear below the content once a group holds more than one panel |
@@ -217,12 +223,12 @@ With `setTitleBarMovesGroup(true)` the title bar stands for all the panels stack
 moves the whole tab group, and a double click floats the group or docks all of it again, as one change.
 A single panel is then moved by its tab.
 
-`setGroupHeader(workspace, header)` gives one workspace, and the floating windows it owns, a header of its
+`DockWorkspace::setGroupHeader(header)` gives one workspace, and the floating windows it owns, a header of its
 own: documents under their tabs in the middle of tool panels with title bars. A panel takes the header of
 where it is put.
 
 Which built-in buttons the header has is a theme token (`DockTheme::titleButtons`: `Menu`, `Maximize`,
-`Float`, `AutoHide`, `Close`), and `setTitleButtons(workspace, buttons)` sets them for one workspace; a
+`Float`, `AutoHide`, `Close`), and `DockWorkspace::setTitleButtons(buttons)` sets them for one workspace; a
 panel adds its own with `DockPanel::setTitleActions()`. `AutoHide` puts every panel of the group that
 allows it into the auto-hide bar of the nearest border, as one change. A header that is the title of a floating window
 ([platform-notes.md](platform-notes.md)) always has maximize and close, which there act on the window.
@@ -265,13 +271,13 @@ workspace->addPanel("view", QFlexDock::DockArea::Center);
 
 **Collapsible.** `setCollapsible(true)` lets a split handle push the panel's tab group out of the way: once
 the drag would leave the group less than half of its minimum size, it is shown as gone, and it is back if the
-pointer returns. Let go there, its panels are closed (`panelOpenChanged()` tells), and `showPanel()` brings
+pointer returns. Let go there, its panels are closed (`panelOpenChanged()` tells), and `openPanel()` brings
 them back at the size the group had before the drag. Every panel of a group has to be collapsible for the
 group to go. The whole drag is one undo step.
 
 Closed collapsible panels, however they were closed, leave an edge to pull at: dragging inwards from the
 side they went to shows them again, as wide as the pointer is far from the edge. What comes out is what was
-closed together (one `hidePanels()` call, or one group pushed away), not a tab that was closed on its own
+closed together (one `closePanels()` call, or one group pushed away), not a tab that was closed on its own
 before. There is no such edge where a split handle already runs.
 
 **Buttons of your own in the header.** `setTitleActions()` takes `QAction`s that are shown in the header of
@@ -305,7 +311,7 @@ tools->addPanel("center", QFlexDock::DockArea::Center);
 
 QFlexDock::DockPolicy policy;
 policy.allowedWorkspaces = {"documents"};
-manager.setDockPolicy("readme", policy);
+manager.panel("readme")->setPolicy(policy);
 documents->addPanel("readme");
 ```
 
@@ -333,12 +339,12 @@ The controller has to outlive the QML that reads `dock`, and the manager owns th
 of the engine it goes last. One that is destroyed before the manager leaves the scenes with a `dock` that is
 null, and every binding on it reports a `TypeError`.
 
-`QmlDockController` mirrors `DockManager` and has no state of its own. From QML: `dock.showPanel(id)`,
-`hidePanel`, `showPanels(ids)`, `hidePanels(ids)`, `togglePanel`, `activatePanel`, `raisePanel`,
-`tabGroupPanels(id)`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,
+`QmlDockController` mirrors `DockManager` and has no state of its own. From QML: `dock.openPanel(id)`,
+`closePanel`, `openPanels(ids)`, `closePanels(ids)`, `togglePanel`, `activatePanel`, `raisePanel`,
+`tabGroupPanels(id)`, `currentPanel(id)`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,
 `floatPanel`, `dockPanel`, `maximizePanel`, `restoreMaximizedPanel`, `setPanelAutoHide`, `undo`, `redo`,
 `resetLayout` (each returns `true` on success; `dock.lastError` has the reason otherwise), the properties
-`activePanel`, `panels`, `openPanels`, `maximizedPanel`, `canUndo`, `canRedo`, and `dock.panel(id)` for
+`activePanel`, `panelIds`, `openPanelIds`, `maximizedPanel`, `canUndo`, `canRedo`, and `dock.panel(id)` for
 bindings such as `dock.panel("console").open`. `QmlPanelAdapter::registerLazyPanel()` loads the QML when the
 panel is first shown.
 

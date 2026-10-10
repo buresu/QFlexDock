@@ -71,7 +71,7 @@ a timer, for as long as the drag lasts:
   is not moved: a ghost stands in for it.
 - What stands for a title bar still moves its window through the window system, which snaps it to the
   screen edges: a custom title row, and in a `Minimal` window the header beside the tabs. Such a window is
-  docked by dragging a tab (or, with `GroupHeader::TitleBar`, the title of its panel).
+  docked by dragging a tab (or, with `DockGroupHeader::TitleBar`, the title of its panel).
 - Outside a dock area the pointer shows the system's "no drop" cursor, although letting go there floats.
 - `DockManager::setDragGhostEnabled(false)` goes back to a picture of the tab.
 

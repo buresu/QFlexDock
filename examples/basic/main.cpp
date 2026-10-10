@@ -123,8 +123,8 @@ int main(int argc, char *argv[])
     nativeFrame->setCheckable(true);
     QObject::connect(nativeFrame, &QAction::toggled, &manager, [&manager](bool native) {
         // Applies to floating windows created from now on.
-        manager.setFloatingWindowFrame(native ? DockManager::FloatingFrame::Native
-                                              : DockManager::FloatingFrame::Custom);
+        manager.setFloatingWindowFrame(native ? DockManager::FloatingWindowFrame::Native
+                                              : DockManager::FloatingWindowFrame::Custom);
     });
     QAction *tools = layoutMenu->addAction(QStringLiteral("Floating Windows Stay Above This One"));
     tools->setCheckable(true);

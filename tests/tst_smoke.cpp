@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include <QFlexDock/Global.h>
 
+#include "core/LayoutModel.h"
+
 #include <QtTest/QtTest>
 
 using namespace QFlexDock;

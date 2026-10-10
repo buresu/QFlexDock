@@ -315,12 +315,12 @@ QAction *DockPanel::toggleViewAction()
 
 void DockPanel::open()
 {
-    (void)d->manager->showPanel(d->id);
+    (void)d->manager->openPanel(d->id);
 }
 
 void DockPanel::close()
 {
-    (void)d->manager->hidePanel(d->id);
+    (void)d->manager->closePanel(d->id);
 }
 
 void DockPanel::toggle()

@@ -30,9 +30,9 @@ class QFLEXDOCKQUICK_EXPORT QmlDockController : public QObject
     /// Id of the active panel, or an empty string.
     Q_PROPERTY(QString activePanel READ activePanel NOTIFY activePanelChanged)
     /// Ids of all registered panels, in registration order.
-    Q_PROPERTY(QStringList panels READ panels NOTIFY panelsChanged)
+    Q_PROPERTY(QStringList panelIds READ panelIds NOTIFY panelIdsChanged)
     /// Ids of the panels currently placed somewhere.
-    Q_PROPERTY(QStringList openPanels READ openPanels NOTIFY layoutChanged)
+    Q_PROPERTY(QStringList openPanelIds READ openPanelIds NOTIFY layoutChanged)
     Q_PROPERTY(QString maximizedPanel READ maximizedPanel NOTIFY layoutChanged)
     Q_PROPERTY(bool canUndo READ canUndo NOTIFY undoStateChanged)
     Q_PROPERTY(bool canRedo READ canRedo NOTIFY undoStateChanged)
@@ -56,8 +56,8 @@ public:
     void installInto(QQmlEngine *engine, const QString &name = QStringLiteral("dock"));
 
     [[nodiscard]] QString activePanel() const;
-    [[nodiscard]] QStringList panels() const;
-    [[nodiscard]] QStringList openPanels() const;
+    [[nodiscard]] QStringList panelIds() const;
+    [[nodiscard]] QStringList openPanelIds() const;
     [[nodiscard]] QString maximizedPanel() const;
     [[nodiscard]] bool canUndo() const;
     [[nodiscard]] bool canRedo() const;
@@ -67,15 +67,16 @@ public:
     Q_INVOKABLE bool isPanelOpen(const QString &id) const;
     /// The panels sharing a tab group with `id`, in the order of their tabs.
     Q_INVOKABLE QStringList tabGroupPanels(const QString &id) const;
+    Q_INVOKABLE QString currentPanel(const QString &anyPanelOfGroup) const;
     /// The panel object (title, icon, open, active, floating, dirty... as
     /// properties with change signals), or null. Owned by the dock manager.
     Q_INVOKABLE QObject *panel(const QString &id) const;
 
-    Q_INVOKABLE bool showPanel(const QString &id);
-    Q_INVOKABLE bool hidePanel(const QString &id);
+    Q_INVOKABLE bool openPanel(const QString &id);
+    Q_INVOKABLE bool closePanel(const QString &id);
     /// Several panels as one change, e.g. an area that is put away.
-    Q_INVOKABLE bool showPanels(const QStringList &ids);
-    Q_INVOKABLE bool hidePanels(const QStringList &ids);
+    Q_INVOKABLE bool openPanels(const QStringList &ids);
+    Q_INVOKABLE bool closePanels(const QStringList &ids);
     Q_INVOKABLE bool togglePanel(const QString &id);
     Q_INVOKABLE bool activatePanel(const QString &id);
     Q_INVOKABLE bool raisePanel(const QString &id);
@@ -94,7 +95,7 @@ public:
 
 Q_SIGNALS:
     void activePanelChanged();
-    void panelsChanged();
+    void panelIdsChanged();
     void layoutChanged();
     void undoStateChanged();
     void lastErrorChanged();

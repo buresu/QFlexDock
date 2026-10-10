@@ -250,7 +250,7 @@ private Q_SLOTS:
         QCOMPARE(widthOf(area, "c"), a + 90);
         QCOMPARE(widthOf(area, "b"), b - 90);
         QCOMPARE(widthOf(area, "d"), b - 90);
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
         grab(&f.windowA, p("splitter-linked"));
 
         // Grabbing the other one of the pair does the same.
@@ -354,7 +354,7 @@ private Q_SLOTS:
         f.widgets[p("d")]->setMaximumWidth(QWIDGETSIZE_MAX);
         QCoreApplication::processEvents();
         drag(handleAfter(area, "c", Qt::Horizontal), QPoint(2000, 0));
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
         QRegion covered;
         for (const DockTabGroup *group : area->groups())
             covered += group->geometry();
@@ -457,10 +457,10 @@ private Q_SLOTS:
         QCOMPARE(opened.size(), 1);
         QCOMPARE(describe(f.a), p("H(a, c)"));
         QVERIFY(qAbs(widthOf(area, "c") - other) <= 1);
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
 
         // It comes back as wide as it was before the drag.
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QCOMPARE(describe(f.a), p("H(b, a, c)"));
         QVERIFY(qAbs(widthOf(area, "b") - width) <= 1);
         QVERIFY(qAbs(widthOf(area, "c") - other) <= 1);
@@ -501,8 +501,8 @@ private Q_SLOTS:
         QVERIFY(!f.manager.panel(p("d"))->isOpen());
         QCOMPARE(describe(f.a), p("H(b, a)"));
         // Either one brings the group back, the other finds it there.
-        QVERIFY(f.manager.showPanel(p("d")));
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("d")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QCOMPARE(describe(f.a), p("H(b, a, c|d)"));
         QVERIFY(qAbs(widthOf(area, "c") - other) <= 1);
     }
@@ -526,7 +526,7 @@ private Q_SLOTS:
         QVERIFY(area->visibleEdgeHandles().isEmpty());
 
         // Closed panels leave an edge to pull at only if they are collapsible.
-        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(f.manager.closePanel(p("b")));
         QVERIFY(area->visibleEdgeHandles().isEmpty());
         b->setCollapsible(true);
         area->relayout();
@@ -603,7 +603,7 @@ private Q_SLOTS:
         QVERIFY(!b->isOpen());
         QVERIFY(!f.manager.canUndo());
         // Shown by the application, it is as wide as it was when it was closed.
-        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(f.manager.openPanel(p("b")));
         QVERIFY(qAbs(widthOf(area, "b") - width) <= 1);
         QVERIFY(area->visibleEdgeHandles().isEmpty());
 
@@ -611,7 +611,7 @@ private Q_SLOTS:
         f.manager.panel(p("c"))->setCollapsible(true);
         f.manager.panel(p("d"))->setCollapsible(true);
         QVERIFY(f.manager.activatePanel(p("c")));
-        QVERIFY(f.manager.hidePanels({p("c"), p("d")}));
+        QVERIFY(f.manager.closePanels({p("c"), p("d")}));
         QCOMPARE(describe(f.a), p("H(b, a)"));
         QCOMPARE(area->visibleEdgeHandles().size(), 1);
         edge = area->visibleEdgeHandles().constFirst();
@@ -628,9 +628,9 @@ private Q_SLOTS:
         QVERIFY(qAbs(widthOf(area, "c") - other) <= 2);
 
         // A tab that was closed on its own before the others stays closed.
-        QVERIFY(f.manager.hidePanel(p("d")));
+        QVERIFY(f.manager.closePanel(p("d")));
         QVERIFY(area->visibleEdgeHandles().isEmpty()); // its group is still there
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         QCOMPARE(area->visibleEdgeHandles().size(), 1);
         QCOMPARE(area->visibleEdgeHandles().constFirst()->panels(), QStringList{p("c")});
     }
@@ -669,7 +669,7 @@ private Q_SLOTS:
         QCOMPARE(describe(f.a), p("H(b, a)"));
         QCOMPARE(widthOf(area, "b"), width + 30);
         QTRY_VERIFY(area->visibleCorners().isEmpty());
-        QVERIFY(f.manager.showPanel(p("c")));
+        QVERIFY(f.manager.openPanel(p("c")));
         QCOMPARE(describe(f.a), p("H(b, V(a, c))"));
         QVERIFY(qAbs(area->groupOfPanel(p("c"))->height() - height) <= 1);
     }
@@ -769,11 +769,11 @@ private Q_SLOTS:
         QCOMPARE(describe(inner), p("H(V(doc1, doc3), doc2)"));
         QTRY_COMPARE(outerArea->visibleCorners().size(), 3);
         // The corners come and go with the inner layout.
-        QVERIFY(manager.hidePanel(p("doc2")));
-        QVERIFY(manager.hidePanel(p("doc3")));
+        QVERIFY(manager.closePanel(p("doc2")));
+        QVERIFY(manager.closePanel(p("doc3")));
         QTRY_COMPARE(outerArea->visibleCorners().size(), 1);
         // And there are none of them with corner resizing turned off.
-        QVERIFY(manager.showPanel(p("doc2")));
+        QVERIFY(manager.openPanel(p("doc2")));
         QTRY_COMPARE(outerArea->visibleCorners().size(), 2);
         manager.setCornerResizeEnabled(false);
         QTRY_VERIFY(outerArea->visibleCorners().isEmpty());
@@ -848,7 +848,7 @@ private Q_SLOTS:
         QCOMPARE(area->groupOfPanel(p("b"))->size(), QSize(d.width() - 70, a.height() - 40));
         QCOMPARE(area->groupOfPanel(p("c"))->size(), QSize(a.width() + 70, d.height() + 40));
         QCOMPARE(area->groupOfPanel(p("d"))->size(), d + QSize(-70, 40));
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
         grab(&f.windowA, p("splitter-corner"));
         // The corner went along with the bars.
         QCOMPARE(area->visibleCorners().size(), 1);
@@ -887,7 +887,7 @@ private Q_SLOTS:
         QCOMPARE(widthOf(area, "b"), b.width());
         QTest::mouseRelease(corner, Qt::LeftButton, {}, corner->mapFromGlobal(origin + QPoint(0, -3000)));
         QCOMPARE(widthOf(area, "a") + widthOf(area, "b"), total);
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
     }
 
     void escapeCancelsACornerDrag()
@@ -959,7 +959,7 @@ private Q_SLOTS:
         QCOMPARE(widthOf(area, "a"), a + 20);
         QCOMPARE(widthOf(area, "c"), a + 20);
         QCOMPARE(widthOf(area, "e"), a + 50); // does not meet that corner
-        QVERIFY(f.a->layoutTree().validate());
+        QVERIFY(areaOf(f.a)->tree().validate());
 
         // With linking switched off, a plain drag does the same.
         f.manager.setLinkedSplittersEnabled(false);
@@ -989,7 +989,7 @@ private Q_SLOTS:
         QVERIFY(f.manager.restoreMaximizedPanel());
         QCOMPARE(area->visibleCorners().size(), 1);
 
-        QVERIFY(f.manager.hidePanel(p("c")));
+        QVERIFY(f.manager.closePanel(p("c")));
         QVERIFY(area->visibleCorners().isEmpty());
         QVERIFY(!corner->isVisible());
     }

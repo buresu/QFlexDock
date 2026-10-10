@@ -12,7 +12,6 @@ target_sources(QFlexDock
             ${PROJECT_SOURCE_DIR}/include/QFlexDock/DockTheme.h
             ${PROJECT_SOURCE_DIR}/include/QFlexDock/DockWorkspace.h
             ${PROJECT_SOURCE_DIR}/include/QFlexDock/Global.h
-            ${PROJECT_SOURCE_DIR}/include/QFlexDock/LayoutModel.h
             ${PROJECT_SOURCE_DIR}/include/QFlexDock/NativeWindowAdapter.h
     PRIVATE
         core/DockDragController.cpp
@@ -24,6 +23,7 @@ target_sources(QFlexDock
         core/DropZones.h
         core/Global.cpp
         core/LayoutModel.cpp
+        core/LayoutModel.h
         core/LayoutSolver.cpp
         core/LayoutSolver.h
         core/LayoutState.cpp

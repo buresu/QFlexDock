@@ -148,7 +148,7 @@ private Q_SLOTS:
         DockAreaWidget *area = areaOf(workspace);
         QCOMPARE(area->groups().size(), 30);
         QCOMPARE(workspace->panels().size(), count);
-        QVERIFY(workspace->layoutTree().validate());
+        QVERIFY(areaOf(workspace)->tree().validate());
 
         Stopwatch resize("widgets: 60 window resizes");
         for (int i = 0; i < 60; ++i) {
@@ -172,7 +172,7 @@ private Q_SLOTS:
             QVERIFY(manager.restoreLayout(saved));
         }
         QVERIFY(persist.stop() < 20000 * TimeFactor);
-        QVERIFY(manager.hidePanel(p("p0")));
+        QVERIFY(manager.closePanel(p("p0")));
         QVERIFY(manager.undo());
 
         // Nothing was lost or duplicated along the way.
@@ -189,7 +189,7 @@ private Q_SLOTS:
         for (int i = 0; i < count; ++i)
             QVERIFY(manager.unregisterPanel(QStringLiteral("p%1").arg(i)));
         QVERIFY(teardown.stop() < 20000 * TimeFactor);
-        QVERIFY(workspace->layoutTree().isEmpty());
+        QVERIFY(areaOf(workspace)->tree().isEmpty());
         for (const QPointer<QWidget> &widget : std::as_const(widgets))
             QVERIFY(!widget);
     }

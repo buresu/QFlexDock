@@ -2,13 +2,10 @@
 #pragma once
 
 #include <QtCore/QFlags>
-#include <QtCore/QHashFunctions>
 #include <QtCore/QMetaType>
 #include <QtCore/QObject>
 #include <QtCore/QString>
 #include <QtCore/QStringList>
-
-#include <compare>
 
 #if defined(QFLEXDOCK_STATIC)
 #  define QFLEXDOCK_EXPORT
@@ -33,23 +30,6 @@ QFLEXDOCK_EXPORT QString versionString();
 /// serialized; widget pointers never are.
 using PanelId = QString;
 
-/// Identifier of a node of a layout tree. Unique within the process and never
-/// reused; it is not persisted (restored layouts get fresh ids).
-struct QFLEXDOCK_EXPORT NodeId
-{
-    quint64 value = 0;
-
-    [[nodiscard]] bool isNull() const { return value == 0; }
-    [[nodiscard]] static NodeId create();
-
-    friend auto operator<=>(const NodeId &, const NodeId &) = default;
-};
-
-inline size_t qHash(NodeId id, size_t seed = 0) noexcept
-{
-    return ::qHash(id.value, seed);
-}
-
 /// Where something is docked relative to a target (a tab group or a whole
 /// workspace). The four edges split the target, Center joins its tabs.
 enum class DockArea {
@@ -67,9 +47,6 @@ Q_DECLARE_OPERATORS_FOR_FLAGS(DockAreas)
 inline constexpr DockAreas AllDockAreas =
     DockAreas(0x1f); // Left | Right | Top | Bottom | Center
 inline constexpr DockAreas EdgeDockAreas = DockAreas(0x0f);
-
-/// Alias kept for readability at call sites: addPanel(id, DockPosition::Right).
-using DockPosition = DockArea;
 
 /// True for Left/Right/Top/Bottom.
 [[nodiscard]] constexpr bool isEdgeArea(DockArea area)
@@ -119,6 +96,32 @@ enum class DockGuide {
     Buttons,
 };
 Q_ENUM_NS(DockGuide)
+
+/// What a tab group has at its top.
+enum class DockGroupHeader {
+    /// Its tabs, always.
+    Tabs,
+    /// A title bar naming the current panel. Tabs appear only once the group
+    /// holds more than one panel, and then at its bottom. See
+    /// DockManager::setTitleBarMovesGroup() for what the title bar takes along.
+    TitleBar,
+};
+Q_ENUM_NS(DockGroupHeader)
+
+/// Buttons in the header of a tab group. Float and Close act on the current
+/// panel and are only shown for a panel that may be floated or closed.
+/// AutoHide puts every panel of the group that allows it into the auto-hide
+/// bar of the nearest border, and is only shown in a workspace.
+enum class DockTitleButton {
+    Menu = 0x1,
+    Maximize = 0x2,
+    Float = 0x4,
+    Close = 0x8,
+    AutoHide = 0x10,
+};
+Q_FLAG_NS(DockTitleButton)
+Q_DECLARE_FLAGS(DockTitleButtons, DockTitleButton)
+Q_DECLARE_OPERATORS_FOR_FLAGS(DockTitleButtons)
 
 /// Where in the header of a tab group a panel's own actions are shown (see
 /// DockPanel::setTitleActions()).
@@ -176,5 +179,3 @@ private:
 };
 
 } // namespace QFlexDock
-
-Q_DECLARE_METATYPE(QFlexDock::NodeId)

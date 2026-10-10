@@ -331,7 +331,7 @@ void DockTabGroup::showPanelMenu(const PanelId &panel, const QPoint &globalPos)
     }
 }
 
-// The title bar of GroupHeader::TitleBar stands for the current panel: drag
+// The title bar of DockGroupHeader::TitleBar stands for the current panel: drag
 // it to move that panel, double click to float it or dock it again. Or, if
 // the manager says so (setTitleBarMovesGroup()), for all the panels of the
 // group. With tabs in it, whatever of it shows beside them is like the empty
@@ -371,7 +371,7 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
         if (static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
             m_titlePressed = false;
             if (m_manager->groupHeaderFor(m_area->containerId())
-                == DockManager::GroupHeader::TitleBar) {
+                == DockGroupHeader::TitleBar) {
                 toggleFloating(m_manager->titleBarMovesGroup);
             } else {
                 headerDoubleClicked(false);
@@ -424,7 +424,7 @@ void DockTabGroup::updateHeader()
     const DockFloatingWindow *floating = floatingWindow();
     m_windowTitle = floating && floating->headerIsTitle();
     const bool titleBars =
-        m_manager->groupHeaderFor(m_area->containerId()) == DockManager::GroupHeader::TitleBar;
+        m_manager->groupHeaderFor(m_area->containerId()) == DockGroupHeader::TitleBar;
     const bool titleMode = titleBars || (m_windowTitle && m_panels.size() == 1);
     if (titleMode != m_titleMode) {
         m_titleMode = titleMode;

@@ -9,6 +9,13 @@
 
 namespace QFlexDock {
 
+// What the headers of the tab groups show depends on it.
+void DockWorkspace::Private::settingChanged() const
+{
+    if (manager)
+        DockManagerPrivate::get(manager)->refreshAllAppearance();
+}
+
 DockWorkspace::DockWorkspace(DockManager *manager, const QString &id, QWidget *parent)
     : QWidget(parent)
     , d(std::make_unique<Private>())
@@ -58,7 +65,7 @@ DockResult DockWorkspace::addPanel(const PanelId &id, DockArea area, double frac
         return DockResult::failure(DockError::UnknownWorkspace,
                                    QStringLiteral("the workspace has no manager any more"));
     }
-    return d->manager->addPanel(id, this, area, fraction);
+    return d->manager->movePanel(id, this, area, fraction);
 }
 
 QStringList DockWorkspace::panels() const
@@ -66,9 +73,89 @@ QStringList DockWorkspace::panels() const
     return d->area->tree().panels();
 }
 
-LayoutTree DockWorkspace::layoutTree() const
+PanelId DockWorkspace::maximizedPanel() const
 {
-    return d->area->tree();
+    if (!d->manager)
+        return {};
+    const ContainerState *container = DockManagerPrivate::get(d->manager)->state.find(d->id);
+    return container ? container->maximized : PanelId();
+}
+
+bool DockWorkspace::isColumnDocking() const
+{
+    return d->columnDocking;
+}
+
+void DockWorkspace::setColumnDocking(bool enabled)
+{
+    if (d->columnDocking == enabled)
+        return;
+    d->columnDocking = enabled;
+    if (d->manager)
+        DockManagerPrivate::get(d->manager)->columnDockingChanged(this);
+}
+
+DockGroupHeader DockWorkspace::groupHeader() const
+{
+    if (d->groupHeader || !d->manager)
+        return d->groupHeader.value_or(DockGroupHeader::Tabs);
+    return d->manager->groupHeader();
+}
+
+void DockWorkspace::setGroupHeader(DockGroupHeader header)
+{
+    if (d->groupHeader == header)
+        return;
+    d->groupHeader = header;
+    d->settingChanged();
+}
+
+void DockWorkspace::unsetGroupHeader()
+{
+    if (!d->groupHeader)
+        return;
+    d->groupHeader.reset();
+    d->settingChanged();
+}
+
+DockTitleButtons DockWorkspace::titleButtons() const
+{
+    if (d->titleButtons || !d->manager)
+        return d->titleButtons.value_or(DockTheme().titleButtons);
+    return d->manager->theme().titleButtons;
+}
+
+void DockWorkspace::setTitleButtons(DockTitleButtons buttons)
+{
+    if (d->titleButtons == buttons)
+        return;
+    d->titleButtons = buttons;
+    d->settingChanged();
+}
+
+void DockWorkspace::unsetTitleButtons()
+{
+    if (!d->titleButtons)
+        return;
+    d->titleButtons.reset();
+    d->settingChanged();
+}
+
+bool DockWorkspace::isCenterDropEnabled() const
+{
+    if (d->centerDrop || !d->manager)
+        return d->centerDrop.value_or(true);
+    return d->manager->isCenterDropEnabled();
+}
+
+void DockWorkspace::setCenterDropEnabled(bool enabled)
+{
+    d->centerDrop = enabled;
+}
+
+void DockWorkspace::unsetCenterDropEnabled()
+{
+    d->centerDrop.reset();
 }
 
 } // namespace QFlexDock

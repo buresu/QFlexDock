@@ -43,7 +43,7 @@ public:
     {
         // Windows without a title row: the tabs are at the very top, and the
         // row they are in is what a window is moved and maximized by.
-        m_manager.setFloatingWindowFrame(DockManager::FloatingFrame::Minimal);
+        m_manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
         m_manager.setFloatsOnOutsideDrop(true);
         m_manager.setUndoLimit(0); // a closed tab is gone for good
 
@@ -174,7 +174,7 @@ private:
         return id;
     }
 
-    void closeTab(const PanelId &id) { (void)m_manager.hidePanel(id); }
+    void closeTab(const PanelId &id) { (void)m_manager.closePanel(id); }
 
     void closeWindow(const PanelId &anyTab)
     {
@@ -344,10 +344,10 @@ private:
         add(u"Close other tabs"_s, tabs.size() > 1, [this, id, tabs] {
             QStringList others = tabs;
             others.removeAll(id);
-            (void)m_manager.hidePanels(others);
+            (void)m_manager.closePanels(others);
         });
         add(u"Close tabs to the right"_s, index + 1 < tabs.size(),
-            [this, tabs, index] { (void)m_manager.hidePanels(tabs.mid(index + 1)); });
+            [this, tabs, index] { (void)m_manager.closePanels(tabs.mid(index + 1)); });
     }
 
     DockManager m_manager;

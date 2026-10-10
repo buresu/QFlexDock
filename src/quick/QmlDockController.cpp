@@ -38,10 +38,10 @@ QmlDockController::QmlDockController(DockManager *manager, QObject *parent)
     connect(manager, &DockManager::activePanelChanged, this, &QmlDockController::activePanelChanged);
     connect(manager, &DockManager::layoutChanged, this, &QmlDockController::layoutChanged);
     connect(manager, &DockManager::undoStateChanged, this, &QmlDockController::undoStateChanged);
-    connect(manager, &DockManager::panelRegistered, this, &QmlDockController::panelsChanged);
+    connect(manager, &DockManager::panelRegistered, this, &QmlDockController::panelIdsChanged);
     // Queued: the panel is still registered while the "about to" signal runs.
     connect(manager, &DockManager::panelAboutToBeUnregistered, this,
-            &QmlDockController::panelsChanged, Qt::QueuedConnection);
+            &QmlDockController::panelIdsChanged, Qt::QueuedConnection);
     connect(manager, &DockManager::panelOpenChanged, this, [this](DockPanel *panel, bool open) {
         Q_EMIT panelOpenChanged(panel->id(), open);
     });
@@ -67,7 +67,7 @@ QString QmlDockController::activePanel() const
     return panel ? panel->id() : QString();
 }
 
-QStringList QmlDockController::panels() const
+QStringList QmlDockController::panelIds() const
 {
     QStringList ids;
     if (m_manager) {
@@ -77,7 +77,7 @@ QStringList QmlDockController::panels() const
     return ids;
 }
 
-QStringList QmlDockController::openPanels() const
+QStringList QmlDockController::openPanelIds() const
 {
     QStringList ids;
     if (m_manager) {
@@ -120,6 +120,11 @@ QStringList QmlDockController::tabGroupPanels(const QString &id) const
     return m_manager ? m_manager->tabGroupPanels(id) : QStringList();
 }
 
+QString QmlDockController::currentPanel(const QString &anyPanelOfGroup) const
+{
+    return m_manager ? m_manager->currentPanel(anyPanelOfGroup) : QString();
+}
+
 QObject *QmlDockController::panel(const QString &id) const
 {
     DockPanel *p = m_manager ? m_manager->panel(id) : nullptr;
@@ -144,24 +149,24 @@ bool QmlDockController::report(const DockResult &result)
                                           QStringLiteral("the dock manager is gone")));            \
     return report(m_manager->call)
 
-bool QmlDockController::showPanel(const QString &id)
+bool QmlDockController::openPanel(const QString &id)
 {
-    QFLEXDOCK_FORWARD(showPanel(id));
+    QFLEXDOCK_FORWARD(openPanel(id));
 }
 
-bool QmlDockController::hidePanel(const QString &id)
+bool QmlDockController::closePanel(const QString &id)
 {
-    QFLEXDOCK_FORWARD(hidePanel(id));
+    QFLEXDOCK_FORWARD(closePanel(id));
 }
 
-bool QmlDockController::showPanels(const QStringList &ids)
+bool QmlDockController::openPanels(const QStringList &ids)
 {
-    QFLEXDOCK_FORWARD(showPanels(ids));
+    QFLEXDOCK_FORWARD(openPanels(ids));
 }
 
-bool QmlDockController::hidePanels(const QStringList &ids)
+bool QmlDockController::closePanels(const QStringList &ids)
 {
-    QFLEXDOCK_FORWARD(hidePanels(ids));
+    QFLEXDOCK_FORWARD(closePanels(ids));
 }
 
 bool QmlDockController::togglePanel(const QString &id)

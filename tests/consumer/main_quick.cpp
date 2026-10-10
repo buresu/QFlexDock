@@ -13,5 +13,5 @@ int main(int argc, char *argv[])
     QFlexDock::DockManager manager;
     QFlexDock::QmlDockController controller(&manager);
     controller.installInto(&engine);
-    return controller.panels().isEmpty() ? 0 : 1;
+    return controller.panelIds().isEmpty() ? 0 : 1;
 }
