@@ -25,7 +25,7 @@ QT_QPA_PLATFORM=offscreen build/tests/tst_manager maximizeAndRestore
 QFLEXDOCK_TEST_GRABS=/tmp/grabs QT_QPA_PLATFORM=offscreen build/tests/tst_dragdrop
 
 # An example on a private X server, where xdotool can drive it and `import -window root` can look at it
-xvfb-run -a -s "-screen 0 1600x900x24" build/examples/qflexdock-vscode-style
+QT_QPA_PLATFORM=xcb xvfb-run -a -s "-screen 0 1600x900x24" build/examples/qflexdock-vscode-style
 
 # Sanitizers (a report ends the test), shared library, install
 CXX=clang++ cmake -S . -B build-asan -G Ninja -DQFLEXDOCK_SANITIZERS=address,undefined

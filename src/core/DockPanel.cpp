@@ -4,6 +4,7 @@
 #include "core/DockManager_p.h"
 
 #include <QtCore/QEvent>
+#include <QtGui/QAction>
 #include <QtWidgets/QWidget>
 
 #include <algorithm>
@@ -109,6 +110,11 @@ bool DockPanel::isOpen() const
 bool DockPanel::isActive() const
 {
     return d->active;
+}
+
+bool DockPanel::isCurrent() const
+{
+    return d->current;
 }
 
 bool DockPanel::isFloating() const
@@ -286,6 +292,27 @@ void DockPanel::setHidesContentDuringDrag(bool hide)
     d->hideContentDuringDrag = hide;
 }
 
+QAction *DockPanel::toggleViewAction()
+{
+    if (!d->toggleViewAction) {
+        auto *action = new QAction(d->title, this);
+        action->setCheckable(true);
+        action->setChecked(isOpen());
+        connect(this, &DockPanel::titleChanged, action, &QAction::setText);
+        connect(this, &DockPanel::openChanged, action, &QAction::setChecked);
+        connect(action, &QAction::triggered, this, [this, action](bool checked) {
+            if (checked)
+                open();
+            else
+                close();
+            // A change that was refused leaves the panel as it was.
+            action->setChecked(isOpen());
+        });
+        d->toggleViewAction = action;
+    }
+    return d->toggleViewAction;
+}
+
 void DockPanel::open()
 {
     (void)d->manager->showPanel(d->id);
@@ -304,6 +331,11 @@ void DockPanel::toggle()
 void DockPanel::activate()
 {
     (void)d->manager->activatePanel(d->id);
+}
+
+void DockPanel::raise()
+{
+    (void)d->manager->raisePanel(d->id);
 }
 
 // Watches the content widget, to report when it really appears on screen.

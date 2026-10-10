@@ -115,14 +115,8 @@ int main(int argc, char *argv[])
     });
     dockMenu->addAction(QStringLiteral("Reset Docks"), [&manager] { (void)manager.resetLayout(); });
     dockMenu->addSeparator();
-    for (const Dock &dock : docks) {
-        DockPanel *panel = manager.panel(QString::fromLatin1(dock.id));
-        QAction *action = dockMenu->addAction(panel->title());
-        action->setCheckable(true);
-        action->setChecked(panel->isOpen());
-        QObject::connect(action, &QAction::triggered, panel, &DockPanel::toggle);
-        QObject::connect(panel, &DockPanel::openChanged, action, &QAction::setChecked);
-    }
+    for (const Dock &dock : docks)
+        dockMenu->addAction(manager.panel(QString::fromLatin1(dock.id))->toggleViewAction());
     for (const char *title : {"&Profile", "&Scene Collection", "&Tools", "&Help"})
         menus->addMenu(QString::fromLatin1(title));
 

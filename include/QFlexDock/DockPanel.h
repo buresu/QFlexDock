@@ -38,6 +38,7 @@ class QFLEXDOCK_EXPORT DockPanel : public QObject
     Q_PROPERTY(QString toolTip READ toolTip WRITE setToolTip NOTIFY toolTipChanged)
     Q_PROPERTY(bool open READ isOpen NOTIFY openChanged)
     Q_PROPERTY(bool active READ isActive NOTIFY activeChanged)
+    Q_PROPERTY(bool current READ isCurrent NOTIFY currentChanged)
     Q_PROPERTY(bool floating READ isFloating NOTIFY floatingChanged)
     Q_PROPERTY(bool autoHidden READ isAutoHidden NOTIFY autoHiddenChanged)
     Q_PROPERTY(bool dirty READ isDirty WRITE setDirty NOTIFY metadataChanged)
@@ -70,6 +71,10 @@ public:
     [[nodiscard]] bool isOpen() const;
     /// This is the manager's active panel.
     [[nodiscard]] bool isActive() const;
+    /// The tab in front of its tab group: the panel of the group that is
+    /// shown. Every group has one, whether the user works in it or not.
+    /// False while the panel is closed or in an auto-hide bar.
+    [[nodiscard]] bool isCurrent() const;
     [[nodiscard]] bool isFloating() const;
     [[nodiscard]] bool isAutoHidden() const;
     /// The workspace the panel is docked in, or the owner of the floating
@@ -144,12 +149,18 @@ public:
     [[nodiscard]] bool hidesContentDuringDrag() const;
     void setHidesContentDuringDrag(bool hide);
 
+    /// A checkable action that shows the panel and closes it, for a menu of
+    /// panels: it has the panel's title for its text and is checked while
+    /// the panel is open. The panel owns it.
+    [[nodiscard]] QAction *toggleViewAction();
+
 public Q_SLOTS:
     /// Shortcuts for the DockManager functions of the same meaning.
     void open();
     void close();
     void toggle();
     void activate();
+    void raise();
 
 Q_SIGNALS:
     void titleChanged(const QString &title);
@@ -159,6 +170,7 @@ Q_SIGNALS:
     void metadataChanged();
     void openChanged(bool open);
     void activeChanged(bool active);
+    void currentChanged(bool current);
     void floatingChanged(bool floating);
     void autoHiddenChanged(bool autoHidden);
 

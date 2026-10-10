@@ -47,11 +47,25 @@ struct DockPanel::Private
     bool collapsible = false;
     /// Indexed by DockTitlePlace.
     std::array<QList<QPointer<QAction>>, 3> titleActions;
+    QAction *toggleViewAction = nullptr;
 
     // Derived from the layout state after every commit.
     std::optional<PanelLocation> location;
     bool active = false;
+    bool current = false;
     bool contentVisible = false;
+};
+
+/// How far DockManagerPrivate::activate() goes.
+enum class Activation {
+    /// The current tab of its group, out of its auto-hide bar or beside its
+    /// iconified column.
+    Raise,
+    /// And the active panel, its group in place of a maximized one that
+    /// hides it.
+    Activate,
+    /// And keyboard focus is in it, in a window that is the active one.
+    Focus,
 };
 
 /// Where a drop (or a programmatic move) goes.
@@ -161,7 +175,7 @@ public:
     DockResult showPanels(const QStringList &panels);
     /// `reveal` false: a panel of an iconified column is made the current
     /// one of its group there, and stays out of view.
-    DockResult activate(const PanelId &panel, bool focus, bool reveal = true);
+    DockResult activate(const PanelId &panel, Activation how, bool reveal = true);
     DockResult setColumnIconified(const PanelId &anyPanel, bool iconified);
     /// The column of the panel's tab group, if it is in one.
     [[nodiscard]] const LayoutNode *columnOf(const PanelId &panel) const;

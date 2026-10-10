@@ -380,8 +380,8 @@ void Workbench::buildLayout()
     (void)m_manager.movePanel(m_panel.views.constFirst(), u"editor-area"_s, DockArea::Bottom, -1, 0.3);
     for (const PanelId &id : m_panel.views.mid(1))
         (void)m_manager.movePanel(id, m_panel.views.constFirst(), DockArea::Center);
-    (void)m_manager.activatePanel(m_panel.views.constFirst());
-    (void)m_manager.activatePanel(m_auxBar.views.constFirst());
+    (void)m_manager.raisePanel(m_panel.views.constFirst());
+    (void)m_manager.raisePanel(m_auxBar.views.constFirst());
 
     // As the application starts: the secondary side bar is put away.
     setOpen(m_auxBar, false);

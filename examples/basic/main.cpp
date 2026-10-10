@@ -71,13 +71,8 @@ int main(int argc, char *argv[])
     };
 
     QMenu *viewMenu = window.menuBar()->addMenu(QStringLiteral("&View"));
-    for (DockPanel *panel : manager.panels()) {
-        QAction *action = viewMenu->addAction(panel->title());
-        action->setCheckable(true);
-        action->setChecked(panel->isOpen());
-        QObject::connect(action, &QAction::triggered, panel, &DockPanel::toggle);
-        QObject::connect(panel, &DockPanel::openChanged, action, &QAction::setChecked);
-    }
+    for (DockPanel *panel : manager.panels())
+        viewMenu->addAction(panel->toggleViewAction());
 
     QMenu *layoutMenu = window.menuBar()->addMenu(QStringLiteral("&Layout"));
     QAction *undo = layoutMenu->addAction(QStringLiteral("Undo Layout Change"),

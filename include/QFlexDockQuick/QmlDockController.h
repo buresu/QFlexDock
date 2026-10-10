@@ -78,6 +78,7 @@ public:
     Q_INVOKABLE bool hidePanels(const QStringList &ids);
     Q_INVOKABLE bool togglePanel(const QString &id);
     Q_INVOKABLE bool activatePanel(const QString &id);
+    Q_INVOKABLE bool raisePanel(const QString &id);
     /// Docks `id` relative to the tab group `relativeTo` is in.
     Q_INVOKABLE bool movePanel(const QString &id, const QString &relativeTo, Area area);
     /// Docks `id` onto workspace `workspaceId` as a whole.

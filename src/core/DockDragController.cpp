@@ -478,7 +478,7 @@ DockResult DockDragController::end()
         // (What was dropped among the buttons of an iconified column is a
         // button there now, and stays one.)
         if (result)
-            (void)m_manager->activate(session.primary, true, false);
+            (void)m_manager->activate(session.primary, Activation::Focus, false);
     }
     cancel();
     return result;
@@ -740,7 +740,7 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
             window->resize(geometry.marginsAdded(window->customFrameMargins()).size());
         }
     }
-    (void)m_manager->activate(session.primary, true, false);
+    (void)m_manager->activate(session.primary, Activation::Focus, false);
 }
 
 // Watches the application for as long as there is a session.

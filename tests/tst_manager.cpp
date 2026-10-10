@@ -708,6 +708,146 @@ private Q_SLOTS:
         QCOMPARE(describe(f.a), p("b"));
     }
 
+    void raisingATabLeavesTheActivePanelAlone()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QVERIFY(f.manager.activatePanel(p("a")));
+        const QPointer<QWidget> focus = QApplication::focusWidget();
+        QSignalSpy activeChanged(&f.manager, &DockManager::activePanelChanged);
+
+        QVERIFY(f.manager.raisePanel(p("b")));
+        QCOMPARE(f.a->layoutTree().findPanel(p("b"))->active, p("b"));
+        QVERIFY(f.widgets[p("b")]->isVisible());
+        QVERIFY(!f.widgets[p("c")]->isVisible());
+        f.manager.panel(p("c"))->raise();
+        QVERIFY(f.widgets[p("c")]->isVisible());
+
+        QCOMPARE(f.manager.activePanel(), f.manager.panel(p("a")));
+        QCOMPARE(activeChanged.size(), 0);
+        QCOMPARE(QApplication::focusWidget(), focus.data());
+
+        // A group that a maximized one hides gets its tab, and stays hidden.
+        QVERIFY(f.manager.maximizePanel(p("a")));
+        QVERIFY(f.manager.raisePanel(p("b")));
+        QCOMPARE(f.manager.maximizedPanel(), p("a"));
+        QCOMPARE(f.a->layoutTree().findPanel(p("b"))->active, p("b"));
+        QVERIFY(!f.widgets[p("b")]->isVisible());
+        QVERIFY(f.manager.restoreMaximizedPanel());
+        QVERIFY(f.widgets[p("b")]->isVisible());
+
+        // Out of its auto-hide bar: there is no group to be in front of.
+        QVERIFY(f.manager.setPanelAutoHide(p("b"), true));
+        DockAutoHideContainer *autoHide = DockManagerPrivate::get(f.a)->autoHide;
+        QVERIFY(autoHide->expandedPanel().isEmpty());
+        QVERIFY(f.manager.raisePanel(p("b")));
+        QCOMPARE(autoHide->expandedPanel(), p("b"));
+        QCOMPARE(f.manager.activePanel(), f.manager.panel(p("a")));
+
+        QCOMPARE(f.manager.raisePanel(p("nope")).error(), DockError::UnknownPanel);
+        QCOMPARE(f.manager.raisePanel(p("d")).error(), DockError::NotPlaced);
+    }
+
+    void theCurrentTabOfAGroupIsReported()
+    {
+        QStringList log;
+        TwoWindows f;
+        f.show();
+        for (DockPanel *panel : f.manager.panels()) {
+            QVERIFY(!panel->isCurrent());
+            connect(panel, &DockPanel::currentChanged, this, [&log, panel](bool current) {
+                QCOMPARE(panel->isCurrent(), current);
+                log << panel->id() + (current ? p("+") : p("-"));
+            });
+        }
+        const auto taken = [&log] { return std::exchange(log, {}); };
+        DockPanel *a = f.manager.panel(p("a"));
+        DockPanel *b = f.manager.panel(p("b"));
+        DockPanel *c = f.manager.panel(p("c"));
+
+        QVERIFY(f.a->addPanel(p("a")));
+        QCOMPARE(taken(), QStringList{p("a+")});
+        QVERIFY(a->property("current").toBool());
+
+        // A tab that comes to the front is told after the one it covers.
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QCOMPARE(taken(), (QStringList{p("a-"), p("b+")}));
+        QVERIFY(f.manager.raisePanel(p("a")));
+        QCOMPARE(taken(), (QStringList{p("b-"), p("a+")}));
+        QVERIFY(f.manager.activatePanel(p("b")));
+        QCOMPARE(taken(), (QStringList{p("a-"), p("b+")}));
+        QVERIFY(f.manager.activatePanel(p("b")));
+        QVERIFY(taken().isEmpty());
+
+        // Every group has one, the active panel or not.
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Right));
+        QCOMPARE(taken(), QStringList{p("c+")});
+        QVERIFY(b->isCurrent() && c->isCurrent() && !a->isCurrent());
+
+        // Moving with its place in front, it stays what it is.
+        QVERIFY(f.manager.floatPanel(p("c")));
+        QVERIFY(f.manager.movePanel(p("c"), f.b, DockArea::Center));
+        QVERIFY(taken().isEmpty());
+        QVERIFY(c->isCurrent());
+
+        // The tab behind the one that is closed takes over.
+        QVERIFY(f.manager.hidePanel(p("b")));
+        QCOMPARE(taken(), (QStringList{p("b-"), p("a+")}));
+        QVERIFY(f.manager.showPanel(p("b")));
+        QCOMPARE(taken(), (QStringList{p("a-"), p("b+")}));
+
+        // In an auto-hide bar a panel is in no group.
+        QVERIFY(f.manager.setPanelAutoHide(p("c"), true));
+        QCOMPARE(taken(), QStringList{p("c-")});
+        QVERIFY(f.manager.setPanelAutoHide(p("c"), false));
+        QCOMPARE(taken(), QStringList{p("c+")});
+
+        QVERIFY(f.manager.undo());
+        QCOMPARE(taken(), QStringList{p("c-")});
+    }
+
+    void toggleViewActionShowsAndClosesItsPanel()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        DockPanel *b = f.manager.panel(p("b"));
+        QAction *action = b->toggleViewAction();
+        QCOMPARE(b->toggleViewAction(), action);
+        QCOMPARE(action->parent(), b);
+        QVERIFY(action->isCheckable());
+        QVERIFY(!action->isChecked());
+        QCOMPARE(action->text(), b->title());
+        b->setTitle(p("Scene"));
+        QCOMPARE(action->text(), p("Scene"));
+
+        action->trigger();
+        QVERIFY(b->isOpen());
+        QVERIFY(action->isChecked());
+        QCOMPARE(f.manager.activePanel(), b);
+        action->trigger();
+        QVERIFY(!b->isOpen());
+        QVERIFY(!action->isChecked());
+
+        // It follows what happens to the panel elsewhere.
+        QVERIFY(f.manager.showPanel(p("b")));
+        QVERIFY(action->isChecked());
+        QVERIFY(f.manager.hidePanel(p("b")));
+        QVERIFY(!action->isChecked());
+        QVERIFY(f.manager.panel(p("a"))->toggleViewAction()->isChecked());
+
+        // A change that is refused leaves it as the panel is.
+        const QMetaObject::Connection during = connect(
+            &f.manager, &DockManager::layoutAboutToChange, action, &QAction::trigger);
+        QVERIFY(f.manager.hidePanel(p("a")));
+        disconnect(during);
+        QVERIFY(!b->isOpen());
+        QVERIFY(!action->isChecked());
+    }
+
     void panelsOfATabGroupAreListedInTabOrder()
     {
         TwoWindows f;

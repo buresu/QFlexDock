@@ -65,6 +65,7 @@ Registering does not show a panel.
 | `showPanel(id)`, `hidePanel(id)`, `togglePanel(id)` | Reopen a closed panel in its old place / close it (it stays registered) |
 | `showPanels(ids)`, `hidePanels(ids)` | The same for several panels as one change and one undo step |
 | `activatePanel(id)`, `activePanel()` | Bring the tab to the front, raise the window, give focus |
+| `raisePanel(id)` | Bring the tab to the front and nothing else: the active panel and keyboard focus stay where they are |
 | `tabGroupPanels(id)` | The panels sharing a tab group with `id`, in the order of their tabs |
 | `maximizePanel(id)`, `restoreMaximizedPanel()` | Let the tab group fill its container; the layout tree is not changed |
 | `setPanelAutoHide(id, on, edge)` | Collapse into an auto-hide bar / pin back |
@@ -233,11 +234,20 @@ allows it into the auto-hide bar of the nearest border, as one change. A header 
 
 ## DockPanel
 
-Title, icon, tool tip, policy, and state (`isOpen()`, `isActive()`, `isFloating()`, `isAutoHidden()`,
-`workspace()`), all as properties that QML can bind to. `setDirty()`, `setPinnedTab()` and `setPreviewTab()`
+Title, icon, tool tip, policy, and state (`isOpen()`, `isActive()`, `isCurrent()`, `isFloating()`,
+`isAutoHidden()`, `workspace()`), all as properties that QML can bind to. `isCurrent()` is true for the tab
+in front of its group, one in every group; `isActive()` for the one panel the user works in. `setDirty()`, `setPinnedTab()` and `setPreviewTab()`
 only change how the tab is drawn; the application supplies the state. `setTabCloseButton(false)` leaves
 the tab of a panel that may be closed without a button for it: it is closed from its menu, with the
 middle button, or with the window it floats in.
+
+**A menu of panels.** `toggleViewAction()` is a checkable action that shows the panel and closes it: its
+text is the title, and it is checked while the panel is open. The panel owns it.
+
+```cpp
+for (QFlexDock::DockPanel *panel : manager.panels())
+    viewMenu->addAction(panel->toggleViewAction());
+```
 
 **A small form.** `setCompactWidget(widget)` gives a panel a small form of its own for where its column is
 iconified (see Columns): it stands there in place of the panel's button, and nothing is brought out for
@@ -324,7 +334,8 @@ of the engine it goes last. One that is destroyed before the manager leaves the 
 null, and every binding on it reports a `TypeError`.
 
 `QmlDockController` mirrors `DockManager` and has no state of its own. From QML: `dock.showPanel(id)`,
-`hidePanel`, `showPanels(ids)`, `hidePanels(ids)`, `togglePanel`, `activatePanel`, `tabGroupPanels(id)`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,
+`hidePanel`, `showPanels(ids)`, `hidePanels(ids)`, `togglePanel`, `activatePanel`, `raisePanel`,
+`tabGroupPanels(id)`, `movePanel(id, relativeTo, Dock.Bottom)`, `movePanelToWorkspace`,
 `floatPanel`, `dockPanel`, `maximizePanel`, `restoreMaximizedPanel`, `setPanelAutoHide`, `undo`, `redo`,
 `resetLayout` (each returns `true` on success; `dock.lastError` has the reason otherwise), the properties
 `activePanel`, `panels`, `openPanels`, `maximizedPanel`, `canUndo`, `canRedo`, and `dock.panel(id)` for

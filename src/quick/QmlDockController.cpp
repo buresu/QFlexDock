@@ -174,6 +174,11 @@ bool QmlDockController::activatePanel(const QString &id)
     QFLEXDOCK_FORWARD(activatePanel(id));
 }
 
+bool QmlDockController::raisePanel(const QString &id)
+{
+    QFLEXDOCK_FORWARD(raisePanel(id));
+}
+
 bool QmlDockController::movePanel(const QString &id, const QString &relativeTo, Area area)
 {
     QFLEXDOCK_FORWARD(movePanel(id, relativeTo, toDockArea(area)));

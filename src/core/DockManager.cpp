@@ -775,7 +775,7 @@ DockResult DockManagerPrivate::showPanels(const QStringList &ids)
     return apply(std::move(next), true);
 }
 
-DockResult DockManagerPrivate::activate(const PanelId &id, bool focus, bool reveal)
+DockResult DockManagerPrivate::activate(const PanelId &id, Activation how, bool reveal)
 {
     DockPanel *panel = panels.value(id);
     if (!panel)
@@ -789,7 +789,7 @@ DockResult DockManagerPrivate::activate(const PanelId &id, bool focus, bool reve
             get(workspace)->autoHide->expand(id);
     } else {
         const ContainerState *container = state.find(location->container);
-        const bool hiddenByMaximize = !container->maximized.isEmpty()
+        const bool hiddenByMaximize = how != Activation::Raise && !container->maximized.isEmpty()
             && container->tree.findPanel(container->maximized)->id != location->node;
         if (container->tree.findNode(location->node)->active != id || hiddenByMaximize) {
             LayoutState next = state;
@@ -814,8 +814,10 @@ DockResult DockManagerPrivate::activate(const PanelId &id, bool focus, bool reve
         }
     }
 
+    if (how == Activation::Raise)
+        return DockResult::success();
     setActivePanel(panel);
-    if (focus) {
+    if (how == Activation::Focus) {
         if (QWidget *content = get(panel)->widget) {
             QWidget *window = content->window();
             if (!window->isActiveWindow() && window->isVisible()) {
@@ -1447,9 +1449,23 @@ void DockManagerPrivate::updatePanelStates(bool emitSignals)
     if (activePanel && !state.isPlaced(activePanel->id()))
         setActivePanel(nullptr);
 
+    // The tab in front of every group.
+    QSet<PanelId> current;
+    for (const ContainerState &container : state.containers) {
+        for (const LayoutNode *group : container.tree.tabNodes())
+            current.insert(group->active);
+    }
+    // A tab that comes to the front is told after the one it covers.
+    QList<QPointer<DockPanel>> covered;
+    QList<QPointer<DockPanel>> uncovered;
+
     const QList<DockPanel *> all = panels.values();
     for (DockPanel *panel : all) {
         DockPanel::Private *p = get(panel);
+        if (p->current != current.contains(p->id)) {
+            p->current = !p->current;
+            (p->current ? uncovered : covered).append(panel);
+        }
         const std::optional<PanelLocation> before = p->location;
         const std::optional<PanelLocation> after = state.locate(p->id);
         if (before == after)
@@ -1467,6 +1483,16 @@ void DockManagerPrivate::updatePanelStates(bool emitSignals)
             Q_EMIT panel->floatingChanged(after && after->isFloating());
         if (guard && (before && before->isAutoHidden()) != (after && after->isAutoHidden()))
             Q_EMIT panel->autoHiddenChanged(after && after->isAutoHidden());
+    }
+    if (!emitSignals)
+        return;
+    for (const QPointer<DockPanel> &panel : std::as_const(covered)) {
+        if (panel)
+            Q_EMIT panel->currentChanged(false);
+    }
+    for (const QPointer<DockPanel> &panel : std::as_const(uncovered)) {
+        if (panel)
+            Q_EMIT panel->currentChanged(true);
     }
 }
 
@@ -1986,7 +2012,7 @@ DockResult DockManager::showPanel(const PanelId &id)
         if (DockResult r = d->apply(std::move(next), true); !r)
             return r;
     }
-    return d->activate(id, true);
+    return d->activate(id, Activation::Focus);
 }
 
 DockResult DockManager::hidePanel(const PanelId &id)
@@ -2013,7 +2039,12 @@ DockResult DockManager::togglePanel(const PanelId &id)
 
 DockResult DockManager::activatePanel(const PanelId &id)
 {
-    return d->activate(id, true);
+    return d->activate(id, Activation::Focus);
+}
+
+DockResult DockManager::raisePanel(const PanelId &id)
+{
+    return d->activate(id, Activation::Raise);
 }
 
 DockPanel *DockManager::activePanel() const

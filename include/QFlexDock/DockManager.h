@@ -208,6 +208,10 @@ public:
     /// Makes the panel the current tab of its group, raises its window and
     /// gives it keyboard focus.
     DockResult activatePanel(const PanelId &id);
+    /// Makes the panel the current tab of its group and nothing else: the
+    /// active panel and keyboard focus stay where they are. To choose which
+    /// tab of a group is in front while the user works elsewhere.
+    DockResult raisePanel(const PanelId &id);
     [[nodiscard]] DockPanel *activePanel() const;
     /// The panels that share a tab group with `id`, itself included, in the
     /// order of their tabs. Empty if the panel is not in a tab group.

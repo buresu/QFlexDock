@@ -34,6 +34,7 @@ Rectangle {
     property string active: dock.activePanel
     property string titleOfA: dock.panel("a") ? dock.panel("a").title : ""
     property bool aIsOpen: dock.panel("a") ? dock.panel("a").open : false
+    property bool aIsCurrent: dock.panel("a") ? dock.panel("a").current : false
     property int openCount: dock.openPanels.length
     property var opened: []
 
@@ -48,6 +49,7 @@ Rectangle {
     function tabsOf(id) { return dock.tabGroupPanels(id) }
     function toggle(id) { return dock.togglePanel(id) }
     function activate(id) { return dock.activatePanel(id) }
+    function raise(id) { return dock.raisePanel(id) }
     function moveBelow(id, other) { return dock.movePanel(id, other, Dock.Bottom) }
     function tabWith(id, other) { return dock.movePanel(id, other, Dock.Center) }
     function toWorkspace(id, workspace) { return dock.movePanelToWorkspace(id, workspace, Dock.Left) }
@@ -198,6 +200,9 @@ private Q_SLOTS:
         QCOMPARE(root->property("active").toString(), p("a"));
         QVERIFY(f.manager.activatePanel(p("q")));
         QCOMPARE(root->property("active").toString(), p("q"));
+        QCOMPARE(call(root, "raise", {p("a")}).toBool(), true);
+        QCOMPARE(root->property("active").toString(), p("q"));
+        QCOMPARE(root->property("aIsCurrent").toBool(), true);
         QCOMPARE(root->property("titleOfA").toString(), p("a"));
         f.manager.panel(p("a"))->setTitle(p("Renamed"));
         QCOMPARE(root->property("titleOfA").toString(), p("Renamed"));
@@ -205,6 +210,7 @@ private Q_SLOTS:
         const int open = root->property("openCount").toInt();
         QVERIFY(f.manager.hidePanel(p("a")));
         QCOMPARE(root->property("aIsOpen").toBool(), false);
+        QCOMPARE(root->property("aIsCurrent").toBool(), false);
         QCOMPARE(root->property("openCount").toInt(), open - 1);
         QVERIFY(root->property("opened").toStringList().contains(p("a:false")));
 

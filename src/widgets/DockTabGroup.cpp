@@ -151,7 +151,7 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     connect(m_tabBar, &QTabBar::currentChanged, this, [this](int index) {
         if (!m_manager || index < 0)
             return;
-        (void)m_manager->activate(m_tabBar->panelAt(index), true);
+        (void)m_manager->activate(m_tabBar->panelAt(index), Activation::Focus);
         // Whatever the manager decided is what the bar shows.
         const QSignalBlocker blocker(m_tabBar);
         m_tabBar->setCurrentIndex(m_tabBar->indexOfPanel(shownPanel()));
@@ -347,7 +347,7 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
             m_titlePressed = true;
             m_titlePress = mouse->position().toPoint();
             if (m_titleMode)
-                (void)m_manager->activate(m_current, true);
+                (void)m_manager->activate(m_current, Activation::Focus);
         }
         break;
     }
@@ -946,7 +946,7 @@ void DockTabGroup::showGroupMenu()
             action->setChecked(id == m_current);
             DockManagerPrivate *manager = m_manager;
             connect(action, &QAction::triggered, menu, [manager, id] {
-                (void)manager->activate(id, true);
+                (void)manager->activate(id, Activation::Focus);
             });
         }
     }

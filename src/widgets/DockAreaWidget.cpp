@@ -698,7 +698,7 @@ void DockAreaWidget::iconButtonClicked(NodeId group, const PanelId &panel)
     if (m_flyout == group && node && node->active == panel)
         showFlyout({});
     else
-        (void)m_manager->activate(panel, true);
+        (void)m_manager->activate(panel, Activation::Focus);
 }
 
 // See DockTabGroup::moveWindowInstead(), which this is the whole of.

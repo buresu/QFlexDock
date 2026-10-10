@@ -282,7 +282,7 @@ void Workbench::buildLayout()
     (void)m_tools->addPanel(u"chat"_s, DockArea::Right, 0.22);
     (void)m_manager.movePanel(u"solution"_s, u"chat"_s, DockArea::Center);
     (void)m_manager.movePanel(u"git"_s, u"chat"_s, DockArea::Center);
-    (void)m_manager.activatePanel(u"chat"_s);
+    (void)m_manager.raisePanel(u"chat"_s);
 
     // Two more that belong below the documents, and are put away there.
     (void)m_manager.movePanel(u"output"_s, DocumentWell, DockArea::Bottom, -1, 0.3);
