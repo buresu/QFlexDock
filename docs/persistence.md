@@ -75,6 +75,9 @@ owner does not exist.
 
 - **Panels that are not registered** (`report.missingPanels`) are left out, but their place is kept. When the
   same id is registered later, the panel **appears where it was**. This is how late-loading plugins work.
+- **Registered panels the layout knows nothing of** (`report.unknownPanels`) end up closed, like every panel
+  the layout does not place. A panel that was closed when the layout was saved is not among them: its place
+  is in `panelMemory`. These are the ones that did not exist then, for the application to show where it likes.
 - **Panels registered with a factory** — content is only created for tabs that are actually shown.
 - **Workspaces that do not exist** (`report.unknownWorkspaces`) — their panels end up closed. QFlexDock
   never creates a `QMainWindow`; create the workspaces before restoring.

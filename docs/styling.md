@@ -96,6 +96,7 @@ that tab, with a curve where the two meet, and nothing behind the other tabs.
 | `paneColor` | color | Fill of the pane and of the current tab |
 | `paneBorderColor`, `paneActiveBorderColor` | color | The line around the two, and what it is in the active group (not set: the same) |
 | `paneRadius` | int | Radius of the corners and of the curves between tab and pane |
+| `paneCornerColor` | color | What is behind the group. Set, the round corners are drawn in it over the content too (not set: content that fills its rectangle keeps square corners) |
 
 ```css
 QFlexDock--DockTabGroup {
@@ -114,6 +115,11 @@ content, and the tabs are below it. A group with one of these set no longer draw
 transparent and the tabs without a margin, as above; the content shows the pane where it paints no
 background. A group that is to be no pane (`[headerVisible="false"]`, say) gets `transparent` for all
 three colors.
+
+Content that paints every pixel of its rectangle (a `QQuickWidget`, a video, a widget that fills its
+background) covers the corners of the pane. `paneCornerColor` names the color behind the group, and the
+corners are then drawn in it on top of the content, with the line around the pane. Nothing but the corners
+is covered, and the mouse goes through them.
 
 ### Drop guide properties
 

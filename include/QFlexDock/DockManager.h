@@ -35,6 +35,12 @@ struct QFLEXDOCK_EXPORT DockRestoreReport
     /// Panels in the layout that are not registered. Their position is kept
     /// and they appear there once registered.
     QStringList missingPanels;
+    /// Registered panels the layout knows nothing of: it neither places them
+    /// nor remembers a place for them, as it does for a panel that was closed
+    /// when it was saved. Like every panel the layout does not place they end
+    /// up closed; these are the ones that are new to it (a panel added to the
+    /// application since), which the application may want to show somewhere.
+    QStringList unknownPanels;
     /// Workspaces in the layout that do not exist; their panels are closed.
     QStringList unknownWorkspaces;
     /// Repairs made to the data (duplicates dropped, unknown nodes skipped...).

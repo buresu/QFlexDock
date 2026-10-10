@@ -2158,6 +2158,10 @@ DockResult DockManager::restoreLayout(const QByteArray &json, DockRestoreReport 
     DockRestoreReport collected;
     collected.warnings = warnings;
     d->reconcile(document.state, &collected);
+    for (const PanelId &id : std::as_const(d->panelOrder)) {
+        if (!document.state.isPlaced(id) && !document.state.memory.contains(id))
+            collected.unknownPanels << id;
+    }
 
     // Windows must not come back on a monitor that is no longer there.
     const QList<QRect> screens = screenGeometries();

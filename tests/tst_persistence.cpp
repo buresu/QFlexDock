@@ -310,6 +310,33 @@ private Q_SLOTS:
         QCOMPARE(manager.saveLayout(), again);
     }
 
+    // A panel that was closed when the layout was saved is known to it; one
+    // that was not registered then is not, and only that one is reported.
+    void panelsNewToALayoutAreReported()
+    {
+        DockManager manager;
+        QMainWindow window;
+        DockWorkspace *a = manager.createWorkspace(p("A"));
+        window.setCentralWidget(a);
+        manager.registerPanel(p("a"), new QLabel(p("A")));
+        manager.registerPanel(p("b"), new QLabel(p("B")));
+        window.show();
+        QVERIFY(a->addPanel(p("a")));
+        QVERIFY(a->addPanel(p("b"), DockArea::Right));
+        QVERIFY(manager.closePanel(p("b")));
+        const QByteArray saved = manager.saveLayout();
+
+        manager.registerPanel(p("c"), new QLabel(p("C")));
+        QVERIFY(a->addPanel(p("c"), DockArea::Bottom));
+        DockRestoreReport report;
+        QVERIFY(manager.restoreLayout(saved, &report));
+        QCOMPARE(report.unknownPanels, QStringList{p("c")});
+        QVERIFY(report.missingPanels.isEmpty());
+        QVERIFY(!manager.panel(p("b"))->isOpen());
+        QVERIFY(!manager.panel(p("c"))->isOpen());
+        QCOMPARE(describe(a), p("a"));
+    }
+
     void restoreDoesNotCreateBackgroundTabs()
     {
         DockManager manager;

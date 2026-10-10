@@ -54,6 +54,33 @@ void setShown(QWidget *widget, bool shown)
         widget->setVisible(shown);
 }
 
+// Lies over the content of a group that draws a pane, where the round corners
+// of that pane are: content that fills its rectangle (a QQuickWidget, a
+// video) would otherwise show through them. Nothing else is covered, and
+// nothing of the mouse is taken.
+class DockPaneCorners : public QWidget
+{
+public:
+    explicit DockPaneCorners(DockTabGroup *group)
+        : QWidget(group)
+        , m_group(group)
+    {
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_NoSystemBackground);
+        setFocusPolicy(Qt::NoFocus);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        m_group->paintPaneCorners(&painter, pos());
+    }
+
+private:
+    DockTabGroup *m_group;
+};
+
 QToolButton *makeTitleButton(QWidget *parent, const char *objectName, const QString &toolTip)
 {
     auto *button = new QToolButton(parent);
@@ -631,6 +658,8 @@ void DockTabGroup::setActive(bool active)
     m_active = active;
     m_tabBar->setActiveGroup(active);
     restyle();
+    if (m_paneCorners)
+        m_paneCorners->update();
 }
 
 void DockTabGroup::setFlyout(bool flyout, DockArea side)
@@ -995,6 +1024,12 @@ void DockTabGroup::setPaneRadius(int radius)
     paneChanged();
 }
 
+void DockTabGroup::setPaneCornerColor(const QColor &color)
+{
+    m_paneCornerColor = color;
+    paneChanged();
+}
+
 // A pane has a line of its own around it, which the frame makes room for
 // without drawing anything.
 void DockTabGroup::paneChanged()
@@ -1007,7 +1042,51 @@ void DockTabGroup::paneChanged()
         if (m_area)
             m_area->contentLimitsChanged();
     }
+    updatePaneCorners();
     update();
+}
+
+// The corners are drawn over the content only where there is something to
+// draw: a pane with round corners, and a color for what is behind it.
+void DockTabGroup::updatePaneCorners()
+{
+    const bool wanted = drawsPane() && m_paneRadius > 0 && m_paneCornerColor.isValid();
+    if (!wanted) {
+        if (m_paneCorners)
+            m_paneCorners->hide();
+        return;
+    }
+    if (!m_paneCorners)
+        m_paneCorners = new DockPaneCorners(this);
+    const QRect host = m_host->geometry();
+    m_paneCorners->setGeometry(host);
+    // Only the corners: the rest of the content is nobody's to paint over.
+    const int side = qMin(m_paneRadius + 1, qMin(host.width(), host.height()));
+    QRegion corners;
+    for (const QPoint &corner : {QPoint(0, 0), QPoint(host.width() - side, 0),
+                                 QPoint(0, host.height() - side),
+                                 QPoint(host.width() - side, host.height() - side)}) {
+        corners += QRect(corner, QSize(side, side));
+    }
+    m_paneCorners->setMask(corners);
+    m_paneCorners->setVisible(!m_host->isHidden() && !host.isEmpty());
+    m_paneCorners->raise();
+    m_paneCorners->update();
+}
+
+void DockTabGroup::paintPaneCorners(QPainter *painter, const QPoint &origin) const
+{
+    if (!m_paneCorners)
+        return;
+    painter->setRenderHint(QPainter::Antialiasing);
+    const QPainterPath outline = paneOutline().translated(-origin);
+    QPainterPath around;
+    around.addRect(m_paneCorners->rect());
+    painter->fillPath(around.subtracted(outline), m_paneCornerColor);
+    const QColor border = m_active && m_paneActiveBorderColor.isValid() ? m_paneActiveBorderColor
+                                                                        : m_paneBorderColor;
+    if (border.isValid() && border.alpha() > 0)
+        painter->strokePath(outline, QPen(border, 1));
 }
 
 // The current tab as far as it shows; null without one.
@@ -1116,10 +1195,16 @@ bool DockTabGroup::eventFilter(QObject *watched, QEvent *event)
             || event->type() == QEvent::Show || event->type() == QEvent::Hide)
         && m_paintedTab != currentTabRect()) {
         update();
+        if (m_paneCorners)
+            m_paneCorners->update();
     }
     if (watched == m_host) {
         if (event->type() == QEvent::Resize) {
             updateContentGeometry();
+            updatePaneCorners();
+        } else if (event->type() == QEvent::Move || event->type() == QEvent::Show
+                   || event->type() == QEvent::Hide) {
+            updatePaneCorners();
         } else if (event->type() == QEvent::LayoutRequest) {
             // A content widget changed its size constraints.
             m_area->contentLimitsChanged();

@@ -1093,6 +1093,81 @@ private Q_SLOTS:
         qApp->setStyleSheet(QString());
     }
 
+    // `paneCornerColor`: the round corners of a pane are drawn over content
+    // that fills its rectangle, in the color of what is behind the group.
+    void paneCornersAreDrawnOverOpaqueContent()
+    {
+        TwoWindows f;
+        // Content with pixels of its own in every corner.
+        QWidget *content = f.manager.panel(p("a"))->widget();
+        content->setAutoFillBackground(true);
+        QPalette filled = content->palette();
+        filled.setColor(QPalette::Window, QColor(0, 0, 0xff));
+        content->setPalette(filled);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        DockAreaWidget *area = areaOf(f.a);
+        DockTabGroup *group = area->groupOfPanel(p("a"));
+
+        const QString pane = QStringLiteral(R"(
+            QFlexDock--DockTabGroup {
+                qproperty-paneColor: #102030;
+                qproperty-paneBorderColor: #ff0000;
+                qproperty-paneRadius: 12;
+                %1
+            }
+            QFlexDock--DockTabGroup #dockTitleBar { background: transparent; }
+            QFlexDock--DockTabBar::tab {
+                background: transparent; border: none; margin: 0; padding: 8px 16px;
+            }
+        )");
+        const QColor own(0, 0, 0xff);
+        const QColor behind(0xff, 0xff, 0);
+
+        // Without it the content keeps its square corners.
+        qApp->setStyleSheet(pane.arg(QString()));
+        QCoreApplication::processEvents();
+        QVERIFY(group->drawsPane());
+        QRect host = group->contentHost()->geometry();
+        QImage image = picture(group);
+        QCOMPARE(image.pixelColor(host.bottomRight()), own);
+        QCOMPARE(image.pixelColor(host.bottomLeft()), own);
+
+        qApp->setStyleSheet(pane.arg(QStringLiteral("qproperty-paneCornerColor: #ffff00;")));
+        QCoreApplication::processEvents();
+        QCOMPARE(group->paneCornerColor(), behind);
+        host = group->contentHost()->geometry();
+        image = picture(group);
+        QCOMPARE(image.pixelColor(host.bottomRight()), behind);
+        QCOMPARE(image.pixelColor(host.bottomLeft()), behind);
+        QCOMPARE(image.pixelColor(host.topRight()), behind);
+        // Inside the curve, and everywhere else, the content is its own.
+        QCOMPARE(image.pixelColor(host.right() - 12, host.bottom() - 12), own);
+        QCOMPARE(image.pixelColor(host.left() + 40, host.bottom() - 40), own);
+        QCOMPARE(image.pixelColor(host.center().x(), host.bottom()), own);
+        // The mouse goes through the corners to the content.
+        QCOMPARE(group->childAt(host.bottomRight() - QPoint(1, 1)), content);
+        grab(&f.windowA, p("style-pane-corners"));
+
+        // The corners follow the group as it is resized.
+        f.windowA.resize(f.windowA.width() + 80, f.windowA.height() + 60);
+        QCoreApplication::processEvents();
+        QVERIFY(group->contentHost()->geometry() != host);
+        host = group->contentHost()->geometry();
+        image = picture(group);
+        QCOMPARE(image.pixelColor(host.bottomRight()), behind);
+        QCOMPARE(image.pixelColor(host.right() - 12, host.bottom() - 12), own);
+
+        // A pane with square corners has none to draw.
+        qApp->setStyleSheet(pane.arg(QStringLiteral("qproperty-paneCornerColor: #ffff00;"))
+                                .replace(QStringLiteral("paneRadius: 12"), QStringLiteral("paneRadius: 0")));
+        QCoreApplication::processEvents();
+        host = group->contentHost()->geometry();
+        QCOMPARE(picture(group).pixelColor(host.bottomRight()), own);
+        qApp->setStyleSheet(QString());
+    }
+
     void roundingKeepsSharpCornersSharp()
     {
         // A trapezoid like the edge areas: two right-ish corners at the wide

@@ -14,6 +14,7 @@ QT_BEGIN_NAMESPACE
 class QAction;
 class QBoxLayout;
 class QLabel;
+class QPainter;
 class QToolButton;
 QT_END_NAMESPACE
 
@@ -78,6 +79,10 @@ class QFLEXDOCK_EXPORT DockTabGroup : public QFrame
                WRITE setPaneActiveBorderColor)
     /// Radius of the corners of pane and tab, and of the curve between them.
     Q_PROPERTY(int paneRadius READ paneRadius WRITE setPaneRadius)
+    /// What is behind the group. Set, the round corners of the pane are drawn
+    /// in it over the content as well, for content that fills its rectangle
+    /// with pixels of its own (a QQuickWidget, a video).
+    Q_PROPERTY(QColor paneCornerColor READ paneCornerColor WRITE setPaneCornerColor)
 
 public:
     DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area);
@@ -111,6 +116,8 @@ public:
     void setPaneActiveBorderColor(const QColor &color);
     [[nodiscard]] int paneRadius() const { return m_paneRadius; }
     void setPaneRadius(int radius);
+    [[nodiscard]] QColor paneCornerColor() const { return m_paneCornerColor; }
+    void setPaneCornerColor(const QColor &color);
     /// Whether the group draws itself as a pane with its current tab.
     [[nodiscard]] bool drawsPane() const
     {
@@ -118,6 +125,9 @@ public:
     }
     /// The outline of pane and current tab; group coordinates.
     [[nodiscard]] QPainterPath paneOutline() const;
+    /// The corners of the pane as they lie over the content, for the widget
+    /// at `origin` that shows them there.
+    void paintPaneCorners(QPainter *painter, const QPoint &origin) const;
 
     [[nodiscard]] DockTabBar *tabBar() const { return m_tabBar; }
     [[nodiscard]] QWidget *titleBar() const { return m_titleBar; }
@@ -182,6 +192,7 @@ private:
     void clearTitleActions();
     void headerDoubleClicked(bool onTab);
     void paneChanged();
+    void updatePaneCorners();
     [[nodiscard]] QRect currentTabRect() const;
     void syncContents();
     void showGroupMenu();
@@ -255,6 +266,9 @@ private:
     QColor m_paneBorderColor;
     QColor m_paneActiveBorderColor;
     int m_paneRadius = 0;
+    QColor m_paneCornerColor;
+    /// Lies over the corners of the content and draws those of the pane.
+    QWidget *m_paneCorners = nullptr;
     /// Where the current tab was when the pane was last drawn.
     QRect m_paintedTab;
 };
