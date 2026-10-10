@@ -161,6 +161,11 @@ void DockTabBar::setActiveGroup(bool active)
     m_activeGroup = active;
     style()->unpolish(this);
     style()->polish(this);
+    // A style may give the bar another font while it is at that (the macOS
+    // style does, and takes it back), and QTabBar measures its tabs as soon
+    // as the font changes: with what holds halfway through. Once more, then,
+    // with what holds now.
+    setElideMode(elideMode());
     update();
 }
 
