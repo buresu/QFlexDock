@@ -133,7 +133,7 @@ then on tool windows (`Qt::Tool`), which are above the application's other windo
 a tool window is, is the platform's: on macOS a panel with the small title bar of one (with the `Native`
 frame), which cannot be minimized and is hidden while another application is active; on Windows a thin
 title bar and no button in the taskbar. A floating window that no workspace owns stays an ordinary window.
-**Not verified** on any platform beyond the window being created as one (`tst_floating`).
+Tried by hand on macOS; elsewhere **not verified** beyond the window being created as one (`tst_floating`).
 
 ## Wayland
 
