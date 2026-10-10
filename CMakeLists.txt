@@ -7,6 +7,15 @@ project(QFlexDock
 
 set(QFLEXDOCK_QT_MIN_VERSION 6.8)
 
+# NMake and JOM makefiles hand the prefix by which CMake picks the headers out
+# of what `cl /showIncludes` prints to the compiler through the system's code
+# page. A prefix that is not ASCII (a localized Visual Studio) does not survive
+# that: no header is recorded then, and changing one rebuilds nothing that
+# includes it. CMake's own scanner does without the prefix.
+if(MSVC AND CMAKE_GENERATOR MATCHES "Makefiles" AND CMAKE_CXX_CL_SHOWINCLUDES_PREFIX MATCHES "[^ -~]")
+    set(CMAKE_CXX_DEPENDS_USE_COMPILER FALSE)
+endif()
+
 find_package(Qt6 ${QFLEXDOCK_QT_MIN_VERSION} REQUIRED COMPONENTS Core Gui Widgets)
 find_package(Qt6 ${QFLEXDOCK_QT_MIN_VERSION} QUIET COMPONENTS Quick QuickWidgets)
 
