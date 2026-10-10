@@ -19,6 +19,7 @@
 #include <QtGui/QWindow>
 #include <QtTest/QSignalSpy>
 #include <QtWidgets/QApplication>
+#include <QtWidgets/QLabel>
 #include <QtWidgets/QLayout>
 #include <QtWidgets/QToolButton>
 
@@ -67,6 +68,56 @@ private Q_SLOTS:
         QVERIFY(!window->titleBar());
         // The dock area takes the whole window; the window system frames it.
         QCOMPARE(window->area()->geometry(), window->rect());
+    }
+
+    void toolWindowsWhereAWorkspaceOwnsThem()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        QCOMPARE(f.manager.floatingWindowType(), DockManager::FloatingWindowType::Window);
+        QVERIFY(f.manager.floatPanel(p("a"), QRect(40, 40, 300, 200)));
+        QCOMPARE(floatingWindowOf(f, "a")->windowType(), Qt::Window);
+
+        f.manager.setFloatingWindowType(DockManager::FloatingWindowType::Tool);
+        QCOMPARE(f.manager.floatingWindowType(), DockManager::FloatingWindowType::Tool);
+        // Windows that exist stay what they were created as.
+        QCOMPARE(floatingWindowOf(f, "a")->windowType(), Qt::Window);
+
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(80, 80, 360, 260)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        QCOMPARE(window->windowType(), Qt::Tool);
+        QCOMPARE(window->windowHandle()->type(), Qt::Tool);
+        QCOMPARE(window->windowHandle()->transientParent(), f.windowA.windowHandle());
+        QTRY_COMPARE(window->size(), QSize(360, 260));
+        // The frame is another matter.
+        QVERIFY(!window->windowFlags().testFlag(Qt::FramelessWindowHint));
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Custom);
+        QVERIFY(f.manager.floatPanel(p("c"), QRect(120, 120, 300, 200)));
+        QCOMPARE(floatingWindowOf(f, "c")->windowType(), Qt::Tool);
+        QVERIFY(floatingWindowOf(f, "c")->windowFlags().testFlag(Qt::FramelessWindowHint));
+        f.manager.setFloatingWindowFrame(DockManager::FloatingFrame::Native);
+
+        // The ghost of a drag is what it may become.
+        QVERIFY(f.manager.dockPanel(p("b")));
+        DockDragController *controller = priv(f.manager)->drag;
+        QVERIFY(controller->begin(p("b"), false));
+        const QPointer<DockFloatingWindow> ghost = controller->createGhost();
+        QVERIFY(ghost);
+        QCOMPARE(ghost->windowType(), Qt::Tool);
+        controller->finish(Qt::IgnoreAction, ghost, false);
+        QTRY_VERIFY(!ghost);
+
+        // No workspace, nobody to be a tool of: a window in its own right.
+        DockManager alone;
+        alone.setFloatingWindowType(DockManager::FloatingWindowType::Tool);
+        QVERIFY(alone.registerPanel(p("x"), new QLabel(p("x")), p("X")));
+        QVERIFY(alone.floatPanel(p("x"), QRect(60, 60, 240, 180)));
+        const QWidget *own = alone.panel(p("x"))->widget()->window();
+        QVERIFY(qobject_cast<const DockFloatingWindow *>(own));
+        QCOMPARE(own->windowType(), Qt::Window);
     }
 
     void customFrameHasItsOwnTitleRow()

@@ -246,6 +246,7 @@ public:
     bool floatOnOutsideDrop = false;
     bool dragGhostEnabled = true;
     DockManager::FloatingFrame floatingFrame = DockManager::FloatingFrame::Native;
+    DockManager::FloatingWindowType floatingWindowType = DockManager::FloatingWindowType::Window;
     bool restoreWindowGeometry = true;
 
     std::vector<LayoutState> undoStack;

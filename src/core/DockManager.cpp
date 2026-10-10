@@ -2089,6 +2089,16 @@ void DockManager::setFloatingWindowFrame(FloatingFrame frame)
     d->floatingFrame = frame;
 }
 
+DockManager::FloatingWindowType DockManager::floatingWindowType() const
+{
+    return d->floatingWindowType;
+}
+
+void DockManager::setFloatingWindowType(FloatingWindowType type)
+{
+    d->floatingWindowType = type;
+}
+
 bool DockManager::isDragGhostEnabled() const
 {
     return d->dragGhostEnabled;

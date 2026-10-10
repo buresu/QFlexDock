@@ -184,6 +184,11 @@ void DockFloatingWindow::present(const QRect &geometry, QWidget *ownerWindow)
     // Keeps the window above its owner. Positioning is up to the platform:
     // Wayland compositors place top-level windows themselves.
     if (ownerWindow && ownerWindow != this) {
+        // What kind of window this is has to be settled before there is one.
+        if (m_manager && m_manager->floatingWindowType == DockManager::FloatingWindowType::Tool
+            && !testAttribute(Qt::WA_WState_Created)) {
+            setWindowFlags(windowFlags() | Qt::Tool);
+        }
         winId();
         if (QWindow *owner = ownerWindow->windowHandle())
             windowHandle()->setTransientParent(owner);

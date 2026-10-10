@@ -73,7 +73,8 @@ All of this was tried by hand on Windows 11 at 200% scaling, Esc included. **Not
 and monitors of different scaling.
 
 On macOS it is the same code, tried by hand on macOS 27 with Qt 6.11 (a ghost docked through, dropped
-outside, Esc, a window dragged by its only tab). What differs is this.
+outside, Esc, also with the button let go of right after it, a window dragged by its only tab). What
+differs is this.
 
 - A drag that nobody took returns to Qt only after the system has slid its picture back to where the drag
   began, a moment after the button was let go of. QFlexDock therefore asks the system for the mouse button
@@ -82,9 +83,9 @@ outside, Esc, a window dragged by its only tab). What differs is this.
   window that was itself moved goes back at once. The floating window appears when the drag has returned.
 - To spare a drop outside that wait, the ghost takes the drop itself wherever no window with a dock area
   is under the pointer (it lets the pointer through only over one): the drag returns at once, and no other
-  application sees it. Over a dock window but on no dock area of it, the wait remains. **Not verified.**
+  application sees it (tried by hand). Over a dock window but on no dock area of it, the wait remains.
 - The picture that slides back is an empty one: Qt gives a drag without a picture one of its own.
-- **Not verified:** Esc with the button let go of right after it, and what Windows leaves open above.
+- **Not verified:** what Windows leaves open above.
 
 ### Dropping outside = floating
 
@@ -120,6 +121,19 @@ A double click on the header of its one tab group, beside the tabs, maximizes su
 Frames drawn by QFlexDock can have round corners (`DockTheme::floatingCornerRadius`). The window is then
 translucent, which needs a compositor: without one (a bare X server) the corners are black. QFlexDock
 draws no shadow around such a window.
+
+## Floating windows and the main window
+
+A floating window belongs to the window of the workspace that owns it (it is transient for it). Windows,
+X11 and Wayland keep it above that window. **macOS does not**: a click on the main window puts the
+floating windows behind it (seen by hand).
+
+`DockManager::setFloatingWindowType(FloatingWindowType::Tool)` makes the floating windows created from
+then on tool windows (`Qt::Tool`), which are above the application's other windows everywhere. What else
+a tool window is, is the platform's: on macOS a panel with the small title bar of one (with the `Native`
+frame), which cannot be minimized and is hidden while another application is active; on Windows a thin
+title bar and no button in the taskbar. A floating window that no workspace owns stays an ordinary window.
+**Not verified** on any platform beyond the window being created as one (`tst_floating`).
 
 ## Wayland
 

@@ -97,6 +97,7 @@ floating window are none.
 
 **Behaviour and looks** — `setLinkedSplittersEnabled()`, `setCornerResizeEnabled()`, `setFloatsOnOutsideDrop()`,
 `setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setFloatingWindowFrame(FloatingFrame::Native | Custom | Minimal)`,
+`setFloatingWindowType(FloatingWindowType::Window | Tool)`,
 `setDragGhostEnabled()`, `setTheme()`, `setOverlayPainter()`. See [styling.md](styling.md) and
 [platform-notes.md](platform-notes.md).
 

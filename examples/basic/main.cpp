@@ -131,6 +131,13 @@ int main(int argc, char *argv[])
         manager.setFloatingWindowFrame(custom ? DockManager::FloatingFrame::Custom
                                               : DockManager::FloatingFrame::Native);
     });
+    QAction *tools = layoutMenu->addAction(QStringLiteral("Floating Windows Stay Above This One"));
+    tools->setCheckable(true);
+    QObject::connect(tools, &QAction::toggled, &manager, [&manager](bool above) {
+        // Tool windows, that is. Also for floating windows created from now on.
+        manager.setFloatingWindowType(above ? DockManager::FloatingWindowType::Tool
+                                            : DockManager::FloatingWindowType::Window);
+    });
     QAction *linked = layoutMenu->addAction(QStringLiteral("Linked Splitters"));
     linked->setCheckable(true);
     linked->setChecked(manager.linkedSplittersEnabled());

@@ -87,6 +87,20 @@ public:
     };
     Q_ENUM(FloatingFrame)
 
+    /// What kind of window a floating window is to the window system.
+    enum class FloatingWindowType {
+        /// A window like any other (Qt::Window). It belongs to the window of
+        /// the workspace that owns it; whether it also stays above that
+        /// window is up to the platform (macOS does not keep it there).
+        Window,
+        /// A tool window (Qt::Tool), where a workspace owns it: above the
+        /// application's other windows on every platform, and whatever else
+        /// the platform makes of tool windows (see docs/platform-notes.md).
+        /// A floating window that no workspace owns stays a Window.
+        Tool,
+    };
+    Q_ENUM(FloatingWindowType)
+
     /// What a tab group has at its top.
     enum class GroupHeader {
         /// Its tabs, always.
@@ -274,6 +288,10 @@ public:
     /// Frame of floating windows created from now on (default Native).
     /// Existing floating windows keep theirs.
     void setFloatingWindowFrame(FloatingFrame frame);
+    [[nodiscard]] FloatingWindowType floatingWindowType() const;
+    /// Kind of floating windows created from now on (default Window).
+    /// Existing floating windows keep theirs.
+    void setFloatingWindowType(FloatingWindowType type);
     [[nodiscard]] GroupHeader groupHeader() const;
     /// Header of every tab group (default Tabs). Can be changed at any time.
     void setGroupHeader(GroupHeader header);
