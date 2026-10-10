@@ -162,6 +162,124 @@ void drawGlyph(QPainter *painter, DockArea area, const QPointF &center, qreal si
     painter->fillPath(path, painter->pen().color());
 }
 
+// The rectangle the drop would take.
+void drawPreview(QPainter *painter, const DockOverlayScene &scene, const DockOverlayStyle &style)
+{
+    // A border lies inside the rectangle; without one it is filled to its edge.
+    const qreal inset = style.borderWidth > 0 ? style.borderWidth / 2 + 1 : 0;
+    QPainterPath path;
+    path.addRoundedRect(QRectF(scene.preview).adjusted(inset, inset, -inset, -inset),
+                        style.cornerRadius, style.cornerRadius);
+    painter->fillPath(path, style.previewColor);
+    if (style.borderWidth > 0)
+        painter->strokePath(path, QPen(style.previewBorderColor, style.borderWidth));
+}
+
+// What a button stands for: a window, with the part the drop would take
+// filled in. A button at the border of a workspace has a smaller window and
+// an arrow towards that border.
+void drawButtonPicture(QPainter *painter, const DockOverlayScene::Zone &zone, const QRectF &button,
+                       const DockOverlayStyle &style)
+{
+    const qreal unit = button.width() / 16.0;
+    QRectF window = button.adjusted(3.5 * unit, 3.5 * unit, -3.5 * unit, -3.5 * unit);
+    QColor line = style.glyphColor;
+    QColor fill = style.hoverBorderColor;
+    if (!zone.hovered) {
+        line.setAlphaF(line.alphaF() * 0.8f);
+        fill.setAlphaF(fill.alphaF() * 0.75f);
+    }
+
+    if (zone.outer) {
+        // Room for the arrow on the side of the border.
+        const qreal shift = 1.6 * unit;
+        const qreal half = 2.2 * unit;
+        QPolygonF arrow;
+        switch (zone.area) {
+        case DockArea::Left:
+            window.translate(shift, 0);
+            arrow << QPointF(window.left() - 3.4 * unit, window.center().y())
+                  << QPointF(window.left() - 1.4 * unit, window.center().y() - half)
+                  << QPointF(window.left() - 1.4 * unit, window.center().y() + half);
+            break;
+        case DockArea::Right:
+            window.translate(-shift, 0);
+            arrow << QPointF(window.right() + 3.4 * unit, window.center().y())
+                  << QPointF(window.right() + 1.4 * unit, window.center().y() - half)
+                  << QPointF(window.right() + 1.4 * unit, window.center().y() + half);
+            break;
+        case DockArea::Top:
+            window.translate(0, shift);
+            arrow << QPointF(window.center().x(), window.top() - 3.4 * unit)
+                  << QPointF(window.center().x() - half, window.top() - 1.4 * unit)
+                  << QPointF(window.center().x() + half, window.top() - 1.4 * unit);
+            break;
+        default:
+            window.translate(0, -shift);
+            arrow << QPointF(window.center().x(), window.bottom() + 3.4 * unit)
+                  << QPointF(window.center().x() - half, window.bottom() + 1.4 * unit)
+                  << QPointF(window.center().x() + half, window.bottom() + 1.4 * unit);
+            break;
+        }
+        QPainterPath path;
+        path.addPolygon(arrow);
+        path.closeSubpath();
+        painter->fillPath(path, line);
+    }
+
+    QRectF part = window;
+    switch (zone.area) {
+    case DockArea::Left:
+        part.setWidth(window.width() / 2);
+        break;
+    case DockArea::Right:
+        part.setLeft(window.center().x());
+        break;
+    case DockArea::Top:
+        part.setHeight(window.height() / 2);
+        break;
+    case DockArea::Bottom:
+        part.setTop(window.center().y());
+        break;
+    default:
+        break;
+    }
+    painter->fillRect(part, fill);
+    const qreal width = std::max<qreal>(1.0, unit);
+    painter->setPen(QPen(line, width, Qt::SolidLine, Qt::SquareCap, Qt::MiterJoin));
+    painter->setBrush(Qt::NoBrush);
+    painter->drawRect(window);
+    // The title of the window, or of the part: a thicker line along its top.
+    const QRectF titled = zone.area == DockArea::Center ? window : part;
+    painter->fillRect(QRectF(titled.left(), titled.top(), titled.width(), 2 * unit), line);
+}
+
+void drawButtons(QPainter *painter, const DockOverlayScene &scene, const DockOverlayStyle &style)
+{
+    if (scene.preview.isValid())
+        drawPreview(painter, scene, style);
+    for (const DockOverlayScene::Zone &zone : scene.zones) {
+        const QRectF button = zone.shape.boundingRect();
+        if (button.isEmpty())
+            continue;
+        const qreal inset = style.borderWidth / 2;
+        const qreal radius = std::min(style.cornerRadius, button.width() / 4);
+        QPainterPath path;
+        path.addRoundedRect(button.adjusted(inset, inset, -inset, -inset), radius, radius);
+        painter->fillPath(path, style.buttonColor);
+        if (zone.hovered)
+            painter->fillPath(path, style.hoverColor);
+        if (style.borderWidth > 0) {
+            painter->strokePath(path, QPen(zone.hovered ? style.hoverBorderColor
+                                                        : style.zoneBorderColor,
+                                           style.borderWidth));
+        }
+        painter->save();
+        drawButtonPicture(painter, zone, button, style);
+        painter->restore();
+    }
+}
+
 } // namespace
 
 DockOverlayStyle DockOverlayStyle::resolved(const QPalette &palette) const
@@ -182,6 +300,9 @@ DockOverlayStyle DockOverlayStyle::resolved(const QPalette &palette) const
         s.previewBorderColor = withAlpha(accent, 210);
     if (!s.glyphColor.isValid())
         s.glyphColor = withAlpha(palette.color(QPalette::Active, QPalette::WindowText), 190);
+    if (!s.buttonColor.isValid())
+        s.buttonColor = withAlpha(palette.color(QPalette::Active, QPalette::Window), 235);
+    s.buttonSize = std::clamp(s.buttonSize, 12, 96);
     s.borderWidth = std::max<qreal>(0.0, s.borderWidth);
     s.cornerRadius = std::max<qreal>(0.0, s.cornerRadius);
     s.zoneGap = std::max(0, s.zoneGap);
@@ -197,18 +318,23 @@ void DockDefaultOverlayPainter::paint(QPainter *painter, const DockOverlayScene 
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
 
+    if (style.guide != DockGuide::Zones) {
+        if (style.guide == DockGuide::Buttons)
+            drawButtons(painter, scene, style);
+        else if (scene.preview.isValid())
+            drawPreview(painter, scene, style);
+        if (scene.tabIndicator.isValid())
+            painter->fillRect(scene.tabIndicator, style.hoverBorderColor);
+        painter->restore();
+        return;
+    }
+
     // The hovered area is marked either by highlighting it or, if the style
     // asks for the preview, by the rectangle the drop would occupy instead.
     // Never both: they cover much the same place.
     const bool previewShown = style.showPreview && scene.preview.isValid();
     if (previewShown) {
-        const qreal inset = style.borderWidth / 2 + 1;
-        QPainterPath path;
-        path.addRoundedRect(QRectF(scene.preview).adjusted(inset, inset, -inset, -inset),
-                            style.cornerRadius, style.cornerRadius);
-        painter->fillPath(path, style.previewColor);
-        if (style.borderWidth > 0)
-            painter->strokePath(path, QPen(style.previewBorderColor, style.borderWidth));
+        drawPreview(painter, scene, style);
         // The other areas show only where the preview leaves them visible.
         painter->setClipRegion(QRegion(scene.bounds).subtracted(scene.preview));
     }

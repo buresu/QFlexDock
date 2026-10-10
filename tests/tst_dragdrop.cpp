@@ -1314,6 +1314,364 @@ private Q_SLOTS:
         QCoreApplication::processEvents();
         QCOMPARE(describe(f.a), p("a|b"));
     }
+
+    // --- The other guides ------------------------------------------------------
+
+    void buttonLayoutIsACrossThatStaysInside()
+    {
+        const QRect within(0, 0, 400, 300);
+        DropButtonLayout cross = DropButtonLayout::compute(QRect(100, 50, 200, 200), within, 30, 4);
+        QVERIFY(cross.isValid());
+        QCOMPARE(cross.center, QRect(100, 50, 200, 200).center());
+        QVERIFY(cross.rect(DockArea::Center).contains(cross.center));
+        QVERIFY(qAbs(cross.rect(DockArea::Center).center().x() - cross.center.x()) <= 1);
+        QCOMPARE(cross.rect(DockArea::Center).size(), QSize(30, 30));
+        QCOMPARE(cross.rect(DockArea::Left).right() + 4, cross.rect(DockArea::Center).left() - 1);
+        QCOMPARE(cross.rect(DockArea::Bottom).top() - 4, cross.rect(DockArea::Center).bottom() + 1);
+        // The ring around it is one step further out, and has no middle.
+        QCOMPARE(cross.rect(DockArea::Right, 1).left() - 4, cross.rect(DockArea::Right).right() + 1);
+        QVERIFY(cross.rect(DockArea::Center, 1).isNull());
+
+        // Only a button is a target, the gap around it included.
+        QCOMPARE(cross.hitTest(cross.center, AllDockAreas), DockArea::Center);
+        QCOMPARE(cross.hitTest(cross.center - QPoint(34, 0), AllDockAreas), DockArea::Left);
+        QCOMPARE(cross.hitTest(cross.center - QPoint(34, 34), AllDockAreas), DockArea::None);
+        QCOMPARE(cross.hitTest(cross.center - QPoint(34, 0), DockArea::Center | DockArea::Right),
+                 DockArea::None);
+        QCOMPARE(cross.hitTest(cross.center - QPoint(68, 0), AllDockAreas), DockArea::None);
+        QCOMPARE(cross.hitTest(cross.center - QPoint(68, 0), AllDockAreas, 1), DockArea::Left);
+        QVERIFY(!cross.contains(cross.center - QPoint(68, 0)));
+        QVERIFY(cross.contains(cross.center - QPoint(68, 0), 2));
+
+        // A target at the border: the cross moves in until all of it shows.
+        cross = DropButtonLayout::compute(QRect(0, 0, 40, 300), within, 30, 4);
+        QCOMPARE(cross.rect(DockArea::Left).left(), 0);
+        QCOMPARE(cross.center.y(), 149);
+        cross = DropButtonLayout::compute(QRect(0, 0, 40, 300), within, 30, 4, 2);
+        QCOMPARE(cross.rect(DockArea::Left, 1).left(), 0);
+        // In too little room it is in the middle of that.
+        cross = DropButtonLayout::compute(QRect(0, 0, 40, 40), QRect(0, 0, 60, 60), 30, 4);
+        QCOMPARE(cross.center, QPoint(29, 29));
+
+        QCOMPARE(outerButtonRect(within, DockArea::Left, 30, 6), QRect(6, 134, 30, 30));
+        QCOMPARE(outerButtonRect(within, DockArea::Bottom, 30, 6), QRect(184, 264, 30, 30));
+        QVERIFY(!DropButtonLayout{}.isValid());
+    }
+
+    void buttonGuideTakesDropsOnItsButtonsOnly()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.guide = DockGuide::Buttons;
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Bottom));
+        DockAreaWidget *area = areaOf(f.a);
+        DockDropOverlay *overlay = area->overlay();
+        const DockOverlayStyle style = overlay->effectiveStyle();
+        const QRect groupRect = area->groupOfPanel(p("b"))->geometry();
+        const QString before = describe(f.a);
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("c"));
+        QVERIFY(drag.move(area, groupRect.center()));
+        // A cross of five buttons in the middle of the group, and one at each
+        // border of the workspace.
+        int inner = 0;
+        int outer = 0;
+        QRegion crossRegion;
+        for (const auto &zone : overlay->scene().zones) {
+            (zone.outer ? outer : inner) += 1;
+            QCOMPARE(zone.shape.boundingRect().size().toSize(),
+                     QSize(style.buttonSize, style.buttonSize));
+            if (!zone.outer)
+                crossRegion += zone.shape.boundingRect().toRect();
+            else
+                QVERIFY(!crossRegion.boundingRect().intersects(zone.shape.boundingRect().toRect()));
+        }
+        QCOMPARE(inner, 5);
+        QCOMPARE(outer, 4);
+        QVERIFY((crossRegion.boundingRect().center() - groupRect.center()).manhattanLength() <= 2);
+        QVERIFY(crossRegion.boundingRect().width() < groupRect.width() * 2 / 3);
+        QCOMPARE(hoveredZone(area)->area, DockArea::Center);
+        QCOMPARE(overlay->scene().preview, groupRect);
+        grab(&f.windowA, p("buttons-center"));
+
+        // Beside the buttons the group takes nothing.
+        const QPoint beside = groupRect.center() + QPoint(style.buttonSize * 2 + 30, style.buttonSize * 2);
+        QVERIFY(groupRect.contains(beside));
+        QVERIFY(!drag.move(area, beside));
+        QVERIFY(overlay->isVisible());
+        QVERIFY(!hoveredZone(area));
+        QVERIFY(!overlay->scene().preview.isValid());
+
+        // Each button says where: here, the left half of the group.
+        const QPoint left = groupRect.center() - QPoint(style.buttonSize + style.zoneGap, 0);
+        QVERIFY(drag.move(area, left));
+        QCOMPARE(hoveredZone(area)->area, DockArea::Left);
+        QCOMPARE(overlay->scene().preview, dropPreviewRect(groupRect, DockArea::Left, 0.5));
+        grab(&f.windowA, p("buttons-left"));
+
+        // The one at the bottom border docks along the whole workspace.
+        const QRect bottom = outerButtonRect(area->contentsRect(), DockArea::Bottom,
+                                             style.buttonSize, style.zoneMargin);
+        QVERIFY(drag.move(area, bottom.center()));
+        QVERIFY(hoveredZone(area)->outer);
+        QCOMPARE(hoveredZone(area)->area, DockArea::Bottom);
+        QCOMPARE(overlay->scene().preview.width(), area->width());
+        grab(&f.windowA, p("buttons-outer"));
+        QCOMPARE(describe(f.a), before);
+
+        // Tabs take a tab as with any guide.
+        const DockTabBar *bar = area->groupOfPanel(p("b"))->tabBar();
+        QVERIFY(drag.move(area, bar->mapTo(area, bar->tabRect(0).center())));
+        QVERIFY(overlay->scene().tabIndicator.isValid());
+
+        // Let go of beside the buttons, the drag is not taken (and goes on
+        // here, where nothing ends it).
+        QVERIFY(!drag.drop(area, beside));
+        QCOMPARE(describe(f.a), before);
+        QVERIFY(drag.drop(area, left));
+        QCOMPARE(describe(f.a), p("H(a, c, b)"));
+    }
+
+    // A cross is as large as it is, also over a group smaller than itself.
+    // On one of its buttons the pointer is still on that group's guide,
+    // though it has left the group.
+    void buttonCrossStaysWithItsGroup()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.guide = DockGuide::Buttons;
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right, 0.5));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Bottom, -1, 0.1));
+        QVERIFY(f.b->addPanel(p("d")));
+        DockAreaWidget *area = areaOf(f.a);
+        const DockOverlayStyle style = area->overlay()->effectiveStyle();
+        const QRect low = area->groupOfPanel(p("c"))->geometry();
+        const QRect above = area->groupOfPanel(p("b"))->geometry();
+        QVERIFY(low.height() < style.buttonSize * 2);
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        QVERIFY(drag.move(area, low.center()));
+        const DropCandidate shown = area->candidateAt(low.center(), drag.session());
+        const QRect topButton = shown.buttons.rect(DockArea::Top);
+        QVERIFY(above.contains(topButton.center()));
+        QVERIFY(!low.contains(topButton.center()));
+        QVERIFY(drag.move(area, topButton.center()));
+        const DropCandidate held = area->candidateAt(topButton.center(), drag.session());
+        QCOMPARE(held.target.node, area->groupOfPanel(p("c"))->nodeId());
+        QCOMPARE(held.target.area, DockArea::Top);
+        // Off the buttons, the group under the pointer has the guide.
+        const QPoint away = above.topLeft() + QPoint(20, above.height() / 4);
+        (void)drag.move(area, away);
+        QCOMPARE(area->candidateAt(away, drag.session()).guideNode,
+                 area->groupOfPanel(p("b"))->nodeId());
+        QVERIFY(drag.drop(area, area->candidateAt(above.center(), drag.session())
+                                    .buttons.rect(DockArea::Right).center()));
+        QCOMPARE(describe(f.a), p("H(a, V(H(b, d), c))"));
+    }
+
+    // A header that names its panel takes a tab with the button guide: the
+    // rest of the group is no target there.
+    void buttonGuideLetsATitleBarTakeATab()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.guide = DockGuide::Buttons;
+        f.manager.setTheme(theme);
+        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        DockAreaWidget *area = areaOf(f.a);
+        const DockTabGroup *group = area->groupOfPanel(p("b"));
+        const QPoint onTitle = group->titleBar()->mapTo(area, QPoint(30, group->titleBar()->height() / 2));
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("a"));
+        QVERIFY(drag.move(area, onTitle));
+        QCOMPARE(area->overlay()->scene().preview, group->geometry());
+        // Its own title bar is where the drag began: nothing to do there.
+        const DockTabGroup *own = area->groupOfPanel(p("a"));
+        QVERIFY(!drag.move(area, own->titleBar()->mapTo(area, QPoint(30, 4))));
+        QVERIFY(drag.drop(area, onTitle));
+        QCOMPARE(describe(f.a), p("b|a"));
+    }
+
+    // With the button guide a workspace inside a panel leaves nearly all of
+    // itself free, and the workspace around it offers its buttons as well:
+    // those for the panel that holds the inner one as a ring around the
+    // inner cross (beside the inner workspace), and those at its own border.
+    void buttonGuidesOfNestedWorkspacesAreShownTogether()
+    {
+        DockManager manager;
+        DockTheme theme;
+        theme.overlay.guide = DockGuide::Buttons;
+        manager.setTheme(theme);
+        QMainWindow window;
+        DockWorkspace *outer = manager.createWorkspace(p("tools"));
+        window.setCentralWidget(outer);
+        auto *holder = new QWidget;
+        auto *holderLayout = new QVBoxLayout(holder);
+        holderLayout->setContentsMargins(0, 0, 0, 0);
+        DockWorkspace *inner = manager.createWorkspace(p("documents"), holder);
+        holderLayout->addWidget(inner);
+
+        DockPanel *center = manager.registerPanel(p("center"), holder);
+        center->setFeatures({});
+        center->setHeaderVisible(false);
+        for (const char *id : {"tool", "tool2", "doc1", "doc2"}) {
+            DockPanel *panel = manager.registerPanel(p(id), new QLabel(p(id)));
+            if (p(id).startsWith(QLatin1String("doc"))) {
+                DockPolicy policy;
+                policy.allowedWorkspaces = {p("documents")};
+                panel->setPolicy(policy);
+            }
+        }
+        QVERIFY(outer->addPanel(p("center")));
+        QVERIFY(outer->addPanel(p("tool"), DockArea::Left));
+        QVERIFY(manager.movePanel(p("tool2"), p("tool"), DockArea::Center));
+        QVERIFY(inner->addPanel(p("doc1")));
+        QVERIFY(inner->addPanel(p("doc2"), DockArea::Right));
+        window.resize(1000, 700);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+        DockAreaWidget *outerArea = areaOf(outer);
+        DockAreaWidget *innerArea = areaOf(inner);
+        const DockOverlayStyle style = innerArea->overlay()->effectiveStyle();
+        const int step = style.buttonSize + style.zoneGap;
+        const QPoint middle = innerArea->groupOfPanel(p("doc1"))->geometry().center();
+        const auto count = [](DockAreaWidget *area, bool outerZones) {
+            int n = 0;
+            for (const auto &zone : area->overlay()->scene().zones)
+                n += zone.outer == outerZones ? 1 : 0;
+            return n;
+        };
+
+        {
+            Drag drag(manager);
+            QVERIFY(drag.begin("tool2"));
+            // In the middle of a document: a tab there.
+            QVERIFY(drag.move(innerArea, middle));
+            QVERIFY(innerArea->overlay()->isVisible());
+            QVERIFY(outerArea->overlay()->isVisible());
+            QCOMPARE(count(innerArea, false), 5);
+            QCOMPARE(count(innerArea, true), 0);  // its border is the outer workspace's business
+            QCOMPARE(count(outerArea, false), 4); // beside the documents; no tab of that panel
+            QCOMPARE(count(outerArea, true), 4);
+            QCOMPARE(hoveredZone(innerArea)->area, DockArea::Center);
+            QVERIFY(!hoveredZone(outerArea));
+            // The ring lies around the inner cross.
+            for (const auto &zone : outerArea->overlay()->scene().zones) {
+                if (zone.outer)
+                    continue;
+                const QPoint at = outerArea->mapTo(&window, zone.shape.boundingRect().center().toPoint());
+                const QPoint offset = at - innerArea->mapTo(&window, middle);
+                QCOMPARE(qAbs(offset.x()) + qAbs(offset.y()), 2 * step);
+            }
+            grab(&window, p("buttons-nested"));
+
+            // One step out: the split of the document. Two: beside them all.
+            QVERIFY(drag.move(innerArea, middle + QPoint(0, step)));
+            QCOMPARE(hoveredZone(innerArea)->area, DockArea::Bottom);
+            QVERIFY(!hoveredZone(outerArea));
+            QVERIFY(drag.move(innerArea, middle + QPoint(0, 2 * step)));
+            QVERIFY(!hoveredZone(innerArea));
+            QCOMPARE(hoveredZone(outerArea)->area, DockArea::Bottom);
+            QVERIFY(!hoveredZone(outerArea)->outer);
+            const QRect holderRect = outerArea->groupOfPanel(p("center"))->geometry();
+            QCOMPARE(outerArea->overlay()->scene().preview,
+                     dropPreviewRect(holderRect, DockArea::Bottom, 0.25));
+            grab(&window, p("buttons-nested-ring"));
+            // Beside the buttons: nothing.
+            QVERIFY(!drag.move(innerArea, middle + QPoint(step, step)));
+            QVERIFY(!hoveredZone(innerArea));
+            QVERIFY(!hoveredZone(outerArea));
+
+            QVERIFY(drag.drop(innerArea, middle + QPoint(0, 2 * step)));
+        }
+        QCOMPARE(describe(outer), p("H(tool, V(center, tool2))"));
+        QCOMPARE(describe(inner), p("H(doc1, doc2)"));
+        QVERIFY(!innerArea->overlay()->isVisible());
+        QVERIFY(!outerArea->overlay()->isVisible());
+
+        // The border of the outer workspace, where the inner one lies under it.
+        {
+            Drag drag(manager);
+            QVERIFY(drag.begin("tool2"));
+            const QRect top = outerButtonRect(outerArea->contentsRect(), DockArea::Top,
+                                              style.buttonSize, style.zoneMargin);
+            const QPoint at = innerArea->mapFrom(outerArea, top.center());
+            QVERIFY(innerArea->rect().contains(at));
+            // (It lies over the tabs of the documents, and comes before them.)
+            QVERIFY(drag.move(innerArea, at));
+            QVERIFY(hoveredZone(outerArea));
+            QVERIFY(hoveredZone(outerArea)->outer);
+            QVERIFY(innerArea->overlay()->scene().tabIndicator.isNull());
+            QVERIFY(drag.drop(innerArea, at));
+        }
+        QCOMPARE(describe(outer), p("V(tool2, H(tool, center))"));
+
+        // Leaving the inner area takes both guides down.
+        {
+            Drag drag(manager);
+            QVERIFY(drag.begin("tool2"));
+            const QPoint onDocument = innerArea->groupOfPanel(p("doc1"))->geometry().center();
+            QVERIFY(drag.move(innerArea, onDocument));
+            QVERIFY(outerArea->overlay()->isVisible());
+            drag.leave(innerArea);
+            QVERIFY(!innerArea->overlay()->isVisible());
+            QVERIFY(!outerArea->overlay()->isVisible());
+            // Into the documents, as a tab.
+            QVERIFY(drag.drop(innerArea, onDocument));
+        }
+        QCOMPARE(describe(inner), p("H(doc1|tool2, doc2)"));
+        QCOMPARE(describe(outer), p("H(tool, center)"));
+
+        // A document has no business outside: the inner area is on its own,
+        // with buttons at its border.
+        {
+            Drag drag(manager);
+            QVERIFY(drag.begin("doc2"));
+            const QPoint onDocument = innerArea->groupOfPanel(p("doc1"))->geometry().center();
+            QVERIFY(drag.move(innerArea, onDocument));
+            QVERIFY(!outerArea->overlay()->isVisible());
+            QCOMPARE(count(innerArea, true), 4);
+            QVERIFY(!drag.move(innerArea, onDocument + QPoint(0, 2 * step)));
+        }
+    }
+
+    // DockGuide::Preview: the areas of the default guide, of which only the
+    // place of the drop is shown.
+    void previewGuideHasTheLargeAreas()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.guide = DockGuide::Preview;
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
+        QVERIFY(f.b->addPanel(p("c")));
+        DockAreaWidget *area = areaOf(f.a);
+        const QRect groupRect = area->groupOfPanel(p("b"))->geometry();
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("c"));
+        QVERIFY(drag.move(area, zonePoint(area, "b", DockArea::Left)));
+        QCOMPARE(hoveredZone(area)->area, DockArea::Left);
+        QCOMPARE(area->overlay()->scene().preview, dropPreviewRect(groupRect, DockArea::Left, 0.5));
+        grab(&f.windowA, p("preview-left"));
+        QVERIFY(drag.drop(area, zonePoint(area, "b", DockArea::Left)));
+        QCOMPARE(describe(f.a), p("H(a, c, b)"));
+    }
 };
 
 QTEST_MAIN(tst_DragDrop)

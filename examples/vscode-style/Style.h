@@ -575,20 +575,6 @@ inline QIcon fileIcon(const QString &fileName)
     return QIcon(pixmap);
 }
 
-/// What a drag shows: the place the dragged tab would take, and nothing else.
-class OverlayPainter : public QFlexDock::DockOverlayPainter
-{
-public:
-    void paint(QPainter *painter, const QFlexDock::DockOverlayScene &scene,
-               const QFlexDock::DockOverlayStyle &) override
-    {
-        if (scene.preview.isValid())
-            painter->fillRect(scene.preview, QColor(83, 89, 93, 128));
-        if (scene.tabIndicator.isValid())
-            painter->fillRect(scene.tabIndicator, QColor(Accent));
-    }
-};
-
 /// The base style under the style sheet: Fusion, with the two things a style
 /// sheet could only replace by image files drawn here instead.
 class Style : public QProxyStyle

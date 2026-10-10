@@ -754,6 +754,245 @@ private Q_SLOTS:
         QCOMPARE(image.pixelColor(380, 150).alpha(), 0);
     }
 
+    // DockGuide::Preview and DockGuide::Buttons, as the built-in painter
+    // draws them.
+    void defaultOverlayPainterDrawsTheOtherGuides()
+    {
+        DockOverlayScene scene;
+        scene.bounds = QRect(0, 0, 400, 300);
+        DockOverlayScene::Zone left;
+        left.area = DockArea::Left;
+        left.shape = QPolygonF(QRectF(140, 130, 40, 40));
+        left.hovered = true;
+        DockOverlayScene::Zone center;
+        center.area = DockArea::Center;
+        center.shape = QPolygonF(QRectF(180, 130, 40, 40));
+        DockOverlayScene::Zone border;
+        border.area = DockArea::Right;
+        border.outer = true;
+        border.shape = QPolygonF(QRectF(350, 130, 40, 40));
+        scene.zones = {left, center, border};
+        scene.preview = QRect(0, 0, 100, 300);
+        scene.tabIndicator = QRect(250, 0, 3, 20);
+
+        DockOverlayStyle style;
+        style.zoneColor = QColor(0, 0, 255);
+        style.hoverColor = QColor(255, 0, 0);
+        style.previewColor = QColor(0, 255, 0);
+        style.hoverBorderColor = QColor(255, 255, 0);
+        style.buttonColor = QColor(10, 20, 30);
+        style.glyphColor = QColor(255, 255, 255);
+        style.borderWidth = 0;
+        style.cornerRadius = 0;
+        const auto render = [&](DockGuide guide) {
+            style.guide = guide;
+            QImage image(400, 300, QImage::Format_ARGB32_Premultiplied);
+            image.fill(Qt::transparent);
+            QPainter painter(&image);
+            DockDefaultOverlayPainter().paint(&painter, scene, style.resolved(QPalette()));
+            painter.end();
+            return image;
+        };
+
+        // Preview: the place of the drop, and the mark between tabs. No areas.
+        QImage image = render(DockGuide::Preview);
+        QCOMPARE(image.pixelColor(50, 150), QColor(0, 255, 0));
+        QCOMPARE(image.pixelColor(160, 150).alpha(), 0);
+        QCOMPARE(image.pixelColor(200, 150).alpha(), 0);
+        QCOMPARE(image.pixelColor(370, 150).alpha(), 0);
+        QCOMPARE(image.pixelColor(251, 10), QColor(255, 255, 0));
+
+        // Buttons: a square each, the hovered one in the hover colour, with
+        // a picture in it; and the preview along with them.
+        image = render(DockGuide::Buttons);
+        QCOMPARE(image.pixelColor(50, 150), QColor(0, 255, 0));
+        QCOMPARE(image.pixelColor(142, 132), QColor(255, 0, 0));
+        QCOMPARE(image.pixelColor(182, 132), QColor(10, 20, 30));
+        QCOMPARE(image.pixelColor(352, 132), QColor(10, 20, 30));
+        QCOMPARE(image.pixelColor(300, 150).alpha(), 0); // between the buttons: nothing
+        QCOMPARE(image.pixelColor(251, 10), QColor(255, 255, 0));
+        // The picture: a window in the glyph colour, the part that is taken
+        // filled in.
+        QVERIFY(containsColor(image.copy(180, 130, 40, 40), QColor(255, 255, 255)));
+        QVERIFY(containsColor(image.copy(180, 130, 40, 40), QColor(255, 255, 0), 70));
+        QVERIFY(containsColor(image.copy(350, 130, 40, 40), QColor(255, 255, 255)));
+    }
+
+    // The button guide from a style sheet, the button that puts a group
+    // away, and the panel that comes out again.
+    void styleSheetsStyleTheButtonGuide()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.titleButtons = DockTitleButton::AutoHide;
+        f.manager.setTheme(theme);
+        f.show();
+        buildLayout(f);
+        DockAreaWidget *area = areaOf(f.a);
+        QCOMPARE(area->overlay()->effectiveStyle().guide, DockGuide::Zones);
+
+        qApp->setStyleSheet(QStringLiteral(R"(
+            #dockAutoHideButton { background: #00ff00; border: none; }
+            QFlexDock--DockAutoHidePopup { background: #0000ff; }
+            #dockAutoHideBody { background: #ff00ff; border: 3px solid #00ffff; }
+            QFlexDock--DockDropOverlay {
+                qproperty-guide: Buttons;
+                qproperty-buttonSize: 44;
+                qproperty-buttonColor: #102030;
+                qproperty-borderWidth: 0;
+                qproperty-cornerRadius: 0;
+            }
+        )"));
+        QCoreApplication::processEvents();
+
+        const DockOverlayStyle style = area->overlay()->effectiveStyle();
+        QCOMPARE(style.guide, DockGuide::Buttons);
+        QCOMPARE(style.buttonSize, 44);
+        QCOMPARE(style.buttonColor, QColor(0x10, 0x20, 0x30));
+        // Another window's guide is as the theme says.
+        QCOMPARE(DockOverlayStyle{}.guide, DockGuide::Zones);
+
+        showGuide(f, area, "a", "b");
+        const DockOverlayScene scene = area->overlay()->scene();
+        QVERIFY(!scene.zones.isEmpty());
+        for (const auto &zone : scene.zones)
+            QCOMPARE(zone.shape.boundingRect().size().toSize(), QSize(44, 44));
+        const QPoint corner = scene.zones.constFirst().shape.boundingRect().topLeft().toPoint();
+        QCOMPARE(pixel(area->overlay(), corner + QPoint(1, 1)), QColor(0x10, 0x20, 0x30));
+        grab(&f.windowA, p("style-qss-buttons"));
+        priv(f.manager)->drag->cancel();
+
+        DockTabGroup *group = area->groupOfPanel(p("b"));
+        QVERIFY(group->autoHideButton()->isVisible());
+        QCOMPARE(pixel(group->autoHideButton(), QPoint(1, 1)), QColor(0, 0xff, 0));
+        QTest::mouseClick(group->autoHideButton(), Qt::LeftButton);
+        const DockAutoHideBar *bar = DockManagerPrivate::get(f.a)->autoHide->bar(DockArea::Right);
+        QCOMPARE(bar->tabs().size(), 1);
+
+        // The panel that comes out: a frame of its own beside the grip, which
+        // shows the background of the whole.
+        QVERIFY(f.manager.activatePanel(p("b")));
+        DockAutoHidePopup *popup = DockManagerPrivate::get(f.a)->autoHide->popup();
+        QVERIFY(popup->isVisible());
+        auto *body = popup->findChild<QFrame *>(p("dockAutoHideBody"));
+        QVERIFY(body);
+        QCOMPARE(body->contentsMargins(), QMargins(3, 3, 3, 3));
+        QCOMPARE(pixel(popup, QPoint(2, popup->height() / 2)), QColor(0, 0, 0xff)); // the grip
+        QCOMPARE(pixel(body, QPoint(1, body->height() / 2)), QColor(0, 0xff, 0xff));
+        QCOMPARE(pixel(body, QPoint(body->width() - 20, 10)).blue(), 0xff);
+        grab(&f.windowA, p("style-qss-autohide-body"));
+        DockManagerPrivate::get(f.a)->autoHide->collapse();
+        qApp->setStyleSheet(QString());
+    }
+
+    // The `pane*` properties: a group draws its content and its current tab
+    // as one shape, with one outline around the two.
+    void paneIsDrawnAsOneShapeWithItsTab()
+    {
+        TwoWindows f;
+        f.manager.panel(p("c"))->setFeatures({});
+        f.manager.panel(p("c"))->setHeaderVisible(false);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Center));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Right));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Bottom));
+        DockAreaWidget *area = areaOf(f.a);
+        DockTabGroup *group = area->groupOfPanel(p("a"));
+        QVERIFY(!group->drawsPane());
+
+        qApp->setStyleSheet(QStringLiteral(R"(
+            QFlexDock--DockTabGroup {
+                qproperty-paneColor: #102030;
+                qproperty-paneBorderColor: #ff0000;
+                qproperty-paneActiveBorderColor: #00ff00;
+                qproperty-paneRadius: 0;
+            }
+            QFlexDock--DockTabGroup[headerVisible="false"] {
+                qproperty-paneColor: transparent;
+                qproperty-paneBorderColor: transparent;
+                qproperty-paneActiveBorderColor: transparent;
+            }
+            QFlexDock--DockTabGroup #dockTitleBar { background: transparent; }
+            QFlexDock--DockTabBar { qproperty-activeIndicatorColor: transparent; }
+            QFlexDock--DockTabBar::tab {
+                background: transparent; border: none; margin: 0; padding: 8px 16px;
+            }
+        )"));
+        QCoreApplication::processEvents();
+        // The second tab: the pane has a corner of its own before it.
+        QVERIFY(f.manager.activatePanel(p("d")));
+        QCoreApplication::processEvents();
+
+        const QColor fill(0x10, 0x20, 0x30);
+        const QColor active(0, 0xff, 0);
+        const auto tabIn = [](const DockTabGroup *g) {
+            const DockTabBar *bar = g->tabBar();
+            const QRect rect = bar->tabRect(bar->currentIndex());
+            return QRect(bar->mapTo(g, rect.topLeft()), rect.size());
+        };
+        QVERIFY(group->drawsPane());
+        QCOMPARE(group->contentsMargins(), QMargins(1, 1, 1, 1)); // the line around the pane
+        QRect host = group->contentHost()->geometry();
+        QRect tab = tabIn(group);
+        QVERIFY(tab.left() > 20);
+        QImage image = picture(group);
+        QCOMPARE(image.pixelColor(host.left() + 3, host.bottom() - 3), fill);
+        QCOMPARE(image.pixelColor(0, host.center().y()), active);
+        // The pane ends below the tab row, where its line runs on either
+        // side of the current tab. That tab is open to it, and has the line
+        // around itself.
+        QCOMPARE(image.pixelColor(tab.left() - 6, host.top() - 1), active);
+        QCOMPARE(image.pixelColor(tab.right() + 6, host.top() - 1), active);
+        QCOMPARE(image.pixelColor(tab.center().x(), host.top() - 1), fill);
+        QCOMPARE(image.pixelColor(tab.left() + 3, tab.center().y()), fill);
+        QCOMPARE(image.pixelColor(tab.center().x(), tab.top()), active);
+        QCOMPARE(image.pixelColor(tab.left(), tab.center().y()), active);
+        QCOMPARE(image.pixelColor(tab.right(), tab.center().y()), active);
+        // The rest of the tab row is not the group's to paint.
+        const auto untouched = [&](const QColor &color) {
+            return color != fill && color != active && color != QColor(0xff, 0, 0);
+        };
+        QVERIFY(untouched(image.pixelColor(tab.right() + 6, tab.center().y())));
+        QVERIFY(untouched(image.pixelColor(tab.left() - 6, tab.top())));
+        grab(&f.windowA, p("style-pane-tabs"));
+
+        // Another tab: the shape follows.
+        QVERIFY(f.manager.activatePanel(p("a")));
+        QCoreApplication::processEvents();
+        const QRect first = tabIn(group);
+        QVERIFY(first.right() < tab.left() + 2);
+        image = picture(group);
+        QCOMPARE(image.pixelColor(first.center().x(), host.top() - 1), fill);
+        QCOMPARE(image.pixelColor(tab.center().x(), host.top() - 1), active);
+        // At the end of the pane a tab goes straight on into its side.
+        QCOMPARE(image.pixelColor(0, first.center().y()), active);
+
+        // A group that is not the active one, and one that is no pane.
+        const DockTabGroup *other = area->groupOfPanel(p("b"));
+        QCOMPARE(pixel(const_cast<DockTabGroup *>(other), QPoint(0, other->height() / 2)),
+                 QColor(0xff, 0, 0));
+        DockTabGroup *bare = area->groupOfPanel(p("c"));
+        QVERIFY(!bare->isHeaderVisible());
+        QVERIFY(untouched(pixel(bare, QPoint(0, bare->height() / 2))));
+
+        // With a title bar: that is part of the pane, and the tabs are below.
+        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        QCoreApplication::processEvents();
+        QTRY_VERIFY(group->tabBar()->isVisible());
+        host = group->contentHost()->geometry();
+        tab = tabIn(group);
+        QVERIFY(tab.top() > host.bottom());
+        image = picture(group);
+        QCOMPARE(image.pixelColor(group->width() / 2, 0), active);
+        QCOMPARE(image.pixelColor(group->width() - 40, host.bottom() + 1), active);
+        QCOMPARE(image.pixelColor(tab.center().x(), host.bottom() + 1), fill);
+        QCOMPARE(image.pixelColor(tab.center().x(), tab.bottom()), active);
+        QVERIFY(untouched(image.pixelColor(tab.right() + 6, tab.center().y())));
+        grab(&f.windowA, p("style-pane-title-bar"));
+        qApp->setStyleSheet(QString());
+    }
+
     void roundingKeepsSharpCornersSharp()
     {
         // A trapezoid like the edge areas: two right-ish corners at the wide

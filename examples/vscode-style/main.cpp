@@ -169,8 +169,13 @@ void Workbench::setUpDocking()
     theme.iconSize = 16;
     theme.splitHandleWidth = 1;       // a line between the areas...
     theme.splitHandleHoverWidth = 4;  // ...that is wider while it is pointed at
+    // What a drag shows: the place the dragged tab would take, and nothing else.
+    theme.overlay.guide = DockGuide::Preview;
+    theme.overlay.previewColor = QColor(83, 89, 93, 128);
+    theme.overlay.hoverBorderColor = QColor(Accent); // the mark between two tabs
+    theme.overlay.borderWidth = 0;
+    theme.overlay.cornerRadius = 0;
     m_manager.setTheme(theme);
-    m_manager.setOverlayPainter(std::make_shared<OverlayPainter>());
 }
 
 // --- Panels ----------------------------------------------------------------------------

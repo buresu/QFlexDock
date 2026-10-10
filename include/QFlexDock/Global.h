@@ -103,6 +103,23 @@ Q_DECLARE_OPERATORS_FOR_FLAGS(DockFeatures)
 
 inline constexpr DockFeatures AllDockFeatures = DockFeatures(0x3f);
 
+/// What the drop guide shows while something is dragged over a dock area, and
+/// with that what the user aims at (DockOverlayStyle::guide).
+enum class DockGuide {
+    /// Five large areas that together cover the tab group under the pointer,
+    /// and a band along the border of the workspace. Nothing small to aim at.
+    Zones,
+    /// The same areas, not drawn: all there is to see is the rectangle the
+    /// dropped content would take.
+    Preview,
+    /// Small buttons: a cross of them in the middle of the tab group under
+    /// the pointer, and one at each border of the workspace. Only a button
+    /// (or a header) takes the drop; let go of anywhere else, a panel floats
+    /// where that is enabled (DockManager::setFloatsOnOutsideDrop()).
+    Buttons,
+};
+Q_ENUM_NS(DockGuide)
+
 /// Where in the header of a tab group a panel's own actions are shown (see
 /// DockPanel::setTitleActions()).
 enum class DockTitlePlace {

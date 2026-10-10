@@ -4,6 +4,8 @@
 #include "core/LayoutSolver.h"
 
 #include <QtCore/QPointer>
+#include <QtGui/QColor>
+#include <QtGui/QPainterPath>
 #include <QtWidgets/QFrame>
 
 #include <array>
@@ -43,13 +45,21 @@ class DockTabBar;
 /// Style sheets: class selector `QFlexDock--DockTabGroup`, with the `active`,
 /// `maximized` and `headerVisible` properties; the title row is
 /// `#dockTitleBar`, the title in it `#dockTitle`, its buttons
-/// `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton` and
-/// `#dockCloseButton`. The buttons of the current panel's own actions
+/// `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton`,
+/// `#dockAutoHideButton` and `#dockCloseButton`. The buttons of the current panel's own actions
 /// (DockPanel::setTitleActions()) are `#dockActionButton`s, each with the
 /// object name of its action as its `action` property, and the lines between
 /// them `#dockActionSeparator`. They are inside `#dockTitleActions` at the
 /// end of the header, `#dockTitleStartActions` at its start and
 /// `#dockTabActions` behind the tabs.
+///
+/// A group can draw itself as a pane that its current tab is part of: one
+/// outline around the content and that tab, the rest of the tab row left to
+/// whatever is behind the group. That is what the `pane*` properties are for
+/// (`qproperty-paneColor` and so on); with none of them set, the group is a
+/// frame drawn by the style or a style sheet. With tabs above the content
+/// the pane is the content; with a title bar it is title bar and content,
+/// and the tabs are below it.
 class QFLEXDOCK_EXPORT DockTabGroup : public QFrame
 {
     Q_OBJECT
@@ -57,6 +67,15 @@ class QFLEXDOCK_EXPORT DockTabGroup : public QFrame
     Q_PROPERTY(bool active READ isActive)
     Q_PROPERTY(bool maximized READ isMaximized)
     Q_PROPERTY(bool headerVisible READ isHeaderVisible)
+    /// Fill of the pane and of the current tab.
+    Q_PROPERTY(QColor paneColor READ paneColor WRITE setPaneColor)
+    /// The outline around the two, and what it is while the group is the
+    /// active one (not set: the same).
+    Q_PROPERTY(QColor paneBorderColor READ paneBorderColor WRITE setPaneBorderColor)
+    Q_PROPERTY(QColor paneActiveBorderColor READ paneActiveBorderColor
+               WRITE setPaneActiveBorderColor)
+    /// Radius of the corners of pane and tab, and of the curve between them.
+    Q_PROPERTY(int paneRadius READ paneRadius WRITE setPaneRadius)
 
 public:
     DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area);
@@ -74,12 +93,29 @@ public:
     [[nodiscard]] bool isHeaderVisible() const { return m_headerVisible; }
     void setActive(bool active);
 
+    [[nodiscard]] QColor paneColor() const { return m_paneColor; }
+    void setPaneColor(const QColor &color);
+    [[nodiscard]] QColor paneBorderColor() const { return m_paneBorderColor; }
+    void setPaneBorderColor(const QColor &color);
+    [[nodiscard]] QColor paneActiveBorderColor() const { return m_paneActiveBorderColor; }
+    void setPaneActiveBorderColor(const QColor &color);
+    [[nodiscard]] int paneRadius() const { return m_paneRadius; }
+    void setPaneRadius(int radius);
+    /// Whether the group draws itself as a pane with its current tab.
+    [[nodiscard]] bool drawsPane() const
+    {
+        return m_paneColor.isValid() || m_paneBorderColor.isValid();
+    }
+    /// The outline of pane and current tab; group coordinates.
+    [[nodiscard]] QPainterPath paneOutline() const;
+
     [[nodiscard]] DockTabBar *tabBar() const { return m_tabBar; }
     [[nodiscard]] QWidget *titleBar() const { return m_titleBar; }
     [[nodiscard]] QWidget *contentHost() const { return m_host; }
     [[nodiscard]] QToolButton *menuButton() const { return m_menuButton; }
     [[nodiscard]] QToolButton *maximizeButton() const { return m_maximizeButton; }
     [[nodiscard]] QToolButton *floatButton() const { return m_floatButton; }
+    [[nodiscard]] QToolButton *autoHideButton() const { return m_autoHideButton; }
     [[nodiscard]] QToolButton *closeButton() const { return m_closeButton; }
     [[nodiscard]] QLabel *titleLabel() const { return m_titleLabel; }
     /// Holds what the current panel's title actions for `place` are shown
@@ -122,6 +158,7 @@ public:
 protected:
     void changeEvent(QEvent *event) override;
     bool eventFilter(QObject *watched, QEvent *event) override;
+    void paintEvent(QPaintEvent *event) override;
 
 private:
     void rebuildTabs();
@@ -134,6 +171,8 @@ private:
     void clearActionBar(ActionBar &bar);
     void clearTitleActions();
     void headerDoubleClicked(bool onTab);
+    void paneChanged();
+    [[nodiscard]] QRect currentTabRect() const;
     void syncContents();
     void showGroupMenu();
     void showPanelMenu(const PanelId &panel, const QPoint &globalPos);
@@ -144,6 +183,7 @@ private:
     [[nodiscard]] DockFloatingWindow *floatingWindow() const;
     void toggleMaximized();
     void toggleFloating();
+    void autoHideGroup();
     void closeByUser(const PanelId &panel);
     [[nodiscard]] bool titleBarEvent(QEvent *event);
 
@@ -171,6 +211,7 @@ private:
     QToolButton *m_menuButton = nullptr;
     QToolButton *m_maximizeButton = nullptr;
     QToolButton *m_floatButton = nullptr;
+    QToolButton *m_autoHideButton = nullptr;
     QToolButton *m_closeButton = nullptr;
     /// What is in an action bar: each action with the widget standing for it.
     struct ShownAction
@@ -195,6 +236,13 @@ private:
     QWidget *m_host = nullptr;
     QPoint m_titlePress;
     bool m_titlePressed = false;
+
+    QColor m_paneColor;
+    QColor m_paneBorderColor;
+    QColor m_paneActiveBorderColor;
+    int m_paneRadius = 0;
+    /// Where the current tab was when the pane was last drawn.
+    QRect m_paintedTab;
 };
 
 } // namespace QFlexDock

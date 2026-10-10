@@ -105,6 +105,9 @@ struct DockWorkspace::Private
     QString id;
     DockAreaWidget *area = nullptr;
     DockAutoHideContainer *autoHide = nullptr;
+    /// Set where the workspace is not to have the manager's.
+    std::optional<DockManager::GroupHeader> groupHeader;
+    std::optional<DockTitleButtons> titleButtons;
 };
 
 class QFLEXDOCK_EXPORT DockManagerPrivate
@@ -140,6 +143,9 @@ public:
                            DockFloatingWindow *adopt = nullptr);
     DockResult dockBack(const PanelId &panel);
     DockResult setAutoHide(const PanelId &panel, bool autoHide, DockArea edge);
+    /// Several panels into one auto-hide bar, as one change. `edge` None:
+    /// the border nearest to the first of them.
+    DockResult autoHidePanels(const QStringList &panels, DockArea edge);
     DockResult setMaximized(const PanelId &panel, bool maximized);
     DockResult closePanels(const QStringList &panels);
     DockResult showPanels(const QStringList &panels);
@@ -214,6 +220,10 @@ public:
     /// The workspace a container belongs to (the owner, for a floating one).
     [[nodiscard]] DockWorkspace *workspaceFor(const QString &container) const;
     [[nodiscard]] QString workspaceIdFor(const QString &container) const;
+    /// What the tab groups of a container have at their top.
+    [[nodiscard]] DockManager::GroupHeader groupHeaderFor(const QString &container) const;
+    /// The built-in buttons their headers have.
+    [[nodiscard]] DockTitleButtons titleButtonsFor(const QString &container) const;
     [[nodiscard]] QString defaultWorkspaceId() const;
     [[nodiscard]] QWidget *windowFor(const QString &container) const;
 
@@ -243,6 +253,7 @@ public:
     bool centerDrop = true;
     bool tabDragPreview = false;
     DockManager::GroupHeader groupHeader = DockManager::GroupHeader::Tabs;
+    DockManager::AutoHideReveal autoHideReveal = DockManager::AutoHideReveal::Over;
     bool floatOnOutsideDrop = false;
     bool dragGhostEnabled = true;
     DockManager::FloatingFrame floatingFrame = DockManager::FloatingFrame::Custom;

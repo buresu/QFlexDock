@@ -72,7 +72,8 @@ private:
 
 /// The panel that slides out of an auto-hide bar over the dock area. Class
 /// selector `QFlexDock--DockAutoHidePopup`; its buttons are `#dockPinButton`
-/// and `#dockCloseButton`.
+/// and `#dockCloseButton`. Title and content are in `#dockAutoHideBody`, a
+/// frame beside the grip the panel is resized by.
 class QFLEXDOCK_EXPORT DockAutoHidePopup : public QFrame
 {
     Q_OBJECT
@@ -110,7 +111,9 @@ private:
 };
 
 /// Everything auto-hide for one workspace: the four bars and the popup.
-/// Which panel is slid out is view state, not part of the layout.
+/// Which panel is slid out is view state, not part of the layout. Neither is
+/// the room the dock area gives up for it with AutoHideReveal::Beside: the
+/// area is made smaller, its tree is what it was.
 class QFLEXDOCK_EXPORT DockAutoHideContainer : public QObject
 {
     Q_OBJECT
@@ -138,6 +141,9 @@ protected:
 
 private:
     void updatePopupGeometry();
+    /// Keeps `extent` pixels between the bar of `edge` and the dock area
+    /// free, for a panel that is out beside the area; None: nothing.
+    void reserve(DockArea edge, int extent);
     [[nodiscard]] DockArea edgeOf(const PanelId &panel) const;
 
     DockManagerPrivate *m_manager;
@@ -147,6 +153,9 @@ private:
     std::array<QStringList, 4> m_panels;
     DockAutoHidePopup *m_popup;
     PanelId m_expanded;
+    DockArea m_reservedEdge = DockArea::None;
+    int m_reserved = 0;
+    bool m_reserving = false;
 };
 
 } // namespace QFlexDock

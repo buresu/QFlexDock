@@ -18,6 +18,7 @@ DockDropOverlay::DockDropOverlay(DockManagerPrivate *manager, QWidget *parent)
     m_overrides.cornerRadius = -1;
     m_overrides.zoneGap = -1;
     m_overrides.zoneMargin = -1;
+    m_overrides.buttonSize = -1;
     hide();
 }
 
@@ -41,6 +42,7 @@ DockOverlayStyle DockDropOverlay::effectiveStyle() const
     pick(style.previewColor, m_overrides.previewColor);
     pick(style.previewBorderColor, m_overrides.previewBorderColor);
     pick(style.glyphColor, m_overrides.glyphColor);
+    pick(style.buttonColor, m_overrides.buttonColor);
     if (m_overrides.borderWidth >= 0)
         style.borderWidth = m_overrides.borderWidth;
     if (m_overrides.cornerRadius >= 0)
@@ -49,8 +51,12 @@ DockOverlayStyle DockDropOverlay::effectiveStyle() const
         style.zoneGap = m_overrides.zoneGap;
     if (m_overrides.zoneMargin >= 0)
         style.zoneMargin = m_overrides.zoneMargin;
+    if (m_overrides.buttonSize >= 0)
+        style.buttonSize = m_overrides.buttonSize;
     if (m_showPreview)
         style.showPreview = *m_showPreview;
+    if (m_guide)
+        style.guide = *m_guide;
     return style.resolved(palette());
 }
 

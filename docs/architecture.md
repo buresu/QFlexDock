@@ -132,6 +132,15 @@ Priority at a position: the band along the border (docking against the whole wor
 are a center rectangle and four trapezoids that together cover the target, so there is no small icon to aim
 for. Over the dragged group itself the center zone means "leave it here" and changes nothing.
 
+`DockGuide::Preview` has the same areas and shows only the place of the drop. `DockGuide::Buttons` has a
+button per area instead (`DropButtonLayout`): a cross in the middle of the group, kept inside the dock
+area, and a button at each border. Nothing but a button, tabs or a title bar is a target then. The cross
+stays with its group while the pointer is on one of its buttons, which may lie over a neighbouring group.
+Since buttons leave a dock area nearly free, an area inside a panel of another one asks the area around it
+for its candidate as well (`resolveDrag()`), if that takes what is dragged: the outer area lays the
+buttons for the group that holds the inner one around the inner cross (a second ring) and shows its own
+guide. A button of the inner area wins, then one of the outer area, then a header.
+
 Two things change this for windows that are rows of tabs. Where a group has no edge zone to offer (the
 dragged panels allow `Center` only), its whole title row counts as its tabs. And with
 `DockManager::setCenterDropEnabled(false)` there is no center zone, not even the "leave it here" one: what

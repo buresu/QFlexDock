@@ -39,6 +39,44 @@ struct QFLEXDOCK_EXPORT DropZoneLayout
     [[nodiscard]] DockArea hitTest(const QPoint &pos, DockAreas enabled = AllDockAreas) const;
 };
 
+/// Geometry of the button guide (DockGuide::Buttons): one square per area, the
+/// four edges around the centre like a cross. Only a point on a button is a
+/// target. Pure geometry; painting lives in DockOverlayPainter.
+///
+/// A second ring of edge buttons, one step further out, belongs to whatever
+/// lies around the target the cross is for: a workspace inside a panel has
+/// the cross for its tab groups, and the workspace around it the ring, for
+/// docking beside that panel.
+struct QFLEXDOCK_EXPORT DropButtonLayout
+{
+    /// Middle of the centre button.
+    QPoint center;
+    /// Side of a button; 0 for no buttons at all.
+    int size = 0;
+    int gap = 0;
+
+    /// The cross in the middle of `target`, moved as little as it takes to
+    /// lie inside `within` with all its `rings` (1: the cross alone).
+    [[nodiscard]] static DropButtonLayout compute(const QRect &target, const QRect &within,
+                                                  int size, int gap, int rings = 1);
+
+    [[nodiscard]] bool isValid() const { return size > 0; }
+    /// The square of one button. `ring` 0 is the cross, 1 the edge buttons
+    /// around it; the centre is in the cross only. Null for DockArea::None.
+    [[nodiscard]] QRect rect(DockArea area, int ring = 0) const;
+    /// The button of ring `ring` at `pos`, if it is one of `enabled`. The
+    /// gap around a button counts as the button.
+    [[nodiscard]] DockArea hitTest(const QPoint &pos, DockAreas enabled, int ring = 0) const;
+    /// Whether `pos` is on any button of the first `rings` rings.
+    [[nodiscard]] bool contains(const QPoint &pos, int rings = 1) const;
+
+    friend bool operator==(const DropButtonLayout &, const DropButtonLayout &) = default;
+};
+
+/// The button for docking against a whole workspace: a square of `size` in the
+/// middle of border `edge` of `bounds`, `margin` away from it.
+QFLEXDOCK_EXPORT QRect outerButtonRect(const QRect &bounds, DockArea edge, int size, int margin);
+
 /// Rectangle a drop on `area` of `target` would occupy: the whole target for
 /// Center, the `fraction` nearest that edge otherwise.
 QFLEXDOCK_EXPORT QRect dropPreviewRect(const QRect &target, DockArea area, double fraction);

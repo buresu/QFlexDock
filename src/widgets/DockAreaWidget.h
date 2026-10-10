@@ -2,6 +2,7 @@
 #pragma once
 
 #include "core/DockManager_p.h"
+#include "core/DropZones.h"
 #include "core/LayoutSolver.h"
 
 #include <QtCore/QHash>
@@ -27,6 +28,13 @@ struct DropCandidate
     /// Region the five large areas are laid over (the hovered tab group).
     QRect zoneRect;
     DockAreas zones;
+    /// The tab group the guide is for; null over none.
+    NodeId guideNode;
+    /// With DockGuide::Buttons: the cross of buttons for that group, and
+    /// which ring of it this area's buttons are (1: the cross itself is that
+    /// of a dock area inside the group, see candidateAt()).
+    DropButtonLayout buttons;
+    int ring = 0;
     /// Enabled bands along the border of the whole dock area.
     DockAreas outerZones;
     bool outer = false;
@@ -35,6 +43,9 @@ struct DropCandidate
     QRect tabIndicator;
     /// For a drop among tabs: where among the tabs shown there it goes.
     int tabGap = -1;
+    /// The header of the group takes the drop (its tabs, or its title bar),
+    /// not an area of the guide.
+    bool byHeader = false;
 };
 
 /// Shows one layout tree: a tab group widget per tab node, a handle per split
@@ -81,7 +92,20 @@ public:
     [[nodiscard]] QSize layoutMinimumSize() const;
 
     // --- Drag and drop -------------------------------------------------------
-    [[nodiscard]] DropCandidate candidateAt(const QPoint &pos, const DragSession &session) const;
+    /// What a drop at `pos` would do in this area. With `inside`, the cross
+    /// of buttons that a dock area inside one of this area's panels shows for
+    /// the same drag (in this area's coordinates): the buttons for the group
+    /// holding that area then go around that cross.
+    [[nodiscard]] DropCandidate candidateAt(const QPoint &pos, const DragSession &session,
+                                            const DropButtonLayout *inside = nullptr) const;
+    /// With the button guide, the dock area this one lies within, if that
+    /// takes what `session` drags as well: its buttons are then offered along
+    /// with this area's, which leave nearly all of it free.
+    [[nodiscard]] DockAreaWidget *areaAround(const DragSession &session) const;
+    /// What a drop at `pos` would do, the area around this one included, and
+    /// with `show` the guides for it.
+    [[nodiscard]] DropCandidate resolveDrag(const QPoint &pos, const DragSession &session,
+                                            bool show);
     void showOverlay(const DropCandidate &candidate);
     void hideOverlay();
     /// Preview of a tab drag: see DockTabGroup::setDropGap().
@@ -158,6 +182,13 @@ private:
     int m_edgeCount = 0;
     DockDropOverlay *m_overlay;
     Layout *m_layout;
+    // The button guide as it is shown: the cross stays with its group while
+    // the pointer is on one of its buttons, wherever those lie.
+    NodeId m_guideNode;
+    DropButtonLayout m_guideButtons;
+    int m_guideRings = 1;
+    /// The area around this one whose guide this one put up.
+    QPointer<DockAreaWidget> m_guideAround;
 
     bool m_placing = false;
     bool m_placeAgain = false;

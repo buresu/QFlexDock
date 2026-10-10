@@ -507,7 +507,24 @@ void DockAreaWidget::updateCorners()
 
 // --- Drag and drop -----------------------------------------------------------
 
-DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &session) const
+DockAreaWidget *DockAreaWidget::areaAround(const DragSession &session) const
+{
+    if (!m_manager || m_overlay->effectiveStyle().guide != DockGuide::Buttons)
+        return nullptr;
+    for (QWidget *w = parentWidget(); w; w = w->parentWidget()) {
+        auto *around = qobject_cast<DockAreaWidget *>(w);
+        if (!around)
+            continue;
+        const bool offers = around->m_manager == m_manager
+            && around->m_overlay->effectiveStyle().guide == DockGuide::Buttons
+            && m_manager->containerAdmits(session, around->m_containerId);
+        return offers ? around : nullptr;
+    }
+    return nullptr;
+}
+
+DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &session,
+                                          const DropButtonLayout *inside) const
 {
     DropCandidate c;
     c.target.container = m_containerId;
@@ -516,13 +533,24 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
 
     const QRect bounds = contentsRect();
     const DockOverlayStyle style = m_overlay->effectiveStyle();
+    const bool buttons = style.guide == DockGuide::Buttons;
     const DockAreas wholeAreas = m_manager->allowedDropAreas(session, m_containerId, NodeId{});
+    // With an area around this one offering its buttons too, the border of
+    // this one is not a target: beside it, in the area around, is.
+    const bool shared = buttons && !inside && areaAround(session);
+    const int rings = shared || inside ? 2 : 1;
 
     if (m_tree.isEmpty()) {
         // Nothing here yet: the whole area is one target.
         c.zoneRect = bounds;
         c.zones = wholeAreas & DockAreas(DockArea::Center);
-        if (c.zones && bounds.contains(pos)) {
+        if (buttons) {
+            c.buttons = DropButtonLayout::compute(bounds, bounds, style.buttonSize, style.zoneGap,
+                                                  rings);
+        }
+        const bool hit = buttons ? c.buttons.hitTest(pos, c.zones) == DockArea::Center
+                                 : bounds.contains(pos);
+        if (c.zones && hit) {
             c.hovered = DockArea::Center;
             c.target.area = DockArea::Center;
             c.preview = bounds;
@@ -531,26 +559,40 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
         const LayoutNode *maximized = maximizedNode();
         const int band = maximized ? 0 : qMin(style.outerBandWidth,
                                               qMin(bounds.width(), bounds.height()) / 4);
-        if (band > 0)
+        if (band > 0 && !shared)
             c.outerZones = wholeAreas & EdgeDockAreas;
 
-        // Tabs along the border lie inside the outer band. Over them the band
-        // shrinks to a thin strip at the very edge, so that a tab can still
-        // be dropped between tabs. The empty rest of a title row belongs to
-        // the band like everything else there.
         const auto overTabs = [this, &pos](const DockTabGroup *g) {
             const DockTabBar *bar = g->tabBar();
             const QRect region = bar->tabDropRegion();
             return QRect(bar->mapTo(this, region.topLeft()), region.size()).contains(pos);
         };
-        int hitBand = band;
-        for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it) {
-            if (maximized && maximized->id != it.key())
-                continue;
-            if (overTabs(it.value()))
-                hitBand = qMin(band, OuterStripOnTitle);
+        DockArea outerHit = DockArea::None;
+        if (buttons) {
+            // A button in the middle of each border.
+            const int around = (style.zoneGap + 1) / 2;
+            for (DockArea edge : DockEdges) {
+                const QRect button =
+                    outerButtonRect(bounds, edge, style.buttonSize, style.zoneMargin);
+                if (c.outerZones.testFlag(edge)
+                    && button.adjusted(-around, -around, around, around).contains(pos)) {
+                    outerHit = edge;
+                }
+            }
+        } else {
+            // Tabs along the border lie inside the outer band. Over them the
+            // band shrinks to a thin strip at the very edge, so that a tab
+            // can still be dropped between tabs. The empty rest of a title
+            // row belongs to the band like everything else there.
+            int hitBand = band;
+            for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it) {
+                if (maximized && maximized->id != it.key())
+                    continue;
+                if (overTabs(it.value()))
+                    hitBand = qMin(band, OuterStripOnTitle);
+            }
+            outerHit = outerBandAt(bounds, pos, hitBand);
         }
-        const DockArea outerHit = outerBandAt(bounds, pos, hitBand);
         if (outerHit != DockArea::None && c.outerZones.testFlag(outerHit)) {
             c.outer = true;
             c.hovered = outerHit;
@@ -561,61 +603,111 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
 
         // The tab group under the pointer. Its guide is shown even while an
         // outer band is hovered, so both kinds of target stay visible.
+        NodeId under;
         for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it) {
             if (maximized && maximized->id != it.key())
                 continue;
-            const QRect rect = m_solved.rects.value(it.key());
-            if (!rect.contains(pos))
-                continue;
-            const DockTabGroup *g = it.value();
-            // The guide stays clear of the outer bands so the two never overlap.
-            c.zoneRect = c.outerZones ? rect.intersected(bounds.adjusted(band, band, -band, -band))
-                                      : rect;
-            c.zones = m_manager->allowedDropAreas(session, m_containerId, it.key());
-            if (c.outer)
+            if (m_solved.rects.value(it.key()).contains(pos)) {
+                under = it.key();
                 break;
+            }
+        }
+        // A cross of buttons may reach beyond its group: on one of them, the
+        // pointer has not left for the group underneath.
+        if (buttons && !inside && !m_guideNode.isNull() && m_groups.contains(m_guideNode)
+            && (!maximized || maximized->id == m_guideNode)
+            && m_guideButtons.contains(pos, m_guideRings)) {
+            under = m_guideNode;
+        }
 
-            // Onto the tabs: join at a specific position, or reorder within
-            // the panel's own group. Only the tabs themselves count for this;
-            // elsewhere on the title row the five areas apply as usual. That
-            // is, if there are any besides the centre: what can only become
-            // a tab here is taken as one by the whole row.
-            const bool ownGroup = session.sourceContainer == m_containerId
-                && session.sourceNode == it.key();
-            const bool reorder = ownGroup && !session.wholeGroup;
-            const QWidget *title = g->titleBar();
-            const bool overTitleRow = g->tabBar()->parentWidget() == title && title->isVisible()
-                && QRect(title->mapTo(this, QPoint(0, 0)), title->size()).contains(pos);
-            const bool tabsOnly = !(c.zones & EdgeDockAreas);
-            const bool tabDrop = (overTabs(g) || (overTitleRow && tabsOnly))
-                && (reorder || (!ownGroup && c.zones.testFlag(DockArea::Center)));
-            // The middle of a group may be closed to drops: then the header
-            // is the one way to become a tab, and the guide shows no centre.
-            if (!m_manager->centerDrop)
-                c.zones &= ~DockAreas(DockArea::Center);
-            if (tabDrop) {
-                DockTabBar *bar = g->tabBar();
-                const int index = g->dropIndexAt(bar->mapFrom(this, pos), &c.tabGap);
-                c.hovered = DockArea::Center;
-                c.target.node = it.key();
-                c.target.area = DockArea::Center;
-                c.target.tabIndex = index;
-                c.tabIndicator = QRect(bar->mapTo(this, bar->insertIndicatorRect(c.tabGap).topLeft()),
-                                       bar->insertIndicatorRect(c.tabGap).size());
-                c.preview = reorder ? QRect() : rect;
+        if (!under.isNull()) {
+            const QRect rect = m_solved.rects.value(under);
+            const DockTabGroup *g = m_groups.value(under);
+            c.guideNode = under;
+            c.zones = m_manager->allowedDropAreas(session, m_containerId, under);
+            if (!buttons) {
+                // The guide stays clear of the outer bands so the two never overlap.
+                c.zoneRect = c.outerZones
+                    ? rect.intersected(bounds.adjusted(band, band, -band, -band)) : rect;
+            } else if (inside) {
+                // Around the cross of the area inside: beside the group that
+                // holds it, which nothing can become a tab of from out here.
+                c.zoneRect = rect;
+                c.buttons = *inside;
+                c.ring = 1;
+                c.zones &= EdgeDockAreas;
             } else {
-                const DropZoneLayout zones = DropZoneLayout::compute(c.zoneRect, style.edgeFraction,
-                                                                     style.zoneMargin);
-                const DockArea hit = zones.hitTest(pos, c.zones);
+                c.zoneRect = rect;
+                c.buttons = DropButtonLayout::compute(rect, bounds, style.buttonSize,
+                                                      style.zoneGap, rings);
+            }
+
+            if (!c.outer) {
+                // Onto the tabs: join at a specific position, or reorder
+                // within the panel's own group. Only the tabs themselves
+                // count for this; elsewhere on the title row the five areas
+                // apply as usual. That is, if there are any besides the
+                // centre: what can only become a tab here is taken as one by
+                // the whole row.
+                const bool ownGroup = session.sourceContainer == m_containerId
+                    && session.sourceNode == under;
+                const bool reorder = ownGroup && !session.wholeGroup;
+                const QWidget *title = g->titleBar();
+                const bool overHeader = title->isVisible()
+                    && QRect(title->mapTo(this, QPoint(0, 0)), title->size()).contains(pos);
+                const bool tabsInHeader = g->tabBar()->parentWidget() == title;
+                const bool tabsOnly = !(c.zones & EdgeDockAreas);
+                const bool mayJoin = !ownGroup && c.zones.testFlag(DockArea::Center);
+                const bool tabDrop = !inside
+                    && (overTabs(g) || (overHeader && tabsInHeader && tabsOnly))
+                    && (reorder || mayJoin);
+                // With buttons, a header that names its panel takes a tab
+                // as well: the rest of the group, the buttons aside, takes
+                // nothing.
+                const bool headerDrop = buttons && !inside && !tabDrop && overHeader && mayJoin;
+                // The middle of a group may be closed to drops: then the
+                // header is the one way to become a tab, and the guide shows
+                // no centre.
+                if (!m_manager->centerDrop)
+                    c.zones &= ~DockAreas(DockArea::Center);
+
+                DockArea hit = DockArea::None;
+                if (buttons) {
+                    hit = c.buttons.hitTest(pos, c.zones, c.ring);
+                } else if (!tabDrop) {
+                    hit = DropZoneLayout::compute(c.zoneRect, style.edgeFraction, style.zoneMargin)
+                              .hitTest(pos, c.zones);
+                }
                 if (hit != DockArea::None) {
+                    // Beside a group that holds a dock area: beside that
+                    // area, at the share an edge of a workspace takes.
+                    const double fraction = inside ? OuterDropFraction : GroupDropFraction;
                     c.hovered = hit;
-                    c.target.node = it.key();
+                    c.target.node = under;
                     c.target.area = hit;
-                    c.target.fraction = GroupDropFraction;
-                    c.preview = dropPreviewRect(rect, hit, GroupDropFraction);
+                    c.target.fraction = fraction;
+                    c.preview = dropPreviewRect(rect, hit, fraction);
+                } else if (tabDrop) {
+                    DockTabBar *bar = g->tabBar();
+                    const int index = g->dropIndexAt(bar->mapFrom(this, pos), &c.tabGap);
+                    c.hovered = DockArea::Center;
+                    c.target.node = under;
+                    c.target.area = DockArea::Center;
+                    c.target.tabIndex = index;
+                    c.tabIndicator =
+                        QRect(bar->mapTo(this, bar->insertIndicatorRect(c.tabGap).topLeft()),
+                              bar->insertIndicatorRect(c.tabGap).size());
+                    c.preview = reorder ? QRect() : rect;
+                    c.byHeader = true;
+                } else if (headerDrop) {
+                    c.hovered = DockArea::Center;
+                    c.target.node = under;
+                    c.target.area = DockArea::Center;
+                    c.target.tabIndex = int(g->panelIds().size());
+                    c.preview = rect;
+                    c.byHeader = true;
                 }
             }
-            break;
         }
     }
 
@@ -626,14 +718,52 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
         c.tabIndicator = QRect();
         c.tabGap = -1;
         c.outer = false;
+        c.byHeader = false;
     }
     return c;
+}
+
+DropCandidate DockAreaWidget::resolveDrag(const QPoint &pos, const DragSession &session, bool show)
+{
+    DropCandidate candidate = candidateAt(pos, session);
+    DockAreaWidget *around = areaAround(session);
+    DropCandidate outside;
+    if (around) {
+        DropButtonLayout cross = candidate.buttons;
+        cross.center = mapTo(around, cross.center);
+        outside = around->candidateAt(mapTo(around, pos), session, &cross);
+        // A button of this area comes first, then one of the area around
+        // (which may lie over a header in here), then the headers.
+        const auto pass = [](DropCandidate &c) {
+            c.valid = false;
+            c.hovered = DockArea::None;
+            c.outer = false;
+            c.byHeader = false;
+            c.preview = QRect();
+            c.tabIndicator = QRect();
+            c.tabGap = -1;
+        };
+        if (candidate.valid && !(candidate.byHeader && outside.valid))
+            pass(outside);
+        else if (outside.valid)
+            pass(candidate);
+    }
+    if (show) {
+        if (m_guideAround && m_guideAround != around)
+            m_guideAround->hideOverlay();
+        m_guideAround = around;
+        showOverlay(candidate);
+        if (around)
+            around->showOverlay(outside);
+    }
+    return candidate.valid || !around ? candidate : outside;
 }
 
 void DockAreaWidget::showOverlay(const DropCandidate &candidate)
 {
     const QRect bounds = contentsRect();
     const DockOverlayStyle style = m_overlay->effectiveStyle();
+    const bool buttons = style.guide == DockGuide::Buttons;
     DockOverlayScene scene;
     scene.bounds = rect();
 
@@ -646,7 +776,8 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
                 continue;
             DockOverlayScene::Zone zone;
             zone.area = area;
-            zone.shape = zones.polygon(area);
+            zone.shape = buttons ? QPolygonF(QRectF(candidate.buttons.rect(area, candidate.ring)))
+                                 : zones.polygon(area);
             zone.hovered = !candidate.outer && candidate.hovered == area && candidate.tabGap < 0;
             scene.zones.append(zone);
         }
@@ -663,7 +794,9 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
                 continue;
             DockOverlayScene::Zone zone;
             zone.area = edge;
-            zone.shape = outer.polygon(edge);
+            zone.shape = buttons ? QPolygonF(QRectF(outerButtonRect(bounds, edge, style.buttonSize,
+                                                                    style.zoneMargin)))
+                                 : outer.polygon(edge);
             zone.outer = true;
             zone.hovered = candidate.outer && candidate.hovered == edge;
             scene.zones.append(zone);
@@ -676,6 +809,12 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
         scene.tabIndicator = candidate.tabIndicator;
     showDropGap(tabsMakeRoom ? candidate.target.node : NodeId(), candidate.tabGap);
 
+    // A cross that is another area's (ring 1) follows that area's pointer.
+    const bool ownCross = buttons && candidate.ring == 0;
+    m_guideNode = ownCross ? candidate.guideNode : NodeId();
+    m_guideButtons = ownCross ? candidate.buttons : DropButtonLayout();
+    m_guideRings = ownCross && m_guideAround ? 2 : 1;
+
     m_overlay->setScene(scene);
     m_overlay->setGeometry(rect());
     m_overlay->show();
@@ -687,6 +826,13 @@ void DockAreaWidget::hideOverlay()
     m_overlay->hide();
     m_overlay->setScene({});
     showDropGap({}, -1);
+    m_guideNode = {};
+    m_guideButtons = {};
+    m_guideRings = 1;
+    if (DockAreaWidget *around = m_guideAround.data()) {
+        m_guideAround.clear();
+        around->hideOverlay();
+    }
 }
 
 // Room among the tabs of `node` for what is held over them, and nowhere else.
@@ -705,8 +851,7 @@ void DockAreaWidget::handleDrag(QDragMoveEvent *event)
         return;
     }
     // Preview only: nothing in the layout changes until the drop.
-    const DropCandidate candidate = candidateAt(event->position().toPoint(), *session);
-    showOverlay(candidate);
+    const DropCandidate candidate = resolveDrag(event->position().toPoint(), *session, true);
     if (candidate.valid) {
         event->setDropAction(Qt::MoveAction);
         event->accept();
@@ -768,7 +913,7 @@ void DockAreaWidget::dropEvent(QDropEvent *event)
     }
     // Where it goes is worked out with everything as it was shown: tabs that
     // made room are where the pointer found them.
-    const DropCandidate candidate = candidateAt(event->position().toPoint(), *session);
+    const DropCandidate candidate = resolveDrag(event->position().toPoint(), *session, false);
     hideOverlay();
     if (candidate.valid && m_manager->drag->drop(candidate.target)) {
         event->setDropAction(Qt::MoveAction);

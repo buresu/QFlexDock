@@ -114,6 +114,18 @@ public:
     };
     Q_ENUM(GroupHeader)
 
+    /// How a panel that was put away at a border (auto-hide) is shown while
+    /// it is out.
+    enum class AutoHideReveal {
+        /// Over the dock area (the default), covering what is under it.
+        Over,
+        /// Beside the dock area, which makes do with the room that is left:
+        /// everything stays in view, laid out anew, as if the panel were
+        /// docked along that border for as long as it is out.
+        Beside,
+    };
+    Q_ENUM(AutoHideReveal)
+
     explicit DockManager(QObject *parent = nullptr);
     ~DockManager() override;
 
@@ -298,6 +310,20 @@ public:
     [[nodiscard]] GroupHeader groupHeader() const;
     /// Header of every tab group (default Tabs). Can be changed at any time.
     void setGroupHeader(GroupHeader header);
+    /// The header of the tab groups of one workspace, and of the floating
+    /// windows it owns, where that is to differ from the others: documents
+    /// under their tabs in the middle of tool panels with title bars, say.
+    /// A panel takes the header of where it is put.
+    void setGroupHeader(DockWorkspace *workspace, GroupHeader header);
+    [[nodiscard]] GroupHeader groupHeader(const DockWorkspace *workspace) const;
+    /// The built-in header buttons of one workspace and of the floating
+    /// windows it owns, in place of the theme's (DockTheme::titleButtons).
+    void setTitleButtons(DockWorkspace *workspace, DockTitleButtons buttons);
+    [[nodiscard]] DockTitleButtons titleButtons(const DockWorkspace *workspace) const;
+    [[nodiscard]] AutoHideReveal autoHideReveal() const;
+    /// Where a panel that slides out of an auto-hide bar goes (default Over).
+    /// Either way a click elsewhere sends it back.
+    void setAutoHideReveal(AutoHideReveal reveal);
     [[nodiscard]] bool isDragGhostEnabled() const;
     /// Whether a dragged panel is shown as a window that follows the pointer
     /// and, dropped outside every dock area, becomes the floating window right

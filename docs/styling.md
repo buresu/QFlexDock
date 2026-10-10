@@ -27,10 +27,10 @@ There are no sub-controls or pseudo-states beyond these.
 
 | Selector | Target | What works |
 |---|---|---|
-| `QFlexDock--DockTabGroup` | A tab group (`QFrame`) | `border`, `background`, …; properties `active`, `maximized`, `headerVisible` |
+| `QFlexDock--DockTabGroup` | A tab group (`QFrame`) | `border`, `background`, …; properties `active`, `maximized`, `headerVisible`; or the `qproperty-pane*` below |
 | `QFlexDock--DockTabGroup #dockTitleBar` | Its title row | `background`, … |
 | `#dockTitle` | The title in it (`QLabel`, with `GroupHeader::TitleBar`) | `color`, `font`, `background`, … |
-| `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton`, `QFlexDock--DockTabGroup #dockCloseButton` | Title row buttons | As `QToolButton` |
+| `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton`, `#dockAutoHideButton`, `QFlexDock--DockTabGroup #dockCloseButton` | Title row buttons | As `QToolButton` |
 | `#dockTitleActions`, `#dockTitleStartActions`, `#dockTabActions` | What holds a panel's own actions (`DockPanel::setTitleActions()`): at the end of the header, at its start, behind the tabs | `background`, … |
 | `#dockActionButton`, `#dockActionSeparator` | Their buttons, and the lines between them | As `QToolButton` / `background`, `margin`, `min-width`; a button has the object name of its action as property `action` |
 | `QFlexDock--DockTabBar` | The tab bar (`QTabBar`) | `qproperty-activeIndicatorColor`; property `activeGroup` |
@@ -39,6 +39,7 @@ There are no sub-controls or pseudo-states beyond these.
 | `QFlexDock--DockEdgeHandle` | The edge closed collapsible panels are pulled out of | `background`, drawn only while it is hovered or held; properties `edge` (`left`, `right`, `top`, `bottom`), `hovered`, `pressed` |
 | `QFlexDock--DockAutoHideBar` | Auto-hide bars | `background`, …; property `edge` (`left`, `right`, `top`, `bottom`) |
 | `QFlexDock--DockAutoHidePopup` | The panel that slides out (`QFrame`) | `background`, `border`; buttons `#dockPinButton`, `#dockCloseButton` |
+| `#dockAutoHideBody` | Its title and content (`QFrame`): all of it but the grip it is resized by | `background`, `border`, `border-radius`; with one, the grip is a gap in the background of the whole |
 | `QFlexDock--DockDropOverlay` | The drop guide | Only the `qproperty-*` below |
 | `QFlexDock--DockFloatingWindow` | Floating windows | `background`, with a custom frame also `border` and `border-radius`; properties `customFrame`, `maximized` |
 | `#dockFloatingTitleBar`, `#dockFloatingTitle` | Title row and title text of a custom frame (a window holding one tab group has none: its title is that group's `#dockTitleBar`) | `background`, `color`, … |
@@ -78,6 +79,35 @@ Notes:
 - The 2px mark on the current tab of the active group takes its color from `qproperty-activeIndicatorColor`;
   a fully transparent color removes it.
 
+### A pane with its tab
+
+A tab group can draw itself as a pane that its current tab is part of: one outline around the content and
+that tab, with a curve where the two meet, and nothing behind the other tabs.
+
+| Property | Type | |
+|---|---|---|
+| `paneColor` | color | Fill of the pane and of the current tab |
+| `paneBorderColor`, `paneActiveBorderColor` | color | The line around the two, and what it is in the active group (not set: the same) |
+| `paneRadius` | int | Radius of the corners and of the curves between tab and pane |
+
+```css
+QFlexDock--DockTabGroup {
+    qproperty-paneColor: #2c2c2c;
+    qproperty-paneBorderColor: #3d3d3d;
+    qproperty-paneActiveBorderColor: #938abf;
+    qproperty-paneRadius: 6;
+}
+QFlexDock--DockTabGroup #dockTitleBar { background: transparent; }
+QFlexDock--DockTabBar::tab { background: transparent; border: none; margin: 0; padding: 6px 12px; }
+```
+
+With tabs above the content, the pane is the content. With `GroupHeader::TitleBar` it is title bar and
+content, and the tabs are below it. A group with one of these set no longer draws a `border` or
+`background` of its own, and keeps one pixel around the pane for the line. Tabs and title row have to be
+transparent and the tabs without a margin, as above; the content shows the pane where it paints no
+background. A group that is to be no pane (`[headerVisible="false"]`, say) gets `transparent` for all
+three colors.
+
 ### Drop guide properties
 
 | Property | Type | |
@@ -91,6 +121,9 @@ Notes:
 | `zoneGap` | int | Space between zones |
 | `zoneMargin` | int | Space between the zones and the edge of the target (default 6) |
 | `showPreview` | bool | `false` (default): highlight the zone under the pointer. `true`: show the area the panel would take instead |
+| `guide` | `Zones`, `Preview`, `Buttons` | What the guide consists of (`DockGuide`, see [api.md](api.md)) |
+| `buttonSize` | int | Side of a button of the `Buttons` guide (default 36); `zoneGap` is the space between two, `zoneMargin` that to the border of the workspace |
+| `buttonColor` | color | Background of such a button. Its border is `zoneBorderColor`; the hovered one has `hoverColor` over it and `hoverBorderColor` around it |
 
 ## Theme tokens
 
@@ -101,12 +134,14 @@ QFlexDock::DockTheme theme;
 theme.splitHandleWidth = 6;                              // -1: the style's PM_SplitterWidth
 theme.splitHandleHoverWidth = 8;                         // drawn this wide while hovered; -1: no wider
 theme.iconSize = 18;                                     // -1: the style's size
-theme.titleButtons = QFlexDock::DockTitleButton::Float   // buttons in a group's header;
-                   | QFlexDock::DockTitleButton::Close;  // the default is Menu | Maximize
+theme.titleButtons = QFlexDock::DockTitleButton::Float   // buttons in a group's header (also:
+                   | QFlexDock::DockTitleButton::Close;  // AutoHide); the default is Menu | Maximize
 theme.tabWidth = 200;                                    // every tab this wide; -1: as wide as its title
 theme.tabOverflow = QFlexDock::DockTabOverflow::Shrink;  // tabs share a crowded bar; default: Scroll
 theme.floatingBorderWidth = 1;                           // frames drawn by QFlexDock; -1: 4 pixels
 theme.floatingCornerRadius = 10;                         // their corners; 0: square
+theme.overlay.guide = QFlexDock::DockGuide::Buttons;     // small buttons; default: Zones
+theme.overlay.buttonSize = 40;                           // their side
 theme.overlay.hoverColor = QColor(255, 128, 0, 120);     // an invalid color is derived from the palette
 theme.overlay.edgeFraction = 0.25;                       // depth of the edge zones, relative to the target
 theme.overlay.outerBandWidth = 32;                       // band along the workspace border; 0 disables it
@@ -147,3 +182,8 @@ manager.setOverlayPainter(std::make_shared<MyOverlayPainter>());
 
 `style` has all three layers resolved, so every color is valid. `scene.preview` (the area the panel would
 take) is always filled in, whatever `showPreview` says, and `scene.tabIndicator` marks an insertion between tabs.
+With `DockGuide::Buttons` (`style.guide`) the shape of a zone is the square of its button.
+
+The auto-hide button of a header shows `DockIcon::Unpin`, the pin of the panel that slid out `DockIcon::Pin`.
+The names in an auto-hide bar are drawn by the application's `QStyle` as tabs (`QStyle::CE_TabBarTab`, for
+a widget of class `QFlexDock::DockAutoHideTab`); `examples/vs-style` draws them with a `QProxyStyle`.

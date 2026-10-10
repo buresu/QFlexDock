@@ -10,6 +10,7 @@
 #include <QtCore/QEvent>
 #include <QtGui/QContextMenuEvent>
 #include <QtGui/QMouseEvent>
+#include <QtGui/QPainter>
 #include <QtGui/QShortcut>
 #include <QtGui/QWindow>
 #include <QtWidgets/QApplication>
@@ -82,6 +83,7 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     m_titleBar->installEventFilter(this);
 
     m_tabBar = new DockTabBar(m_titleBar);
+    m_tabBar->installEventFilter(this);
     m_titleLabel = new QLabel(m_titleBar);
     m_titleLabel->setObjectName(QStringLiteral("dockTitle"));
     // The title is part of the title bar as far as the mouse is concerned,
@@ -94,8 +96,10 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     m_menuButton = makeTitleButton(m_titleBar, "dockMenuButton", tr("Panel menu"));
     m_maximizeButton = makeTitleButton(m_titleBar, "dockMaximizeButton", tr("Maximize"));
     m_floatButton = makeTitleButton(m_titleBar, "dockFloatButton", tr("Float"));
+    m_autoHideButton = makeTitleButton(m_titleBar, "dockAutoHideButton", tr("Auto Hide"));
     m_closeButton = makeTitleButton(m_titleBar, "dockCloseButton", tr("Close"));
     m_floatButton->hide();
+    m_autoHideButton->hide();
     m_closeButton->hide();
     const auto makeActionBar = [this](DockTitlePlace place, const char *objectName) {
         ActionBar &bar = m_actionBars[size_t(place)];
@@ -125,8 +129,10 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     m_titleLayout->addWidget(tabActions, 0, Qt::AlignVCenter);
     m_titleLayout->addWidget(m_filler, 1);
     m_titleLayout->addWidget(endActions, 0, Qt::AlignVCenter);
-    for (QToolButton *button : {m_menuButton, m_maximizeButton, m_floatButton, m_closeButton})
+    for (QToolButton *button :
+         {m_menuButton, m_maximizeButton, m_floatButton, m_autoHideButton, m_closeButton}) {
         m_titleLayout->addWidget(button, 0, Qt::AlignVCenter);
+    }
 
     // The content area has no layout of its own: only the current panel's
     // widget is shown, sized to fill it.
@@ -165,6 +171,7 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
     });
     connect(m_menuButton, &QToolButton::clicked, this, &DockTabGroup::showGroupMenu);
     connect(m_floatButton, &QToolButton::clicked, this, &DockTabGroup::toggleFloating);
+    connect(m_autoHideButton, &QToolButton::clicked, this, &DockTabGroup::autoHideGroup);
     connect(m_closeButton, &QToolButton::clicked, this, [this] {
         if (DockFloatingWindow *floating = m_windowTitle ? floatingWindow() : nullptr)
             floating->close();
@@ -252,6 +259,19 @@ void DockTabGroup::toggleFloating()
         (void)m_manager->dockBack(m_current);
     else
         (void)m_manager->floatPanels(m_current, false, QRect());
+}
+
+// The whole group goes into the bar of one border, as far as its panels may.
+void DockTabGroup::autoHideGroup()
+{
+    if (!m_manager)
+        return;
+    QStringList going;
+    for (const PanelId &panel : std::as_const(m_panels)) {
+        if (m_manager->userMay(panel, DockFeature::AutoHideable))
+            going << panel;
+    }
+    (void)m_manager->autoHidePanels(going, DockArea::None);
 }
 
 // A floating window without a title row is moved by the headers of its
@@ -347,10 +367,12 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
     case QEvent::MouseButtonDblClick:
         if (static_cast<QMouseEvent *>(event)->button() == Qt::LeftButton) {
             m_titlePressed = false;
-            if (m_manager->groupHeader == DockManager::GroupHeader::TitleBar)
+            if (m_manager->groupHeaderFor(m_area->containerId())
+                == DockManager::GroupHeader::TitleBar) {
                 toggleFloating();
-            else
+            } else {
                 headerDoubleClicked(false);
+            }
             return true;
         }
         break;
@@ -398,8 +420,9 @@ void DockTabGroup::updateHeader()
     // The title of a floating window names its one panel, and needs no tab.
     const DockFloatingWindow *floating = floatingWindow();
     m_windowTitle = floating && floating->headerIsTitle();
-    const bool titleMode = m_manager->groupHeader == DockManager::GroupHeader::TitleBar
-        || (m_windowTitle && m_panels.size() == 1);
+    const bool titleBars =
+        m_manager->groupHeaderFor(m_area->containerId()) == DockManager::GroupHeader::TitleBar;
+    const bool titleMode = titleBars || (m_windowTitle && m_panels.size() == 1);
     if (titleMode != m_titleMode) {
         m_titleMode = titleMode;
         auto *groupLayout = static_cast<QVBoxLayout *>(layout());
@@ -432,13 +455,15 @@ void DockTabGroup::updateHeader()
     m_titleLabel->setText(title);
     m_titleBar->setToolTip(titleMode && current ? current->toolTip() : QString());
 
-    const DockTitleButtons buttons = m_manager->theme.titleButtons;
+    const DockTitleButtons buttons = m_manager->titleButtonsFor(m_area->containerId());
     const DockFeatures features = current ? current->features() : DockFeatures();
     setShown(m_menuButton, buttons.testFlag(DockTitleButton::Menu));
     // (A window's title has the buttons of a window, whatever the theme.)
     setShown(m_maximizeButton, m_windowTitle || buttons.testFlag(DockTitleButton::Maximize));
     setShown(m_floatButton, buttons.testFlag(DockTitleButton::Float)
                                 && features.testFlag(DockFeature::Floatable));
+    setShown(m_autoHideButton, buttons.testFlag(DockTitleButton::AutoHide) && !floating
+                                   && features.testFlag(DockFeature::AutoHideable));
     setShown(m_closeButton, m_windowTitle || (buttons.testFlag(DockTitleButton::Close)
                                               && features.testFlag(DockFeature::Closable)));
     const bool maximized = m_windowTitle ? floating->isMaximized() : m_maximized;
@@ -760,8 +785,10 @@ void DockTabGroup::refreshAppearance()
     const int themed = m_manager->theme.iconSize;
     const int small = themed > 0 ? themed
                                  : style()->pixelMetric(QStyle::PM_SmallIconSize, nullptr, this);
-    for (QToolButton *button : {m_menuButton, m_maximizeButton, m_floatButton, m_closeButton})
+    for (QToolButton *button :
+         {m_menuButton, m_maximizeButton, m_floatButton, m_autoHideButton, m_closeButton}) {
         button->setIconSize(QSize(small, small));
+    }
     for (const ActionBar &bar : std::as_const(m_actionBars)) {
         for (const ShownAction &shown : bar.shown) {
             if (auto *button = qobject_cast<QToolButton *>(shown.widget.data());
@@ -772,6 +799,7 @@ void DockTabGroup::refreshAppearance()
     }
     m_tabBar->setTabSizing(m_manager->theme.tabWidth, m_manager->theme.tabOverflow);
     m_closeButton->setIcon(m_manager->icon(DockIcon::Close, this));
+    m_autoHideButton->setIcon(m_manager->icon(DockIcon::Unpin, this));
     if (themed > 0)
         m_tabBar->setIconSize(QSize(themed, themed));
     m_menuButton->setIcon(m_manager->icon(DockIcon::Menu, this));
@@ -898,10 +926,154 @@ void DockTabGroup::changeEvent(QEvent *event)
     }
 }
 
+// --- The pane and its tab ---------------------------------------------------------
+
+void DockTabGroup::setPaneColor(const QColor &color)
+{
+    m_paneColor = color;
+    paneChanged();
+}
+
+void DockTabGroup::setPaneBorderColor(const QColor &color)
+{
+    m_paneBorderColor = color;
+    paneChanged();
+}
+
+void DockTabGroup::setPaneActiveBorderColor(const QColor &color)
+{
+    m_paneActiveBorderColor = color;
+    paneChanged();
+}
+
+void DockTabGroup::setPaneRadius(int radius)
+{
+    m_paneRadius = qMax(0, radius);
+    paneChanged();
+}
+
+// A pane has a line of its own around it, which the frame makes room for
+// without drawing anything.
+void DockTabGroup::paneChanged()
+{
+    const int style = drawsPane() ? int(QFrame::Box) | int(QFrame::Plain)
+                                  : int(QFrame::StyledPanel) | int(QFrame::Plain);
+    if (frameStyle() != style) {
+        setFrameStyle(style);
+        setLineWidth(1);
+        if (m_area)
+            m_area->contentLimitsChanged();
+    }
+    update();
+}
+
+// The current tab as far as it shows; null without one.
+QRect DockTabGroup::currentTabRect() const
+{
+    if (m_tabBar->isHidden() || (!m_titleMode && m_titleBar->isHidden()))
+        return {};
+    const int index = m_tabBar->currentIndex();
+    if (index < 0)
+        return {};
+    const QRect shown = m_tabBar->tabRect(index).intersected(m_tabBar->rect());
+    return shown.isEmpty() ? QRect() : QRect(m_tabBar->mapTo(this, shown.topLeft()), shown.size());
+}
+
+QPainterPath DockTabGroup::paneOutline() const
+{
+    // The pane: the content, and with it a title bar that names the panel.
+    // The line around it lies in the frame's own room.
+    QRect pane = m_host->geometry();
+    if (m_titleMode && !m_titleBar->isHidden())
+        pane = pane.united(m_titleBar->geometry());
+    pane.adjust(-1, -1, 1, 1);
+    QRect tab = currentTabRect();
+    // Worked out with the tab above the pane; one below is mirrored.
+    const bool below = !tab.isNull() && tab.center().y() > pane.center().y();
+    const qreal mirror = pane.top() + pane.bottom() + 1.0;
+
+    const qreal xL = pane.left() + 0.5;
+    const qreal xR = pane.right() + 0.5;
+    const qreal yT = pane.top() + 0.5;
+    const qreal yB = pane.bottom() + 0.5;
+    const qreal r = qMin(qreal(m_paneRadius), qMin(xR - xL, yB - yT) / 2);
+    const auto arc = [](QPainterPath &path, qreal cx, qreal cy, qreal radius, int start, int sweep) {
+        if (radius <= 0)
+            path.lineTo(cx, cy);
+        else
+            path.arcTo(QRectF(cx - radius, cy - radius, 2 * radius, 2 * radius), start, sweep);
+    };
+
+    QPainterPath path;
+    path.moveTo(xL, yB - r);
+    qreal tl = tab.left() + 0.5;
+    qreal tr = tab.right() + 0.5;
+    const qreal tt = below ? mirror - (tab.bottom() + 0.5) : tab.top() + 0.5;
+    if (tab.isNull() || yT - tt < 2 || tr - tl < 4) {
+        arc(path, xL + r, yT + r, r, 180, -90);
+        arc(path, xR - r, yT + r, r, 90, -90);
+    } else {
+        // The corners of the tab, and the curves where it meets the pane.
+        const qreal rt = qMin(r, qMin((yT - tt) / 2, (tr - tl) / 2));
+        const qreal fillet = qMin(r, yT - tt - rt);
+        // A tab at the end of the pane goes straight on into its side.
+        if (tl - xL < r + fillet + 2) {
+            tl = xL;
+            arc(path, tl + rt, tt + rt, rt, 180, -90);
+        } else {
+            arc(path, xL + r, yT + r, r, 180, -90);
+            arc(path, tl - fillet, yT - fillet, fillet, 270, 90);
+            arc(path, tl + rt, tt + rt, rt, 180, -90);
+        }
+        if (xR - tr < r + fillet + 2) {
+            tr = xR;
+            arc(path, tr - rt, tt + rt, rt, 90, -90);
+        } else {
+            arc(path, tr - rt, tt + rt, rt, 90, -90);
+            arc(path, tr + fillet, yT - fillet, fillet, 180, 90);
+            arc(path, xR - r, yT + r, r, 90, -90);
+        }
+    }
+    arc(path, xR - r, yB - r, r, 0, -90);
+    arc(path, xL + r, yB - r, r, 270, -90);
+    path.closeSubpath();
+    return below ? QTransform(1, 0, 0, -1, 0, mirror).map(path) : path;
+}
+
+void DockTabGroup::paintEvent(QPaintEvent *event)
+{
+    if (!drawsPane()) {
+        QFrame::paintEvent(event);
+        return;
+    }
+    m_paintedTab = currentTabRect();
+    const QColor border = m_active && m_paneActiveBorderColor.isValid() ? m_paneActiveBorderColor
+                                                                        : m_paneBorderColor;
+    const bool filled = m_paneColor.isValid() && m_paneColor.alpha() > 0;
+    const bool outlined = border.isValid() && border.alpha() > 0;
+    if (!filled && !outlined)
+        return;
+    QPainter painter(this);
+    painter.setRenderHint(QPainter::Antialiasing);
+    const QPainterPath outline = paneOutline();
+    if (filled)
+        painter.fillPath(outline, m_paneColor);
+    if (outlined)
+        painter.strokePath(outline, QPen(border, 1));
+}
+
 bool DockTabGroup::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == m_titleBar && titleBarEvent(event))
         return true;
+    // The pane is drawn around the current tab: when that is elsewhere than
+    // it was (another one chosen, the tabs scrolled, the bar moved), again.
+    if (watched == m_tabBar && drawsPane()
+        && (event->type() == QEvent::Paint || event->type() == QEvent::Move
+            || event->type() == QEvent::Show || event->type() == QEvent::Hide)
+        && m_paintedTab != currentTabRect()) {
+        update();
+    }
     if (watched == m_host) {
         if (event->type() == QEvent::Resize) {
             updateContentGeometry();

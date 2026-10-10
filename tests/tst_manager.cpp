@@ -981,6 +981,71 @@ private Q_SLOTS:
         QCOMPARE(describe(f.a), before);
     }
 
+    // AutoHideReveal::Beside: the panel that is out takes its room from the
+    // dock area, which shows all it holds in what is left.
+    void autoHiddenPanelCanComeOutBesideTheDockArea()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Right, 0.3));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom));
+        QVERIFY(f.manager.setPanelAutoHide(p("c"), true, DockArea::Bottom));
+        QVERIFY(f.manager.setPanelAutoHide(p("b"), true, DockArea::Right));
+        QVERIFY(f.manager.addPanel(p("d"), f.a, DockArea::Right));
+        const QString before = describe(f.a);
+        DockAreaWidget *area = areaOf(f.a);
+        DockAutoHideContainer *autoHide = DockManagerPrivate::get(f.a)->autoHide;
+        const DockAutoHidePopup *popup = autoHide->popup();
+        QCOMPARE(f.manager.autoHideReveal(), DockManager::AutoHideReveal::Over);
+        const QRect whole = area->geometry();
+
+        // Over it, as ever: the area is as large as it was.
+        QVERIFY(f.manager.activatePanel(p("c")));
+        QVERIFY(popup->isVisible());
+        QCOMPARE(area->geometry(), whole);
+        QVERIFY(area->geometry().contains(popup->geometry()));
+
+        // Beside it: the area ends where the panel begins, and everything in
+        // it is still to be seen.
+        f.manager.setAutoHideReveal(DockManager::AutoHideReveal::Beside);
+        QCOMPARE(f.manager.autoHideReveal(), DockManager::AutoHideReveal::Beside);
+        QTRY_COMPARE(area->geometry().height(), whole.height() - popup->height());
+        QCOMPARE(area->geometry().width(), whole.width());
+        QCOMPARE(popup->geometry().top(), area->geometry().bottom() + 1);
+        QCOMPARE(popup->geometry().bottom(), whole.bottom());
+        QCOMPARE(popup->geometry().left(), whole.left());
+        QCOMPARE(popup->width(), whole.width());
+        QVERIFY(area->geometry().contains(area->groupOfPanel(p("d"))->geometry().translated(
+            area->geometry().topLeft())));
+        QCOMPARE(describe(f.a), before); // the layout itself is what it was
+        grab(&f.windowA, p("auto-hide-beside"));
+
+        // Another one, at another border: the room is given back and taken there.
+        QTest::mouseClick(autoHide->bar(DockArea::Right)->tab(p("b")), Qt::LeftButton);
+        QCOMPARE(autoHide->expandedPanel(), p("b"));
+        QTRY_COMPARE(area->geometry().height(), whole.height());
+        QCOMPARE(area->geometry().width(), whole.width() - popup->width());
+        QCOMPARE(popup->geometry().left(), area->geometry().right() + 1);
+
+        // A click elsewhere sends it back, and the area has its room again.
+        QTest::mouseClick(f.widgets[p("a")], Qt::LeftButton);
+        QVERIFY(!popup->isVisible());
+        QTRY_COMPARE(area->geometry(), whole);
+
+        // It never takes more than the panels in the area can spare.
+        QVERIFY(f.manager.activatePanel(p("c")));
+        const int out = popup->height();
+        f.widgets[p("a")]->setMinimumHeight(whole.height() - 160);
+        QTRY_VERIFY(popup->height() < out);
+        QVERIFY(area->geometry().height() >= area->layoutMinimumSize().height());
+        QCOMPARE(popup->geometry().top(), area->geometry().bottom() + 1);
+        QCOMPARE(f.windowA.size(), QSize(900, 600));
+        f.manager.setAutoHideReveal(DockManager::AutoHideReveal::Over);
+        QTRY_COMPARE(area->geometry(), whole);
+        QVERIFY(popup->isVisible());
+    }
+
     void contextMenu()
     {
         TwoWindows f;

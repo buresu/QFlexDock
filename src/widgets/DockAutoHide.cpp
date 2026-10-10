@@ -170,7 +170,10 @@ DockAutoHidePopup::DockAutoHidePopup(QWidget *parent)
     setAutoFillBackground(true); // it covers the dock area underneath
     setFocusPolicy(Qt::StrongFocus);
 
-    auto *body = new QWidget(this);
+    // Everything but the grip: a frame a style sheet can draw, so that the
+    // grip may be a gap beside it.
+    auto *body = new QFrame(this);
+    body->setObjectName(QStringLiteral("dockAutoHideBody"));
     m_title = new QLabel(body);
     m_title->setObjectName(QStringLiteral("dockAutoHideTitle"));
     const auto makeButton = [body](const char *name, const QString &tip) {
@@ -300,6 +303,7 @@ DockAutoHideContainer::DockAutoHideContainer(DockManagerPrivate *manager, DockWo
             (void)m_manager->closePanels({m_expanded});
     });
     area->installEventFilter(this);
+    workspace->installEventFilter(this);
     refreshAppearance();
 }
 
@@ -307,6 +311,7 @@ void DockAutoHideContainer::detachFromManager()
 {
     m_popup->hide();
     m_expanded.clear();
+    reserve(DockArea::None, 0);
     m_manager = nullptr;
 }
 
@@ -371,6 +376,7 @@ void DockAutoHideContainer::collapse()
     const PanelId panel = m_expanded;
     m_expanded.clear();
     m_popup->hide();
+    reserve(DockArea::None, 0);
     for (DockAutoHideBar *b : m_bars)
         b->setExpanded({});
     if (!m_manager)
@@ -397,6 +403,7 @@ void DockAutoHideContainer::refreshAppearance()
         return;
     m_popup->pinButton()->setIcon(m_manager->icon(DockIcon::Pin, m_popup));
     m_popup->closeButton()->setIcon(m_manager->icon(DockIcon::Close, m_popup));
+    updatePopupGeometry(); // over the dock area or beside it
 }
 
 void DockAutoHideContainer::pressedElsewhere(QWidget *pressed)
@@ -415,33 +422,90 @@ void DockAutoHideContainer::pressedElsewhere(QWidget *pressed)
     collapse();
 }
 
+void DockAutoHideContainer::reserve(DockArea edge, int extent)
+{
+    if (edge == DockArea::None)
+        extent = 0;
+    if (m_reservedEdge == edge && m_reserved == extent)
+        return;
+    auto *grid = qobject_cast<QGridLayout *>(m_workspace->layout());
+    if (!grid)
+        return;
+    m_reservedEdge = edge;
+    m_reserved = extent;
+    // The empty row or column between each bar and the dock area.
+    grid->setColumnMinimumWidth(1, edge == DockArea::Left ? extent : 0);
+    grid->setColumnMinimumWidth(3, edge == DockArea::Right ? extent : 0);
+    grid->setRowMinimumHeight(1, edge == DockArea::Top ? extent : 0);
+    grid->setRowMinimumHeight(3, edge == DockArea::Bottom ? extent : 0);
+    // The area has its new size before the popup is put beside it.
+    m_reserving = true;
+    grid->activate();
+    m_reserving = false;
+}
+
 void DockAutoHideContainer::updatePopupGeometry()
 {
-    const DockArea edge = edgeOf(m_expanded);
-    if (edge == DockArea::None)
+    if (m_reserving)
         return;
-    const QRect area = m_area->geometry();
+    const DockArea edge = edgeOf(m_expanded);
+    if (edge == DockArea::None) {
+        reserve(DockArea::None, 0);
+        return;
+    }
+    const bool beside = m_manager
+        && m_manager->autoHideReveal == DockManager::AutoHideReveal::Beside;
     const bool vertical = isVerticalEdge(edge);
-    const int available = vertical ? area.width() : area.height();
+    QRect area = m_area->geometry();
+    // What the area has, and what it has given up already.
+    int available = vertical ? area.width() : area.height();
+    if (m_reservedEdge != DockArea::None && isVerticalEdge(m_reservedEdge) == vertical)
+        available += m_reserved;
     const QSize minimum = m_popup->minimumSizeHint();
     int extent = m_popup->extent() > 0 ? m_popup->extent() : available * 3 / 10;
     extent = qMax(extent, vertical ? minimum.width() : minimum.height());
-    extent = qMin(extent, qMax(40, available * 9 / 10));
+    int most = qMax(40, available * 9 / 10);
+    if (beside) {
+        // The area keeps what its panels need at the least.
+        const QSize least = m_area->layoutMinimumSize();
+        most = qMin(most, qMax(40, available - (vertical ? least.width() : least.height())));
+    }
+    extent = qMin(extent, most);
 
     QRect geometry = area;
-    switch (edge) {
-    case DockArea::Left:
-        geometry.setWidth(extent);
-        break;
-    case DockArea::Right:
-        geometry.setLeft(area.right() - extent + 1);
-        break;
-    case DockArea::Top:
-        geometry.setHeight(extent);
-        break;
-    default:
-        geometry.setTop(area.bottom() - extent + 1);
-        break;
+    if (beside) {
+        reserve(edge, extent);
+        area = m_area->geometry();
+        switch (edge) {
+        case DockArea::Left:
+            geometry = QRect(area.left() - extent, area.top(), extent, area.height());
+            break;
+        case DockArea::Right:
+            geometry = QRect(area.right() + 1, area.top(), extent, area.height());
+            break;
+        case DockArea::Top:
+            geometry = QRect(area.left(), area.top() - extent, area.width(), extent);
+            break;
+        default:
+            geometry = QRect(area.left(), area.bottom() + 1, area.width(), extent);
+            break;
+        }
+    } else {
+        reserve(DockArea::None, 0);
+        switch (edge) {
+        case DockArea::Left:
+            geometry.setWidth(extent);
+            break;
+        case DockArea::Right:
+            geometry.setLeft(area.right() - extent + 1);
+            break;
+        case DockArea::Top:
+            geometry.setHeight(extent);
+            break;
+        default:
+            geometry.setTop(area.bottom() - extent + 1);
+            break;
+        }
     }
     m_popup->setGeometry(geometry);
 }
@@ -449,6 +513,10 @@ void DockAutoHideContainer::updatePopupGeometry()
 bool DockAutoHideContainer::eventFilter(QObject *watched, QEvent *event)
 {
     if (watched == m_area && (event->type() == QEvent::Resize || event->type() == QEvent::Move))
+        updatePopupGeometry();
+    // The panels in the area may need more room than before: a panel that
+    // is out beside them gives way first, before the window has to grow.
+    if (watched == m_workspace && event->type() == QEvent::LayoutRequest && m_reserved > 0)
         updatePopupGeometry();
     return QObject::eventFilter(watched, event);
 }

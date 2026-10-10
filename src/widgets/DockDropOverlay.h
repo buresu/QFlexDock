@@ -27,11 +27,14 @@ class QFLEXDOCK_EXPORT DockDropOverlay : public QWidget
     Q_PROPERTY(QColor previewColor READ previewColor WRITE setPreviewColor)
     Q_PROPERTY(QColor previewBorderColor READ previewBorderColor WRITE setPreviewBorderColor)
     Q_PROPERTY(QColor glyphColor READ glyphColor WRITE setGlyphColor)
+    Q_PROPERTY(QColor buttonColor READ buttonColor WRITE setButtonColor)
     Q_PROPERTY(qreal borderWidth READ borderWidth WRITE setBorderWidth)
     Q_PROPERTY(qreal cornerRadius READ cornerRadius WRITE setCornerRadius)
     Q_PROPERTY(int zoneGap READ zoneGap WRITE setZoneGap)
     Q_PROPERTY(int zoneMargin READ zoneMargin WRITE setZoneMargin)
     Q_PROPERTY(bool showPreview READ showPreview WRITE setShowPreview)
+    Q_PROPERTY(QFlexDock::DockGuide guide READ guide WRITE setGuide)
+    Q_PROPERTY(int buttonSize READ buttonSize WRITE setButtonSize)
 
 public:
     explicit DockDropOverlay(DockManagerPrivate *manager, QWidget *parent);
@@ -66,6 +69,12 @@ public:
     void setZoneMargin(int margin) { m_overrides.zoneMargin = margin; update(); }
     bool showPreview() const { return effectiveStyle().showPreview; }
     void setShowPreview(bool show) { m_showPreview = show; update(); }
+    QColor buttonColor() const { return effectiveStyle().buttonColor; }
+    void setButtonColor(const QColor &c) { m_overrides.buttonColor = c; update(); }
+    DockGuide guide() const { return effectiveStyle().guide; }
+    void setGuide(DockGuide guide) { m_guide = guide; update(); }
+    int buttonSize() const { return effectiveStyle().buttonSize; }
+    void setButtonSize(int size) { m_overrides.buttonSize = size; update(); }
 
 protected:
     void paintEvent(QPaintEvent *event) override;
@@ -76,6 +85,7 @@ private:
     // Values set through the properties; invalid / negative means "not set".
     DockOverlayStyle m_overrides;
     std::optional<bool> m_showPreview;
+    std::optional<DockGuide> m_guide;
 };
 
 } // namespace QFlexDock

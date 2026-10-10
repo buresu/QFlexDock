@@ -76,6 +76,97 @@ DockArea DropZoneLayout::hitTest(const QPoint &pos, DockAreas enabled) const
     return enabled.testFlag(area) ? area : DockArea::None;
 }
 
+DropButtonLayout DropButtonLayout::compute(const QRect &target, const QRect &within, int size,
+                                           int gap, int rings)
+{
+    DropButtonLayout layout;
+    if (!target.isValid() || size <= 0)
+        return layout;
+    layout.size = size;
+    layout.gap = std::max(0, gap);
+    layout.center = target.center();
+    // How far the outermost buttons reach from the middle.
+    const int reach = size / 2 + std::max(1, rings) * (size + layout.gap);
+    const auto fit = [reach](int value, int low, int high) {
+        // Too little room for all of it: the middle is the best there is.
+        return high - low < 2 * reach ? (low + high) / 2
+                                      : std::clamp(value, low + reach, high - reach);
+    };
+    if (within.isValid()) {
+        layout.center.setX(fit(layout.center.x(), within.left(), within.right()));
+        layout.center.setY(fit(layout.center.y(), within.top(), within.bottom()));
+    }
+    return layout;
+}
+
+QRect DropButtonLayout::rect(DockArea area, int ring) const
+{
+    if (!isValid() || area == DockArea::None || (area == DockArea::Center && ring != 0))
+        return {};
+    const int step = (std::max(0, ring) + 1) * (size + gap);
+    QPoint offset;
+    switch (area) {
+    case DockArea::Left:
+        offset = QPoint(-step, 0);
+        break;
+    case DockArea::Right:
+        offset = QPoint(step, 0);
+        break;
+    case DockArea::Top:
+        offset = QPoint(0, -step);
+        break;
+    case DockArea::Bottom:
+        offset = QPoint(0, step);
+        break;
+    default:
+        break;
+    }
+    return QRect(center.x() - size / 2, center.y() - size / 2, size, size).translated(offset);
+}
+
+DockArea DropButtonLayout::hitTest(const QPoint &pos, DockAreas enabled, int ring) const
+{
+    const int around = (gap + 1) / 2;
+    for (DockArea area : {DockArea::Center, DockArea::Left, DockArea::Right, DockArea::Top,
+                          DockArea::Bottom}) {
+        if (!enabled.testFlag(area))
+            continue;
+        const QRect button = rect(area, ring);
+        if (button.isValid() && button.adjusted(-around, -around, around, around).contains(pos))
+            return area;
+    }
+    return DockArea::None;
+}
+
+bool DropButtonLayout::contains(const QPoint &pos, int rings) const
+{
+    for (int ring = 0; ring < rings; ++ring) {
+        if (hitTest(pos, AllDockAreas, ring) != DockArea::None)
+            return true;
+    }
+    return false;
+}
+
+QRect outerButtonRect(const QRect &bounds, DockArea edge, int size, int margin)
+{
+    if (!bounds.isValid() || size <= 0)
+        return {};
+    const QPoint middle = bounds.center();
+    switch (edge) {
+    case DockArea::Left:
+        return QRect(bounds.left() + margin, middle.y() - size / 2, size, size);
+    case DockArea::Right:
+        return QRect(bounds.right() - margin - size + 1, middle.y() - size / 2, size, size);
+    case DockArea::Top:
+        return QRect(middle.x() - size / 2, bounds.top() + margin, size, size);
+    case DockArea::Bottom:
+        return QRect(middle.x() - size / 2, bounds.bottom() - margin - size + 1, size, size);
+    default:
+        break;
+    }
+    return {};
+}
+
 QRect dropPreviewRect(const QRect &target, DockArea area, double fraction)
 {
     if (!std::isfinite(fraction))

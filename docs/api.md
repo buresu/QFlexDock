@@ -12,7 +12,7 @@ overview and the rules that are hard to see from the headers.
 | `<QFlexDock/DockTheme.h>` | `DockTheme`, `DockOverlayStyle`, `DockOverlayPainter` |
 | `<QFlexDock/LayoutModel.h>` | `LayoutNode`, `LayoutTree` (for reading and inspecting a layout) |
 | `<QFlexDock/NativeWindowAdapter.h>` | `NativeWindowAdapter` |
-| `<QFlexDock/Global.h>` | `PanelId`, `NodeId`, `DockArea`, `DockFeature`, `DockError`, `DockResult` |
+| `<QFlexDock/Global.h>` | `PanelId`, `NodeId`, `DockArea`, `DockFeature`, `DockGuide`, `DockError`, `DockResult` |
 | `<QFlexDockQuick/QmlDockController.h>`, `<QFlexDockQuick/QmlPanelAdapter.h>` | The `QFlexDock::Quick` module |
 
 ## Conventions
@@ -97,9 +97,30 @@ floating window are none.
 
 **Behaviour and looks** — `setLinkedSplittersEnabled()`, `setCornerResizeEnabled()`, `setFloatsOnOutsideDrop()`,
 `setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setFloatingWindowFrame(FloatingFrame::Custom | Minimal | Native)`,
-`setFloatingWindowType(FloatingWindowType::Window | Tool)`,
+`setFloatingWindowType(FloatingWindowType::Window | Tool)`, `setGroupHeader()`, `setTitleButtons()`,
+`setAutoHideReveal(AutoHideReveal::Over | Beside)`,
 `setDragGhostEnabled()`, `setTheme()`, `setOverlayPainter()`. See [styling.md](styling.md) and
 [platform-notes.md](platform-notes.md).
+
+A panel that is put away at a border (`setPanelAutoHide()`) comes out when its name in the bar is chosen,
+and goes back with a click elsewhere. `AutoHideReveal::Over` (the default) shows it over the dock area.
+With `Beside` it takes its room from the dock area, which lays out all it holds in what is left: as if
+the panel were docked along that border for as long as it is out. The layout itself does not change.
+
+**The drop guide.** What is shown while something is dragged, and with that what is aimed at, is a theme
+token (`DockTheme::overlay.guide`):
+
+| `DockGuide` | |
+|---|---|
+| `Zones` (default) | Five large areas that cover the tab group under the pointer, and a band along the border of the workspace |
+| `Preview` | The same areas, not drawn: only the rectangle the drop would take is shown |
+| `Buttons` | A cross of small buttons in the middle of the tab group under the pointer, and a button at each border of the workspace. Only a button takes the drop, or a header: the tabs of a group, and a title bar that names its panel |
+
+With `Buttons`, what is let go of beside the buttons is dropped nowhere, and floats where
+`setFloatsOnOutsideDrop(true)` says so. A workspace inside a panel (below) covers little of itself with
+its buttons, so the workspace around it offers its own along with them, to what it takes as well: a ring
+around the inner cross docks beside the inner workspace, and the buttons at the outer border are there
+as always. The inner workspace then has no buttons at its own border.
 
 Linked splitters are boundaries in one line: they are dragged as one, and they stay in one line when the
 minimum or maximum size of a panel holds one of them back (the others go where it can go). Turned off,
@@ -140,8 +161,14 @@ changes; the layout changes with the drop, and Esc puts everything back.
 | `Tabs` (default) | The tabs, always. Drag a tab to move a panel, the empty part of the bar to move the group |
 | `TitleBar` | A title bar naming the current panel; drag it to move that panel, double click to float it or dock it again. Tabs appear below the content once a group holds more than one panel |
 
-Which built-in buttons the header has is a theme token (`DockTheme::titleButtons`); a panel adds its own
-with `DockPanel::setTitleActions()`. A header that is the title of a floating window
+`setGroupHeader(workspace, header)` gives one workspace, and the floating windows it owns, a header of its
+own: documents under their tabs in the middle of tool panels with title bars. A panel takes the header of
+where it is put.
+
+Which built-in buttons the header has is a theme token (`DockTheme::titleButtons`: `Menu`, `Maximize`,
+`Float`, `AutoHide`, `Close`), and `setTitleButtons(workspace, buttons)` sets them for one workspace; a
+panel adds its own with `DockPanel::setTitleActions()`. `AutoHide` puts every panel of the group that
+allows it into the auto-hide bar of the nearest border, as one change. A header that is the title of a floating window
 ([platform-notes.md](platform-notes.md)) always has maximize and close, which there act on the window.
 
 **Signals** — `layoutAboutToChange()` / `layoutChanged()`, `panelAboutToMove()` / `panelMoved()`,
@@ -194,7 +221,8 @@ panel->setTitleActions({newTab}, QFlexDock::DockTitlePlace::AfterTabs);
 the middle of the tool panels. With `allowedWorkspaces`, each kind of panel stays in its own workspace, and a
 drag goes to the workspace that takes what is dragged. Split handles work across the two: where a boundary
 of the inner workspace ends on one of the outer workspace, the point can be dragged to move both.
-`examples/vscode-style` is built this way.
+`examples/vscode-style` is built this way, and `examples/vs-style`, where the tool panels may go in
+with the documents as well (no `allowedWorkspaces` for them).
 
 ```cpp
 auto *holder = new QWidget;

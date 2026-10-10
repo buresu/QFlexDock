@@ -28,20 +28,34 @@ struct QFLEXDOCK_EXPORT DockOverlayStyle
     QColor previewColor;
     QColor previewBorderColor;
     QColor glyphColor;
+    /// Background of a button of DockGuide::Buttons; invalid: the palette's
+    /// Window colour, nearly opaque.
+    QColor buttonColor;
     qreal borderWidth = 1.5;
     qreal cornerRadius = 6.0;
     /// Gap between neighbouring areas, in pixels.
     int zoneGap = 6;
     /// Distance the areas keep from the border of the target they lie over.
     int zoneMargin = 6;
+    /// What the guide consists of: large areas (the default), the preview
+    /// of the drop alone, or small buttons.
+    DockGuide guide = DockGuide::Zones;
+    /// Side of a button of DockGuide::Buttons. Neighbouring buttons are
+    /// `zoneGap` apart, and those at the border of a workspace `zoneMargin`
+    /// from it.
+    int buttonSize = 36;
     /// What marks the hovered area. False (the default): that area is
     /// highlighted. True: in its place, the rectangle the dropped content
-    /// would occupy is shown, in the preview colours.
+    /// would occupy is shown, in the preview colours. Only for
+    /// DockGuide::Zones: Preview shows nothing but that rectangle, and
+    /// Buttons shows it along with the hovered button.
     bool showPreview = false;
     /// Depth of the four edge areas as a share of the target (0.1 - 0.4).
     double edgeFraction = 0.28;
     /// Width of the band along the workspace border that docks onto the
-    /// workspace as a whole. 0 disables outer docking by drag.
+    /// workspace as a whole. 0 disables outer docking by drag (also with
+    /// DockGuide::Buttons, whose buttons at the border are otherwise as
+    /// large as the others).
     int outerBandWidth = 28;
 
     /// Copy with every invalid colour filled in from `palette`.
@@ -55,11 +69,14 @@ enum class DockIcon { Close, Maximize, Restore, Float, Dock, Pin, Unpin, Menu };
 
 /// Buttons in the header of a tab group. Float and Close act on the current
 /// panel and are only shown for a panel that may be floated or closed.
+/// AutoHide puts every panel of the group that allows it into the auto-hide
+/// bar of the nearest border, and is only shown in a workspace.
 enum class DockTitleButton {
     Menu = 0x1,
     Maximize = 0x2,
     Float = 0x4,
     Close = 0x8,
+    AutoHide = 0x10,
 };
 Q_DECLARE_FLAGS(DockTitleButtons, DockTitleButton)
 Q_DECLARE_OPERATORS_FOR_FLAGS(DockTitleButtons)
@@ -111,6 +128,8 @@ struct QFLEXDOCK_EXPORT DockOverlayScene
     struct Zone
     {
         DockArea area = DockArea::None;
+        /// The area as drawn; with DockGuide::Buttons, the square of its
+        /// button.
         QPolygonF shape;
         bool hovered = false;
         /// Docks onto the whole workspace rather than onto one tab group.
@@ -138,9 +157,12 @@ public:
                        const DockOverlayStyle &style) = 0;
 };
 
-/// The built-in look: translucent areas with a direction glyph, the hovered
-/// one highlighted (or replaced by the drop preview, see
-/// DockOverlayStyle::showPreview).
+/// The built-in look, for each DockGuide. Zones: translucent areas with a
+/// direction glyph, the hovered one highlighted (or replaced by the drop
+/// preview, see DockOverlayStyle::showPreview). Preview: the rectangle the
+/// drop would take. Buttons: a square for each area, picturing a window with
+/// the part the drop would take filled in, and the preview with the hovered
+/// one.
 class QFLEXDOCK_EXPORT DockDefaultOverlayPainter : public DockOverlayPainter
 {
 public:

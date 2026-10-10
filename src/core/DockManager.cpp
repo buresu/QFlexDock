@@ -480,17 +480,35 @@ DockResult DockManagerPrivate::dockBack(const PanelId &panel)
 
 DockResult DockManagerPrivate::setAutoHide(const PanelId &panel, bool autoHide, DockArea edge)
 {
+    if (autoHide)
+        return autoHidePanels({panel}, edge);
     if (!panels.contains(panel))
         return unknownPanel(panel);
     const std::optional<PanelLocation> location = state.locate(panel);
     if (!location)
         return fail(DockError::NotPlaced, QStringLiteral("panel '%1' is not placed").arg(panel));
-    if (!autoHide)
-        return location->isAutoHidden() ? dockBack(panel) : DockResult::success();
+    return location->isAutoHidden() ? dockBack(panel) : DockResult::success();
+}
+
+DockResult DockManagerPrivate::autoHidePanels(const QStringList &ids, DockArea edge)
+{
+    if (ids.isEmpty())
+        return DockResult::success();
     if (edge != DockArea::None && !isEdgeArea(edge))
         return fail(DockError::InvalidArgument, QStringLiteral("auto-hide needs an edge"));
+    QString workspaceId;
+    for (const PanelId &panel : ids) {
+        if (!panels.contains(panel))
+            return unknownPanel(panel);
+        const std::optional<PanelLocation> location = state.locate(panel);
+        if (!location) {
+            return fail(DockError::NotPlaced,
+                        QStringLiteral("panel '%1' is not placed").arg(panel));
+        }
+        if (workspaceId.isEmpty())
+            workspaceId = workspaceIdFor(location->container);
+    }
 
-    const QString workspaceId = workspaceIdFor(location->container);
     LayoutState next = state;
     if (!next.find(workspaceId) || next.find(workspaceId)->kind != ContainerKind::Workspace) {
         return fail(DockError::UnknownWorkspace,
@@ -498,32 +516,41 @@ DockResult DockManagerPrivate::setAutoHide(const PanelId &panel, bool autoHide, 
     }
 
     if (edge == DockArea::None) {
+        const std::optional<PanelLocation> location = state.locate(ids.first());
         edge = location->isAutoHidden() ? location->autoHideEdge : DockArea::Left;
         // The border the panel is closest to.
         DockAreaWidget *area = location->isDocked() ? areaFor(location->container) : nullptr;
-        if (const DockTabGroup *group = area ? area->groupOfPanel(panel) : nullptr) {
+        if (const DockTabGroup *group = area ? area->groupOfPanel(ids.first()) : nullptr) {
             const QRect bounds = area->rect();
-            const QPoint c = group->geometry().center();
-            const int distances[4] = {c.x() - bounds.left(), bounds.right() - c.x(),
-                                      c.y() - bounds.top(), bounds.bottom() - c.y()};
+            const QRect rect = group->geometry();
+            const int distances[4] = {rect.left() - bounds.left(), bounds.right() - rect.right(),
+                                      rect.top() - bounds.top(), bounds.bottom() - rect.bottom()};
+            // A group along a border belongs to that border, however long it
+            // is; among several borders, to the one it lies along the most.
+            const int along[4] = {rect.height(), rect.height(), rect.width(), rect.width()};
             int best = 0;
             for (int i = 1; i < 4; ++i) {
-                if (distances[i] < distances[best])
+                if (distances[i] < distances[best]
+                    || (distances[i] == distances[best] && along[i] > along[best])) {
                     best = i;
+                }
             }
             edge = DockEdges[size_t(best)];
         }
     }
 
-    // The docked position stays in memory for when the panel is pinned again.
-    const PanelMemory memory = location->isDocked() ? next.capture(panel)
-                                                    : next.memory.value(panel);
-    if (DockResult r = next.detach(panel, false); !r)
-        return r;
-    PanelMemory kept = memory;
-    kept.autoHideEdge = DockArea::None;
-    next.memory.insert(panel, kept);
-    next.find(workspaceId)->autoHide[size_t(edgeIndex(edge))].append(panel);
+    for (const PanelId &panel : ids) {
+        const std::optional<PanelLocation> location = next.locate(panel);
+        // The docked position stays in memory for when the panel is pinned again.
+        const PanelMemory memory = location->isDocked() ? next.capture(panel)
+                                                        : next.memory.value(panel);
+        if (DockResult r = next.detach(panel, false); !r)
+            return r;
+        PanelMemory kept = memory;
+        kept.autoHideEdge = DockArea::None;
+        next.memory.insert(panel, kept);
+        next.find(workspaceId)->autoHide[size_t(edgeIndex(edge))].append(panel);
+    }
     return apply(std::move(next), true);
 }
 
@@ -1301,6 +1328,19 @@ QString DockManagerPrivate::workspaceIdFor(const QString &containerId) const
     return container->kind == ContainerKind::Floating ? container->owner : container->id;
 }
 
+DockManager::GroupHeader DockManagerPrivate::groupHeaderFor(const QString &containerId) const
+{
+    const DockWorkspace *workspace = workspaceFor(containerId);
+    return workspace && workspace->d->groupHeader ? *workspace->d->groupHeader : groupHeader;
+}
+
+DockTitleButtons DockManagerPrivate::titleButtonsFor(const QString &containerId) const
+{
+    const DockWorkspace *workspace = workspaceFor(containerId);
+    return workspace && workspace->d->titleButtons ? *workspace->d->titleButtons
+                                                   : theme.titleButtons;
+}
+
 DockWorkspace *DockManagerPrivate::workspaceFor(const QString &containerId) const
 {
     const QString id = workspaceIdFor(containerId);
@@ -2049,6 +2089,33 @@ void DockManager::setGroupHeader(GroupHeader header)
     d->refreshAllAppearance();
 }
 
+DockManager::GroupHeader DockManager::groupHeader(const DockWorkspace *workspace) const
+{
+    return workspace && workspace->d->groupHeader ? *workspace->d->groupHeader : d->groupHeader;
+}
+
+void DockManager::setGroupHeader(DockWorkspace *workspace, GroupHeader header)
+{
+    if (!workspace || workspace->manager() != this || workspace->d->groupHeader == header)
+        return;
+    workspace->d->groupHeader = header;
+    d->refreshAllAppearance();
+}
+
+DockTitleButtons DockManager::titleButtons(const DockWorkspace *workspace) const
+{
+    return workspace && workspace->d->titleButtons ? *workspace->d->titleButtons
+                                                   : d->theme.titleButtons;
+}
+
+void DockManager::setTitleButtons(DockWorkspace *workspace, DockTitleButtons buttons)
+{
+    if (!workspace || workspace->manager() != this || workspace->d->titleButtons == buttons)
+        return;
+    workspace->d->titleButtons = buttons;
+    d->refreshAllAppearance();
+}
+
 bool DockManager::isCenterDropEnabled() const
 {
     return d->centerDrop;
@@ -2097,6 +2164,20 @@ DockManager::FloatingWindowType DockManager::floatingWindowType() const
 void DockManager::setFloatingWindowType(FloatingWindowType type)
 {
     d->floatingWindowType = type;
+}
+
+DockManager::AutoHideReveal DockManager::autoHideReveal() const
+{
+    return d->autoHideReveal;
+}
+
+void DockManager::setAutoHideReveal(AutoHideReveal reveal)
+{
+    if (d->autoHideReveal == reveal)
+        return;
+    d->autoHideReveal = reveal;
+    for (DockWorkspace *workspace : std::as_const(d->workspaces))
+        DockManagerPrivate::get(workspace)->autoHide->refreshAppearance();
 }
 
 bool DockManager::isDragGhostEnabled() const

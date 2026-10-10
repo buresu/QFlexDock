@@ -5,6 +5,7 @@
 #include "TestUtils.h"
 
 #include "core/DockDragController.h"
+#include "widgets/DockAutoHide.h"
 #include "widgets/DockFloatingWindow.h"
 #include "widgets/DockSplitHandle.h"
 #include "widgets/DockTabBar.h"
@@ -693,6 +694,102 @@ private Q_SLOTS:
 
         f.manager.setCornerResizeEnabled(true);
         QTRY_COMPARE(area->visibleCorners().size(), 1);
+    }
+
+    // One workspace with title bars, another under its tabs: a panel takes
+    // the header of where it is put, a floating window that of its owner.
+    void aWorkspaceCanHaveAHeaderOfItsOwn()
+    {
+        TwoWindows f;
+        f.manager.setGroupHeader(f.a, DockManager::GroupHeader::TitleBar);
+        f.show();
+        QCOMPARE(f.manager.groupHeader(), DockManager::GroupHeader::Tabs);
+        QCOMPARE(f.manager.groupHeader(f.a), DockManager::GroupHeader::TitleBar);
+        QCOMPARE(f.manager.groupHeader(f.b), DockManager::GroupHeader::Tabs);
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.b->addPanel(p("b")));
+        const auto group = [](DockWorkspace *workspace, const char *panel) {
+            return areaOf(workspace)->groupOfPanel(p(panel));
+        };
+        QVERIFY(group(f.a, "a")->titleLabel()->isVisible());
+        QVERIFY(!group(f.a, "a")->tabBar()->isVisible());
+        QVERIFY(!group(f.b, "b")->titleLabel()->isVisible());
+        QVERIFY(group(f.b, "b")->tabBar()->isVisible());
+
+        QVERIFY(f.manager.movePanel(p("b"), f.a, DockArea::Right));
+        QVERIFY(group(f.a, "b")->titleLabel()->isVisible());
+        QVERIFY(f.manager.movePanel(p("a"), f.b, DockArea::Center));
+        QVERIFY(group(f.b, "a")->tabBar()->isVisible());
+        QCOMPARE(group(f.b, "a")->tabBar()->parentWidget(), group(f.b, "a")->titleBar());
+
+        // The manager's setting is for the workspaces that have none.
+        f.manager.setGroupHeader(DockManager::GroupHeader::TitleBar);
+        QVERIFY(group(f.b, "a")->titleLabel()->isVisible());
+        f.manager.setGroupHeader(f.b, DockManager::GroupHeader::Tabs);
+        QVERIFY(group(f.b, "a")->tabBar()->isVisible());
+        QVERIFY(!group(f.b, "a")->titleLabel()->isVisible());
+        QVERIFY(group(f.a, "b")->titleLabel()->isVisible());
+
+        // The same goes for the buttons the headers have.
+        QVERIFY(group(f.a, "b")->menuButton()->isVisible());
+        QVERIFY(group(f.b, "a")->menuButton()->isVisible());
+        f.manager.setTitleButtons(f.b, DockTitleButton::Close);
+        QCOMPARE(f.manager.titleButtons(f.b), DockTitleButtons(DockTitleButton::Close));
+        QCOMPARE(f.manager.titleButtons(f.a), f.manager.theme().titleButtons);
+        QVERIFY(!group(f.b, "a")->menuButton()->isVisible());
+        QVERIFY(group(f.b, "a")->closeButton()->isVisible());
+        QVERIFY(group(f.a, "b")->menuButton()->isVisible());
+        QVERIFY(!group(f.a, "b")->closeButton()->isVisible());
+        f.manager.setTitleButtons(f.b, {});
+        QVERIFY(!group(f.b, "a")->closeButton()->isVisible());
+    }
+
+    // The button that puts a group away into the bar of the nearest border.
+    void autoHideButtonPutsTheGroupAway()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.titleButtons = DockTitleButton::AutoHide | DockTitleButton::Close;
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("b"), DockArea::Bottom));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Center));
+        f.manager.panel(p("d"))->setFeatures(AllDockFeatures
+                                             & ~DockFeatures(DockFeature::AutoHideable));
+        DockAreaWidget *area = areaOf(f.a);
+        const DockTabGroup *group = area->groupOfPanel(p("b"));
+        QVERIFY(f.manager.activatePanel(p("b")));
+        QVERIFY(group->autoHideButton()->isVisible());
+        QVERIFY(!group->menuButton()->isVisible());
+        QVERIFY(!group->autoHideButton()->icon().isNull());
+
+        // A panel that may not be put away has no button for it, and stays.
+        QVERIFY(f.manager.activatePanel(p("d")));
+        QVERIFY(!group->autoHideButton()->isVisible());
+        QVERIFY(f.manager.activatePanel(p("b")));
+
+        QSignalSpy changed(&f.manager, &DockManager::layoutChanged);
+        QTest::mouseClick(group->autoHideButton(), Qt::LeftButton);
+        QCOMPARE(changed.size(), 1); // one change, one undo step
+        QCOMPARE(describe(f.a), p("V(a, d)"));
+        QVERIFY(f.manager.panel(p("b"))->isAutoHidden());
+        QVERIFY(f.manager.panel(p("c"))->isAutoHidden());
+        // The group lay along the bottom: that is the bar they are in.
+        const DockAutoHideBar *bar = DockManagerPrivate::get(f.a)->autoHide->bar(DockArea::Bottom);
+        QCOMPARE(bar->tabs().size(), 2);
+        QCOMPARE(bar->tabs().at(0)->panelId(), p("b"));
+        QVERIFY(f.manager.undo());
+        QCOMPARE(describe(f.a), p("V(a, b|c|d)"));
+
+        // A floating window has no bar to put anything into.
+        QVERIFY(f.manager.floatPanel(p("a")));
+        const DockPanel *a = f.manager.panel(p("a"));
+        QVERIFY(a->isFloating());
+        const DockTabGroup *floating = priv(f.manager)
+            ->areaFor(priv(f.manager)->state.locate(p("a"))->container)->groupOfPanel(p("a"));
+        QVERIFY(!floating->autoHideButton()->isVisible());
     }
 };
 

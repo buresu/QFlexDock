@@ -3,13 +3,13 @@
 A docking library for Qt 6 Widgets. C++20, CMake, MIT.
 Made for creative tools, IDEs, 3D editors and node editors.
 
-- **Large five-zone drop guide** — top, bottom, left, right and center zones that cover the whole target panel, plus a separate band for docking against the whole workspace.
+- **Large five-zone drop guide** — top, bottom, left, right and center zones that cover the whole target panel, plus a separate band for docking against the whole workspace. Or, by a theme token, only the place of the drop, or a cross of small buttons.
 - **Linked splitters** — boundaries that form one line move together, and stay one line when a panel beside one of them cannot get any smaller. Grab the point where a vertical and a horizontal boundary meet to move both at once. Side areas can be pushed out of the way with their boundary and pulled back out of the edge they went to, and come back at their size.
 - **Panels move between `QMainWindow`s** — one `DockManager` is shared, and the same widget instance moves to the other window.
 - **Layouts as JSON** — versioned, validated and repaired on load; unknown panels and broken data do not break the layout.
 - **QML and GPU content** — `QQuickWidget`, `QOpenGLWidget` and native `QWindow`s as panels.
 - **Follows the host application** — drawn with its `QStyle`, `QPalette`, `QFont` and style sheet, and follows changes at run time.
-- **Tabs or title bars** — groups headed by their tabs, or by a title bar with tabs only where panels are stacked; fixed content that panels dock around; your own buttons and widgets in the headers.
+- **Tabs or title bars** — groups headed by their tabs, or by a title bar with tabs only where panels are stacked, for all workspaces or each its own; fixed content that panels dock around; your own buttons and widgets in the headers.
 - **Workspaces within workspaces** — a document area in the middle of the tool panels, each kind of panel staying in its own, with boundaries that are resized together across the two.
 - **Windows of tabs** — an application can do without a main window: floating windows that are rows of tabs, where a tab is dragged into the row of another window or let go of to become a window. The rows can show a drag as it will turn out: the tab gone from one, a place opening for it in the other.
 - Floating windows, auto-hide, maximize, undo/redo, named presets, per-panel dock policies, lazily created panels.
@@ -51,9 +51,10 @@ if (QFlexDock::DockResult r = manager.loadLayout("layout.json"); !r)
     qWarning() << r.message();
 ```
 
-Examples are in [examples/](examples/): `basic`, `multi-window`, `quick-panel`, `gpu-panel`, and three that
+Examples are in [examples/](examples/): `basic`, `multi-window`, `quick-panel`, `gpu-panel`, and four that
 rebuild the window layout and look of an existing application (layout and style only): `obs-style` after
-OBS Studio, `vscode-style` after Visual Studio Code, and `chrome-style` after Chrome.
+OBS Studio, `vscode-style` after Visual Studio Code, `vs-style` after Visual Studio, and `chrome-style`
+after Chrome.
 
 ## Build
 
