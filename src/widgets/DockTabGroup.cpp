@@ -416,6 +416,9 @@ void DockTabGroup::updateHeader()
             m_tabBar->setShape(QTabBar::RoundedNorth);
             m_tabBar->setTabsClosable(true);
         }
+        // A layout shows what it is given, later, unless that was hidden on
+        // purpose: whether the tabs show is settled below.
+        m_tabBar->hide();
         setShown(m_titleLabel, titleMode);
         for (int i = 0; i < m_tabBar->count(); ++i)
             updateTab(i);

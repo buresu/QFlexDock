@@ -115,6 +115,17 @@ private Q_SLOTS:
         QVERIFY(group->titleLabel()->isHidden());
         QVERIFY(group->closeButton()->isVisible());
         grab(window, p("floating-title-tabs"));
+        // Down to one panel the tabs go again, and stay away.
+        QVERIFY(f.manager.dockPanel(p("c")));
+        QCoreApplication::processEvents();
+        QVERIFY(group->tabBar()->isHidden());
+        QVERIFY(group->titleLabel()->isVisible());
+        QCOMPARE(group->titleLabel()->text(), p("b"));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QCoreApplication::processEvents();
+        QVERIFY(group->tabBar()->isVisible());
+        QCOMPARE(group->tabBar()->parentWidget(), group->titleBar());
+        QVERIFY(group->titleLabel()->isHidden());
 
         // The maximize button is the window's. (Wait for the window system
         // to have really done it before asking for the opposite.)
