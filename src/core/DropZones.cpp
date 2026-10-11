@@ -7,11 +7,14 @@
 namespace QFlexDock {
 
 DropZoneLayout DropZoneLayout::compute(const QRect &target, double edgeFraction, int margin,
-                                       int edgeExtent)
+                                       int edgeExtent, const QSize &centerSize,
+                                       double centerFraction)
 {
     DropZoneLayout layout;
     layout.bounds = target;
     layout.visible = target;
+    layout.inner = target;
+    layout.center = target;
     if (!target.isValid())
         return layout;
     margin = std::clamp(margin, 0, std::min(target.width(), target.height()) / 6);
@@ -25,7 +28,20 @@ DropZoneLayout DropZoneLayout::compute(const QRect &target, double edgeFraction,
         dx = std::min(edgeExtent, int(layout.visible.width() * 0.4));
         dy = std::min(edgeExtent, int(layout.visible.height() * 0.4));
     }
-    layout.center = layout.visible.adjusted(dx, dy, -dx, -dy);
+    layout.inner = layout.visible.adjusted(dx, dy, -dx, -dy);
+    layout.center = layout.inner;
+    QSize size;
+    if (centerSize.isValid() && !centerSize.isEmpty()) {
+        size = centerSize;
+    } else if (std::isfinite(centerFraction) && centerFraction > 0) {
+        const double share = std::min(centerFraction, 1.0);
+        size = QSize(int(std::lround(layout.visible.width() * share)),
+                     int(std::lround(layout.visible.height() * share)));
+    }
+    if (size.isValid()) {
+        layout.center.setSize(size.expandedTo(QSize(1, 1)).boundedTo(layout.inner.size()));
+        layout.center.moveCenter(layout.inner.center());
+    }
     return layout;
 }
 
@@ -33,7 +49,7 @@ QPolygonF DropZoneLayout::polygon(DockArea area) const
 {
     // Work on outline coordinates: right/bottom are one past the last pixel.
     const QRectF o(visible);
-    const QRectF c(center);
+    const QRectF c(inner);
     switch (area) {
     case DockArea::Left:
         return QPolygonF({o.topLeft(), c.topLeft(), c.bottomLeft(), o.bottomLeft()});
@@ -44,7 +60,7 @@ QPolygonF DropZoneLayout::polygon(DockArea area) const
     case DockArea::Bottom:
         return QPolygonF({o.bottomLeft(), c.bottomLeft(), c.bottomRight(), o.bottomRight()});
     case DockArea::Center:
-        return QPolygonF(c);
+        return QPolygonF(QRectF(center));
     case DockArea::None:
         break;
     }
@@ -57,13 +73,17 @@ DockArea DropZoneLayout::hitTest(const QPoint &pos, DockAreas enabled) const
         return DockArea::None;
 
     DockArea area = DockArea::Center;
-    if (!center.contains(pos)) {
+    if (inner.contains(pos)) {
+        // Around a centre with a size of its own: no area.
+        if (!center.contains(pos))
+            return DockArea::None;
+    } else {
         // The trapezoid borders are the lines from the outer to the inner
         // corners. Measured in units of the edge depth, the nearest edge is
         // the trapezoid we are in. In the margin the distances are negative,
         // which extends each trapezoid outwards to the border of the target.
-        const double depthX = std::max(1, center.left() - visible.left());
-        const double depthY = std::max(1, center.top() - visible.top());
+        const double depthX = std::max(1, inner.left() - visible.left());
+        const double depthY = std::max(1, inner.top() - visible.top());
         const double left = (pos.x() - visible.left() + 0.5) / depthX;
         const double right = (visible.right() - pos.x() + 0.5) / depthX;
         const double top = (pos.y() - visible.top() + 0.5) / depthY;

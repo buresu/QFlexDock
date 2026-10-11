@@ -6,6 +6,7 @@
 #include <QtCore/QHash>
 #include <QtCore/QList>
 #include <QtCore/QRect>
+#include <QtCore/QSize>
 #include <QtGui/QColor>
 #include <QtGui/QIcon>
 #include <QtGui/QPalette>
@@ -38,9 +39,9 @@ struct QFLEXDOCK_EXPORT DockOverlayStyle
     /// Distance the areas keep from the border of what they lie over (the
     /// content of a tab group).
     int zoneMargin = 6;
-    /// What the guide consists of: large areas (the default), the preview
-    /// of the drop alone, or small buttons.
-    DockGuide guide = DockGuide::Zones;
+    /// What the guide consists of: the preview of the drop alone (the
+    /// default), large areas, or small buttons.
+    DockGuide guide = DockGuide::Preview;
     /// Side of a button of DockGuide::Buttons. Neighbouring buttons are
     /// `zoneGap` apart, and those at the border of a workspace `zoneMargin`
     /// from it.
@@ -62,6 +63,16 @@ struct QFLEXDOCK_EXPORT DockOverlayStyle
     /// however large (never more than 0.4 of it); -1: `edgeFraction` of it.
     /// For DockGuide::Zones and Preview.
     int edgeExtent = -1;
+    /// The centre area. By default it takes all that the edge areas leave,
+    /// so that every place of a tab group docks. With `centerSize` it is
+    /// that large, and with no such size and a `centerFraction` above 0
+    /// that share of the target each way; either way it lies in the middle
+    /// of the target and is no larger than what the edge areas leave. What
+    /// is between it and the edge areas then takes no drop: room to let go
+    /// of what is not to be docked (see DockManager::setFloatsOnOutsideDrop()).
+    /// For DockGuide::Zones and Preview.
+    QSize centerSize;
+    double centerFraction = 0.0;
     /// Width of the band along the workspace border that docks onto the
     /// workspace as a whole. 0 disables outer docking by drag (also with
     /// DockGuide::Buttons, whose buttons at the border are otherwise as

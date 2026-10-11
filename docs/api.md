@@ -151,9 +151,12 @@ token (`DockTheme::overlay.guide`):
 
 | `DockGuide` | |
 |---|---|
-| `Zones` (default) | Five large areas that cover the content of the tab group under the pointer, and a band along the border of the workspace |
-| `Preview` | The same areas, not drawn: only the rectangle the drop would take is shown |
+| `Preview` (default) | Only the rectangle the drop would take is shown, as with the dock widgets of Qt. Where the pointer is on a tab group decides which: its middle, or one of its four sides; a band along the border of the workspace docks against all of it |
+| `Zones` | Those areas, drawn: five large ones that cover the content of the tab group under the pointer, and the band along the border of the workspace |
 | `Buttons` | A cross of small buttons in the middle of the tab group under the pointer, and a button at each border of the workspace. Only a button takes the drop, or a header: the tabs of a group, and a title bar that names its panel |
+
+`examples/basic` has a menu that switches between these and a few ways of setting them up: the areas with
+edges of one depth and a centre of its own size, the rectangle over all of a group, the centre closed.
 
 With `Buttons`, what is let go of beside the buttons is dropped nowhere, and floats where
 `setFloatsOnOutsideDrop(true)` says so. A workspace inside a panel (below) covers little of itself with
@@ -171,7 +174,19 @@ comes first where it crosses such a row, except over the tabs themselves: beside
 the border, a drop docks against the workspace.
 
 The edge areas of `Zones` and `Preview` are a share of the content they lie over (`edgeFraction`), or with
-`DockTheme::overlay.edgeExtent` as many pixels deep on every group, however large.
+`DockTheme::overlay.edgeExtent` as many pixels deep on every group, however large. The centre area takes
+all they leave, so that a drop anywhere on a group docks. Given a size of its own (`centerSize`, or
+`centerFraction` for a share of the content), it lies in the middle, and what is between it and the edge
+areas takes no drop: what is let go of there is not docked, and floats where `setFloatsOnOutsideDrop(true)`
+says so.
+
+```cpp
+QFlexDock::DockTheme theme;
+theme.overlay.edgeExtent = 28;                 // edge areas as deep as the band along the workspace border
+theme.overlay.zoneMargin = 0;                  // and at the very edge of the content, as that band is
+theme.overlay.centerSize = QSize(140, 90);     // or: theme.overlay.centerFraction = 0.4;
+manager.setTheme(theme);
+```
 
 With `setSplitterPushEnabled(true)` a boundary that is dragged against a neighbour that can get no smaller
 goes on: the neighbour is moved along as it is, and what lies behind it gives the room (nearest first;

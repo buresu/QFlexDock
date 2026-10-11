@@ -152,7 +152,9 @@ are a center rectangle and four trapezoids that together cover the content of th
 small icon to aim for, and nothing is drawn over the rows. (A group whose content is less than half of it
 has them over all of it.) A row that cannot take what is dragged as a tab is no dead space: the zone next
 to it reaches over it (`DropZoneLayout::bounds`). Over the dragged group itself the center zone means
-"leave it here" and changes nothing.
+"leave it here" and changes nothing. A theme may give the center zone a size of its own
+(`DockOverlayStyle::centerSize`, `centerFraction`): it is then less than what the trapezoids leave
+(`DropZoneLayout::inner`), and a position between the two is no target, like one outside every dock area.
 
 The band is as wide on every side and is drawn over the rows it crosses. Over the tabs themselves no more
 than a strip at the very edge is the band's, so tabs along the border still take a tab between them; the

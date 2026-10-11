@@ -820,6 +820,7 @@ private Q_SLOTS:
         scene.tabIndicator = QRect(250, 0, 3, 20);
 
         DockOverlayStyle style;
+        style.guide = DockGuide::Zones;
         style.zoneColor = QColor(0, 0, 255);
         style.hoverColor = QColor(255, 0, 0);
         style.previewColor = QColor(0, 255, 0);
@@ -838,7 +839,8 @@ private Q_SLOTS:
             return image;
         };
 
-        // Default: the hovered area is highlighted; no preview rectangle.
+        // The areas as they are unless told otherwise: the hovered one is
+        // highlighted; no preview rectangle.
         QImage image = render(false);
         QCOMPARE(image.pixelColor(30, 150), QColor(255, 0, 0));   // hovered area
         QCOMPARE(image.pixelColor(200, 100), QColor(0, 0, 255));  // plain area
@@ -932,7 +934,7 @@ private Q_SLOTS:
         f.show();
         buildLayout(f);
         DockAreaWidget *area = areaOf(f.a);
-        QCOMPARE(area->overlay()->effectiveStyle().guide, DockGuide::Zones);
+        QCOMPARE(area->overlay()->effectiveStyle().guide, DockGuide::Preview);
 
         qApp->setStyleSheet(QStringLiteral(R"(
             #dockAutoHideButton { background: #00ff00; border: none; }
@@ -953,7 +955,7 @@ private Q_SLOTS:
         QCOMPARE(style.buttonSize, 44);
         QCOMPARE(style.buttonColor, QColor(0x10, 0x20, 0x30));
         // Another window's guide is as the theme says.
-        QCOMPARE(DockOverlayStyle{}.guide, DockGuide::Zones);
+        QCOMPARE(DockOverlayStyle{}.guide, DockGuide::Preview);
 
         showGuide(f, area, "a", "b");
         const DockOverlayScene scene = area->overlay()->scene();
@@ -1193,6 +1195,7 @@ private Q_SLOTS:
 
         const auto render = [&scene](qreal radius) {
             DockOverlayStyle style;
+            style.guide = DockGuide::Zones;
             style.zoneColor = QColor(0, 0, 255);
             style.glyphColor = QColor(0, 0, 0, 0);
             style.borderWidth = 0;

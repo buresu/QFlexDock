@@ -161,6 +161,9 @@ private Q_SLOTS:
     void hoveringShowsTheGuideButChangesNothing()
     {
         TwoWindows f;
+        DockTheme theme;
+        theme.overlay.guide = DockGuide::Zones;
+        f.manager.setTheme(theme);
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.a->addPanel(p("b"), DockArea::Right));
@@ -1004,6 +1007,65 @@ private Q_SLOTS:
         QCOMPARE(contentRect(area, "c").bottom(), area->groupOfPanel(p("c"))->geometry().bottom());
         QVERIFY(drag.drop(area, title.center()));
         QCOMPARE(describe(f.a), p("H(a|b|d, c)"));
+    }
+
+    // Edge areas of one depth and a centre of one size, as a theme may have
+    // them: what is between them takes no drop, so there is somewhere to let
+    // go of what is not to be docked.
+    void aCentreOfItsOwnSizeLeavesRoomToDropNowhere()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.edgeExtent = 24;
+        theme.overlay.zoneMargin = 0;
+        theme.overlay.centerSize = QSize(120, 80);
+        theme.overlay.outerBandWidth = 0;
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom, 0.5));
+        QVERIFY(f.b->addPanel(p("d")));
+        DockAreaWidget *area = areaOf(f.a);
+        const QRect content = contentRect(area, "c");
+        const QRect middle = QRect(0, 0, 120, 80).translated(content.center() - QPoint(60, 40));
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        QVERIFY(drag.move(area, content.center()));
+        QCOMPARE(hoveredZone(area)->area, DockArea::Center);
+        QCOMPARE(hoveredZone(area)->shape.boundingRect().size().toSize(), QSize(120, 80));
+        QVERIFY((hoveredZone(area)->shape.boundingRect().center() - QPointF(content.center()))
+                    .manhattanLength() <= 2);
+        // Beside the centre, and short of the edges: nothing, though the
+        // guide stays up.
+        const QPoint between(middle.left() - 20, content.center().y());
+        QVERIFY(!drag.move(area, between));
+        QVERIFY(!hoveredZone(area));
+        QCOMPARE(area->overlay()->scene().zones.size(), 5);
+        QVERIFY(!area->overlay()->scene().preview.isValid());
+        QVERIFY(!drag.move(area, QPoint(content.left() + 24, content.top() + 24)));
+        // The edges, as deep as they are said to be and no deeper.
+        QVERIFY(drag.move(area, QPoint(content.left() + 23, content.center().y())));
+        QCOMPARE(hoveredZone(area)->area, DockArea::Left);
+        QVERIFY(drag.move(area, QPoint(content.center().x(), content.bottom() - 23)));
+        QCOMPARE(hoveredZone(area)->area, DockArea::Bottom);
+        // The row of the tabs is what it always is.
+        const DockTabBar *bar = area->groupOfPanel(p("c"))->tabBar();
+        QVERIFY(drag.move(area, bar->mapTo(area, bar->tabRect(0).center())));
+
+        // A share of the content instead.
+        theme.overlay.centerSize = QSize();
+        theme.overlay.centerFraction = 0.5;
+        f.manager.setTheme(theme);
+        QVERIFY(drag.move(area, content.center()));
+        const QSizeF half = hoveredZone(area)->shape.boundingRect().size();
+        QVERIFY(qAbs(half.width() * 2 - content.width()) <= 2);
+        QVERIFY(qAbs(half.height() * 2 - content.height()) <= 2);
+        QVERIFY(!drag.move(area, QPoint(content.left() + content.width() / 8, content.center().y())));
+
+        // Let go of between the areas, nothing is docked.
+        QVERIFY(!drag.drop(area, QPoint(content.left() + content.width() / 8, content.center().y())));
+        QCOMPARE(describe(f.a), p("V(a, c)"));
     }
 
     // The preview of a drop that adds a tab may cover the header as well.
@@ -2283,8 +2345,8 @@ private Q_SLOTS:
         }
     }
 
-    // DockGuide::Preview: the areas of the default guide, of which only the
-    // place of the drop is shown.
+    // DockGuide::Preview, the default: the areas of DockGuide::Zones, of
+    // which only the place of the drop is shown.
     void previewGuideHasTheLargeAreas()
     {
         TwoWindows f;

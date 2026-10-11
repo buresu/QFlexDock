@@ -5,6 +5,7 @@
 
 #include <QtCore/QPoint>
 #include <QtCore/QRect>
+#include <QtCore/QSize>
 #include <QtGui/QPolygonF>
 
 namespace QFlexDock {
@@ -14,6 +15,8 @@ namespace QFlexDock {
 /// The target rectangle is cut into a centre rectangle and four trapezoids
 /// that reach from the centre to the edges, so the five areas together cover
 /// the whole target: there is no dead space and no small icon to aim for.
+/// (Unless the centre is given a size of its own: it then lies in the middle
+/// of what the trapezoids leave, and what is around it belongs to no area.)
 /// The target is the content of a tab group; `bounds` may be set to more
 /// than that afterwards, for a header the edge areas are to reach over.
 /// Pure geometry; painting lives in DockOverlayPainter.
@@ -25,20 +28,31 @@ struct QFLEXDOCK_EXPORT DropZoneLayout
     /// distance from the target's border, but a pointer in that margin still
     /// hits the edge area next to it, so there is no dead space.
     QRect visible;
+    /// What the edge areas leave: the trapezoids reach from the border of
+    /// `visible` to that of this.
+    QRect inner;
+    /// The centre area: all of `inner`, or less of it, in its middle.
     QRect center;
 
     /// `edgeFraction` is the depth of the edge areas as a share of the
     /// (visible) width/height, clamped so the centre keeps a usable size.
     /// `margin` is clamped for small targets. `edgeExtent`, if not negative,
     /// is that depth in pixels instead, at most 0.4 of the width/height.
+    /// The centre is as large as `centerSize`, or with no such size and a
+    /// `centerFraction` above 0 that share of the (visible) width/height,
+    /// and never larger than what the edge areas leave; with neither it is
+    /// all of that.
     [[nodiscard]] static DropZoneLayout compute(const QRect &target, double edgeFraction,
-                                                int margin = 0, int edgeExtent = -1);
+                                                int margin = 0, int edgeExtent = -1,
+                                                const QSize &centerSize = QSize(),
+                                                double centerFraction = 0.0);
 
     /// Outline of one area as drawn. Empty for DockArea::None.
     [[nodiscard]] QPolygonF polygon(DockArea area) const;
 
-    /// Area under `pos`, or DockArea::None outside the target or when the
-    /// area under the pointer is not part of `enabled`.
+    /// Area under `pos`, or DockArea::None outside the target, between the
+    /// centre and the edge areas, or when the area under the pointer is not
+    /// part of `enabled`.
     [[nodiscard]] DockArea hitTest(const QPoint &pos, DockAreas enabled = AllDockAreas) const;
 };
 

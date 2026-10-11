@@ -14,7 +14,7 @@ QFlexDock has no theme of its own. Looks are decided in three layers, each overr
 | Split handles | `QStyle::CE_Splitter`, as thick as `QStyle::PM_SplitterWidth` |
 | Tab group frame | `QFrame::StyledPanel` |
 | Title row buttons | `QToolButton`s with line icons in the palette's `WindowText` color; a panel's own actions as `QToolButton`s with the icons they bring |
-| Drop guide | Translucent colors derived from the palette's `Highlight` |
+| Drop guide | The rectangle a drop would take, in translucent colors derived from the palette's `Highlight` |
 | Floating windows | A thin border, and a title row once the window holds more than one tab group (`FloatingWindowFrame::Minimal`: the border alone), or with `FloatingWindowFrame::Native` the platform's window frame |
 
 Changes to the style, palette, font or style sheet, and the system's light/dark switch, are picked up
@@ -135,7 +135,7 @@ again from some of the groups.
 | `cornerRadius` | real | Sharp corners are rounded less so that their tips survive |
 | `zoneGap` | int | Space between zones |
 | `zoneMargin` | int | Space between the zones and the edge of what they lie over, the content of a tab group (default 6) |
-| `showPreview` | bool | `false` (default): highlight the zone under the pointer. `true`: show the area the panel would take instead |
+| `showPreview` | bool | With the `Zones` guide. `false` (default): highlight the zone under the pointer. `true`: show the area the panel would take instead |
 | `previewCoversHeader` | bool | What that area is for a panel that would become a tab of a group. `false` (default): the content of the group. `true`: all of the group, its header included |
 | `guide` | `Zones`, `Preview`, `Buttons` | What the guide consists of (`DockGuide`, see [api.md](api.md)) |
 | `buttonSize` | int | Side of a button of the `Buttons` guide (default 36); `zoneGap` is the space between two, `zoneMargin` that to the border of the workspace |
@@ -159,12 +159,14 @@ theme.tabOverflow = QFlexDock::DockTabOverflow::Shrink;  // tabs share a crowded
 theme.floatingBorderWidth = 1;                           // frames drawn by QFlexDock; -1: 4 pixels
 theme.floatingCornerRadius = 10;                         // their corners; 0: square
 theme.columnBarHeight = 12;                              // the bar above a column; -1: 14 pixels
-theme.overlay.guide = QFlexDock::DockGuide::Buttons;     // small buttons; default: Zones
+theme.overlay.guide = QFlexDock::DockGuide::Buttons;     // small buttons; default: Preview
 theme.overlay.buttonSize = 40;                           // their side
 theme.overlay.hoverColor = QColor(255, 128, 0, 120);     // an invalid color is derived from the palette
 theme.overlay.previewCoversHeader = true;                // a new tab is shown over all of its group; default: its content
 theme.overlay.edgeFraction = 0.25;                       // depth of the edge zones, relative to the target
 theme.overlay.edgeExtent = 10;                           // or in pixels, the same on every target; -1: the fraction
+theme.overlay.centerSize = QSize(140, 90);               // a center zone of this size, with room around it that takes
+theme.overlay.centerFraction = 0.4;                      // no drop; or as a share of the target. Default: all the edges leave
 theme.overlay.outerBandWidth = 32;                       // band along the workspace border; 0 disables it
 theme.icons.insert(QFlexDock::DockIcon::Maximize, QIcon(":/icons/maximize.svg"));
 manager.setTheme(theme);                                 // at any time

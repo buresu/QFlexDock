@@ -89,7 +89,8 @@ enum class DockGuide {
     /// takes what is dropped on it as a tab, with every guide.
     Zones,
     /// The same areas, not drawn: all there is to see is the rectangle the
-    /// dropped content would take.
+    /// dropped content would take, as with the dock widgets of Qt. The
+    /// default.
     Preview,
     /// Small buttons: a cross of them in the middle of the tab group under
     /// the pointer, and one at each border of the workspace. Only a button

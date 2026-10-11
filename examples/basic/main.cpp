@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
 //
 // One window, five panels: docking by drag and drop, linked splitters, floating,
-// auto-hide, maximize, undo/redo, presets and saving the layout to a file.
+// auto-hide, maximize, undo/redo, presets and saving the layout to a file. The
+// Guide menu switches between a few drop guides, each a handful of theme tokens.
 
 #include <QFlexDock/DockManager.h>
 #include <QFlexDock/DockPanel.h>
@@ -12,6 +13,7 @@
 #include <QtCore/QDir>
 #include <QtCore/QFileInfo>
 #include <QtCore/QStandardPaths>
+#include <QtGui/QActionGroup>
 #include <QtGui/QStyleHints>
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QInputDialog>
@@ -137,6 +139,68 @@ int main(int argc, char *argv[])
     linked->setCheckable(true);
     linked->setChecked(manager.linkedSplittersEnabled());
     QObject::connect(linked, &QAction::toggled, &manager, &DockManager::setLinkedSplittersEnabled);
+
+    // What a drag shows, and with that where it can be dropped, is set by the
+    // tokens of DockTheme::overlay (and whether the middle of a tab group
+    // takes a drop). Some ways of putting them together:
+    struct Guide
+    {
+        QString name;
+        DockOverlayStyle overlay;
+        bool centerDrop = true;
+    };
+    QList<Guide> guides;
+    // The default: the place the drop would take, as Qt's dock widgets show it.
+    guides.append({QStringLiteral("Rectangle"), {}});
+    {
+        // The same, with a new tab shown over all of its group, title included.
+        Guide guide{QStringLiteral("Rectangle over the Whole Group"), {}};
+        guide.overlay.previewCoversHeader = true;
+        guides.append(guide);
+    }
+    {
+        // Every place of a tab group docks, and the areas say where.
+        Guide guide{QStringLiteral("Large Areas"), {}};
+        guide.overlay.guide = DockGuide::Zones;
+        guides.append(guide);
+    }
+    {
+        // Edges as deep as the band along the window's border, and a center
+        // of its own size: between them is room to let go of what is not to
+        // be docked.
+        Guide guide{QStringLiteral("Areas with Room Between Them"), {}};
+        guide.overlay.guide = DockGuide::Zones;
+        guide.overlay.edgeExtent = 28;
+        guide.overlay.centerFraction = 0.4;
+        guides.append(guide);
+    }
+    {
+        // No center at all: a panel becomes a tab by the row of the tabs.
+        Guide guide{QStringLiteral("Edges and Tab Rows Only"), {}, false};
+        guide.overlay.guide = DockGuide::Zones;
+        guide.overlay.edgeExtent = 28;
+        guide.overlay.zoneMargin = 0;
+        guides.append(guide);
+    }
+    {
+        // Small buttons to aim at, and nothing else takes a drop.
+        Guide guide{QStringLiteral("Buttons"), {}};
+        guide.overlay.guide = DockGuide::Buttons;
+        guides.append(guide);
+    }
+    QMenu *guideMenu = window.menuBar()->addMenu(QStringLiteral("&Guide"));
+    auto *guideGroup = new QActionGroup(guideMenu);
+    for (const Guide &guide : std::as_const(guides)) {
+        QAction *action = guideMenu->addAction(guide.name, [&manager, guide] {
+            DockTheme theme = manager.theme();
+            theme.overlay = guide.overlay;
+            manager.setTheme(theme);
+            manager.setCenterDropEnabled(guide.centerDrop);
+        });
+        action->setCheckable(true);
+        action->setChecked(guideGroup->actions().isEmpty());
+        guideGroup->addAction(action);
+    }
 
     // The dock UI is drawn with the application's style and palette, so
     // switching those is all a theme change takes.

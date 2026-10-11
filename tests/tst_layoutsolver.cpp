@@ -913,6 +913,46 @@ private Q_SLOTS:
         QCOMPARE(tiny.center, QRect(8, 8, 4, 4));
     }
 
+    void dropZoneCentreWithASizeOfItsOwn()
+    {
+        const QRect target(0, 0, 400, 300);
+        // Edges 20 deep, and a centre of 100 by 60 in the middle.
+        const DropZoneLayout zones = DropZoneLayout::compute(target, 0.25, 0, 20, QSize(100, 60));
+        QCOMPARE(zones.inner, QRect(20, 20, 360, 260));
+        QCOMPARE(zones.center, QRect(150, 120, 100, 60));
+        QCOMPARE(zones.polygon(DockArea::Center).boundingRect(), QRectF(150, 120, 100, 60));
+        // The edge areas are what they were.
+        QCOMPARE(zones.polygon(DockArea::Left),
+                 DropZoneLayout::compute(target, 0.25, 0, 20).polygon(DockArea::Left));
+        QCOMPARE(zones.hitTest(QPoint(200, 150)), DockArea::Center);
+        QCOMPARE(zones.hitTest(QPoint(150, 120)), DockArea::Center);
+        QCOMPARE(zones.hitTest(QPoint(5, 150)), DockArea::Left);
+        QCOMPARE(zones.hitTest(QPoint(200, 295)), DockArea::Bottom);
+        // Between the centre and the edges: no area.
+        QCOMPARE(zones.hitTest(QPoint(149, 150)), DockArea::None);
+        QCOMPARE(zones.hitTest(QPoint(20, 20)), DockArea::None);
+        QCOMPARE(zones.hitTest(QPoint(200, 100)), DockArea::None);
+        QCOMPARE(zones.hitTest(QPoint(200, 150), EdgeDockAreas), DockArea::None);
+
+        // As a share of the target each way.
+        const DropZoneLayout shared = DropZoneLayout::compute(target, 0.25, 0, 20, QSize(), 0.5);
+        QCOMPARE(shared.center, QRect(100, 75, 200, 150));
+        QCOMPARE(shared.hitTest(QPoint(90, 150)), DockArea::None);
+        // A size comes before a share.
+        QCOMPARE(DropZoneLayout::compute(target, 0.25, 0, 20, QSize(100, 60), 0.5).center,
+                 zones.center);
+        // Never more than the edge areas leave, and all of that with neither.
+        QCOMPARE(DropZoneLayout::compute(target, 0.25, 0, 20, QSize(1000, 1000)).center,
+                 QRect(20, 20, 360, 260));
+        QCOMPARE(DropZoneLayout::compute(target, 0.25, 0, 20, QSize(), 1.5).center,
+                 QRect(20, 20, 360, 260));
+        QCOMPARE(DropZoneLayout::compute(target, 0.25, 0, 20, QSize(1000, 60)).center,
+                 QRect(20, 120, 360, 60));
+        const DropZoneLayout whole = DropZoneLayout::compute(target, 0.25, 0, 20);
+        QCOMPARE(whole.center, whole.inner);
+        QCOMPARE(whole.hitTest(QPoint(20, 20)), DockArea::Center);
+    }
+
     void anIconifiedColumnIsLaidOutAsOneThing()
     {
         // H(a, V(b, c)), the column of b and c iconified: 40 pixels wide.

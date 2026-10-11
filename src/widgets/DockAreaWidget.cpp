@@ -27,6 +27,13 @@ constexpr int OuterStripOnTitle = 7;
 // that panel and still meet them: the frame of the tab group lies between.
 constexpr int NestedBarReach = 8;
 
+// The five large areas over `rect`, as `style` has them.
+DropZoneLayout zoneLayout(const QRect &rect, const DockOverlayStyle &style)
+{
+    return DropZoneLayout::compute(rect, style.edgeFraction, style.zoneMargin, style.edgeExtent,
+                                   style.centerSize, style.centerFraction);
+}
+
 } // namespace
 
 /// Thin QLayout around LayoutSolver. Its items are the tab groups; handles and
@@ -1222,8 +1229,7 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
                     if (c.zones.testFlag(DockArea::Bottom))
                         hit = DockArea::Bottom;
                 } else if (!tabDrop && !headerDrop) {
-                    DropZoneLayout zones = DropZoneLayout::compute(
-                        c.zoneRect, style.edgeFraction, style.zoneMargin, style.edgeExtent);
+                    DropZoneLayout zones = zoneLayout(c.zoneRect, style);
                     // A row that takes no tab of this drag is no dead space:
                     // the area next to it reaches over it.
                     zones.bounds = reach;
@@ -1352,8 +1358,7 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
     scene.bounds = rect();
 
     if (candidate.zoneRect.isValid()) {
-        const DropZoneLayout zones = DropZoneLayout::compute(candidate.zoneRect, style.edgeFraction,
-                                                             style.zoneMargin, style.edgeExtent);
+        const DropZoneLayout zones = zoneLayout(candidate.zoneRect, style);
         for (DockArea area : {DockArea::Left, DockArea::Right, DockArea::Top, DockArea::Bottom,
                               DockArea::Center}) {
             if (!candidate.zones.testFlag(area))
@@ -1373,7 +1378,7 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
         DropZoneLayout outer;
         outer.bounds = bounds;
         outer.visible = bounds;
-        outer.center = bounds.adjusted(band, band, -band, -band);
+        outer.inner = bounds.adjusted(band, band, -band, -band);
         for (DockArea edge : DockEdges) {
             if (!candidate.outerZones.testFlag(edge))
                 continue;
