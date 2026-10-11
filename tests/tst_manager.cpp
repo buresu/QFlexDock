@@ -1061,6 +1061,8 @@ private Q_SLOTS:
     // one that covers it, not to whichever widget Qt finds next.
     void theTabThatCoversTheFocusTakesIt()
     {
+        if (!keyboardFocusWorks())
+            QSKIP("No window gets the keyboard here");
         TwoWindows f;
         f.show();
         QVERIFY(f.a->addPanel(p("a")));

@@ -87,6 +87,21 @@ inline bool windowPositionsWork()
     return !QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
 }
 
+/// Whether a window can be the active one, so that a widget in it has the
+/// keyboard focus. A Wayland compositor without a keyboard (headless Weston
+/// has no seat) activates none, and QApplication::focusWidget() stays null.
+inline bool keyboardFocusWorks()
+{
+    if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
+        return true;
+    static const bool works = [] {
+        QWidget probe;
+        probe.show();
+        return QTest::qWaitForWindowActive(&probe, 2000);
+    }();
+    return works;
+}
+
 /// Two main windows with a workspace each, sharing one manager, plus `count`
 /// registered label panels named a, b, c...
 struct TwoWindows

@@ -458,6 +458,8 @@ Rectangle {
     // would move to the next item of a panel that nobody sees any more.
     void aSceneThatIsCoveredKeepsItsFocusItem()
     {
+        if (!keyboardFocusWorks())
+            QSKIP("No window gets the keyboard here");
         QFile file(m_dir.filePath(p("Fields.qml")));
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.write(R"(

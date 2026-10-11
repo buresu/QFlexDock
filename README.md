@@ -104,7 +104,7 @@ widgets to it), side areas that keep their pixel size when the window is resized
 | macOS, Qt 6.8 and 6.10 | Build and tests on the `offscreen` platform only |
 | `offscreen` | `QOpenGLWidget` and real-drag tests are skipped |
 | X11 (Xvfb) | Includes real `QDrag` between windows, a tab moved along its bar and then dragged off it, Esc, outside drops, tabs torn off and joined between floating windows, moving a `QOpenGLWidget` |
-| Wayland (headless KWin and Weston) | Real-drag and window-position tests are skipped |
+| Wayland (headless KWin and Weston) | Real-drag and window-position tests are skipped; so are the two keyboard-focus tests on Weston, which has no keyboard |
 
 **Not verified:**
 
