@@ -240,6 +240,8 @@ public:
     /// The user closes a floating window. False if a panel in it may not be
     /// closed.
     bool closeFloatingByUser(const QString &container);
+    /// Qt is done closing windows for the application to quit.
+    void quitEnded();
 
     // --- Panels and their content --------------------------------------------
     DockPanel *createPanel(const PanelId &id, const QString &title);
@@ -355,6 +357,8 @@ public:
     quint64 lastPressTimestamp = 0;
 
     bool dragInProgress = false;
+    /// The application was asked to quit, and Qt is closing its windows.
+    bool quitting = false;
     bool committing = false;
     bool syncing = false;
     bool destroying = false;

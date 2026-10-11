@@ -293,6 +293,9 @@ button, its menu, the floating window it is in), `closeRequested()` tells of it,
 With `setClosesOnRequest(false)` the signal is all that happens, and the application decides: a document
 with unsaved changes asks first, one that is gone once closed is unregistered. `closePanel()` and a layout
 that is restored close a panel without a request. A floating window stays open while a panel in it does.
+When the application quits, Qt closes every window that is still open: a floating window then goes with
+the application. Nothing in it is asked to close and the layout keeps it, so one saved on the way out is
+the one the user left. (If a window refuses and the application stays, the floating windows are back.)
 
 ```cpp
 panel->setClosesOnRequest(false);

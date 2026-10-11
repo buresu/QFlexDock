@@ -1443,6 +1443,52 @@ private Q_SLOTS:
         if (!onWayland())
             QVERIFY(!controller->requestWindowDrag(floatingWindowOf(f, "e")->containerId(), QPoint(5, 5)));
     }
+
+    // Qt closes every window for the application to quit. A floating window
+    // goes with the application then: nobody closed its panels, and a layout
+    // saved on the way out still has it.
+    void aWindowClosedForTheApplicationToQuitKeepsItsPanels()
+    {
+        struct Staying : QWidget
+        {
+            void closeEvent(QCloseEvent *event) override { event->ignore(); }
+        };
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        // A document: asked to close, the application would do away with it.
+        DockPanel *b = f.manager.panel(p("b"));
+        b->setClosesOnRequest(false);
+        QSignalSpy asked(b, &DockPanel::closeRequested);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 320, 240)));
+        const QPointer<DockFloatingWindow> window = floatingWindowOf(f, "b");
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const QByteArray layout = f.manager.saveLayout();
+
+        // The application is asked to quit, and a window of it refuses (so
+        // that the test goes on). Whether Qt got as far as the floating
+        // window or not, it is closed while that is going on.
+        Staying staying;
+        staying.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&staying));
+        QEvent quit(QEvent::Quit);
+        QCoreApplication::sendEvent(qApp, &quit);
+        QVERIFY(!quit.isAccepted());
+        QVERIFY(window->close());
+        QVERIFY(!window->isVisible());
+        QCOMPARE(asked.size(), 0);
+        QVERIFY(b->isOpen());
+        QVERIFY(b->isFloating());
+        QCOMPARE(f.manager.saveLayout(), layout);
+
+        // The application goes on, with the window it had, and closing that
+        // is the user's doing again.
+        QTRY_VERIFY(window->isVisible());
+        QVERIFY(!window->close());
+        QCOMPARE(asked.size(), 1);
+        QVERIFY(window->isVisible());
+    }
 };
 
 QTEST_MAIN(tst_Floating)

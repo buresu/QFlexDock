@@ -490,12 +490,25 @@ void DockFloatingWindow::paintEvent(QPaintEvent *)
 
 void DockFloatingWindow::closeEvent(QCloseEvent *event)
 {
+    // With the application, the window goes as it is: the layout keeps it,
+    // and nothing in it is asked to close.
+    if (m_manager && !m_ghost && m_manager->quitting) {
+        m_closedByQuit = true;
+        event->accept();
+        return;
+    }
     // Closing the window closes its panels; the manager then removes the
     // window. Refused if a panel inside may not be closed.
     if (m_manager && !m_ghost && !m_manager->closeFloatingByUser(m_containerId))
         event->ignore();
     else
         event->accept();
+}
+
+void DockFloatingWindow::showAfterQuit()
+{
+    if (std::exchange(m_closedByQuit, false))
+        show();
 }
 
 void DockFloatingWindow::moveEvent(QMoveEvent *event)

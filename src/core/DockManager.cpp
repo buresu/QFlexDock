@@ -1357,6 +1357,15 @@ bool DockManagerPrivate::closeFloatingByUser(const QString &containerId)
     return closeByUser(inside).ok() && !state.find(containerId);
 }
 
+// Still here, so a window refused and the application goes on: with the
+// floating windows it had.
+void DockManagerPrivate::quitEnded()
+{
+    quitting = false;
+    for (DockFloatingWindow *window : std::as_const(floatingWindows))
+        window->showAfterQuit();
+}
+
 // --- Panels ------------------------------------------------------------------
 
 DockPanel *DockManagerPrivate::createPanel(const PanelId &id, const QString &title)
@@ -2032,6 +2041,14 @@ DockManager::~DockManager()
 
 bool DockManager::eventFilter(QObject *watched, QEvent *event)
 {
+    if (event->type() == QEvent::Quit && watched == qApp && !d->quitting) {
+        // Qt closes every window that is open before the application quits.
+        // A floating window closed that way goes with the application, which
+        // is not the user closing its panels. (Queued: over by then, whether
+        // the application quits or a window refused.)
+        d->quitting = true;
+        QMetaObject::invokeMethod(this, [this] { d->quitEnded(); }, Qt::QueuedConnection);
+    }
     if (event->type() == QEvent::MouseButtonPress && watched->isWidgetType()) {
         // A press travels up the parent chain when ignored; act on the first
         // (innermost) receiver only.

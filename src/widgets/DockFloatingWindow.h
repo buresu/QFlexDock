@@ -95,6 +95,9 @@ public:
     void updateTitle();
     void refreshAppearance();
     void toggleMaximized();
+    /// Shows a window again that was closed for the application to quit,
+    /// which it then did not.
+    void showAfterQuit();
     /// Gives a window that has come to hold an iconified column and nothing
     /// else the size of that column's strip of buttons (and of the tab group
     /// that is out beside it), and one that no longer does the size it had
@@ -166,6 +169,7 @@ private:
     QList<Reported> m_reported;
     QElapsedTimer m_clock;
     bool m_presented = false;
+    bool m_closedByQuit = false;
     bool m_ghost = false;
     bool m_bareGhost = false;
     /// The size a ghost is to have as the window it became, for as long as
