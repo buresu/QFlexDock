@@ -135,11 +135,13 @@ window. A `Minimal` window that holds more than one tab group has nothing to mov
 The buttons of a frame drawn by QFlexDock are where the application's style has the buttons of a
 `QDockWidget`: at the left end of the title with the macOS style, at the right end with the others
 (`DockTheme::floatingButtonSide` says otherwise). They are QFlexDock's own two buttons there too, not the
-three of a macOS window. Tested with a style that has them at the start; **not verified** on macOS.
+three of a macOS window. Tested with a style that has them at the start, and tried by hand on macOS.
 
 Frames drawn by QFlexDock can have round corners (`DockTheme::floatingCornerRadius`). The window is then
-translucent, which needs a compositor: without one (a bare X server) the corners are black. QFlexDock
-draws no shadow around such a window.
+translucent, which needs a compositor: without one (a bare X server) the corners are black.
+
+QFlexDock draws no shadow around a window whose frame it draws: it has the one the window system gives a
+frameless window. macOS gives it one (seen by hand).
 
 ## Floating windows and the main window
 
@@ -250,6 +252,9 @@ What the tests cannot drive, to be tried with the examples:
   there floats nothing; the only tab of a floating window moves that window, opaque, which turns
   translucent over another dock window, docks when dropped on a zone there, goes back where it was on Esc,
   and put down over another application stays in front of it.
+- **Floating window buttons (macOS)**, `qflexdock-basic` — a floated panel has close and maximize at the
+  left of its title, before its tabs once it has two, and at the left of the title row once the window is
+  split; the menu of a group stays at the right; the window has a shadow.
 - **Splitters**, `qflexdock-basic` — boundaries in a line highlight and move together, Alt moves one; the
   point where two boundaries meet shows the four-way cursor and moves both.
 - **Workspace inside a panel**, `qflexdock-vscode-style` — a document tab splits and re-tabs only within
