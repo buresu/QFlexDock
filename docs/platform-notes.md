@@ -140,8 +140,27 @@ three of a macOS window. Tested with a style that has them at the start, and tri
 Frames drawn by QFlexDock can have round corners (`DockTheme::floatingCornerRadius`). The window is then
 translucent, which needs a compositor: without one (a bare X server) the corners are black.
 
+### Shadows and the window system's buttons
+
 QFlexDock draws no shadow around a window whose frame it draws: it has the one the window system gives a
-frameless window. macOS gives it one (seen by hand).
+frameless window. macOS gives it one, around round corners too (seen by hand). With
+`FloatingWindowFrame::Native` the shadow is the window system's everywhere.
+
+**Not implemented**, and what is known about each way to get there:
+
+- **A fourth frame: the window system's, with the headers drawn into its title bar**
+  (`Qt::ExpandedClientAreaHint` with `Qt::NoTitleBarBackgroundHint`, Qt 6.9: the minimum would go up). The
+  frame stays, and with it the shadow, snapping and the system's own buttons: on Windows a shadow for what
+  is `Custom` today, on macOS the three buttons of a window in place of QFlexDock's two. The headers
+  would have to keep clear of those buttons (`QWindow::safeAreaMargins()`). Nothing of this was tried, and
+  it can only be built with Windows and macOS at hand. It does nothing for X11 and Wayland.
+- **A shadow drawn by QFlexDock**: a translucent window larger than its frame. On Wayland the compositor
+  has to be told which part of it is the window (`xdg_surface.set_window_geometry`), or it snaps and tiles
+  by the shadow; Qt has that as private API only (`setCustomMargins()` in `qplatformwindow_p.h`, Qt 6.12).
+  X11 has no way common to its window managers. In QFlexDock the geometry that is saved and fitted to
+  screens, the resize grips, the maximized window and the ghost would all have to go by the frame inside
+  the window, and a click on the shadow would not reach what is behind it. Worth another look once Qt can
+  tell the compositor.
 
 ## Floating windows and the main window
 
@@ -254,7 +273,8 @@ What the tests cannot drive, to be tried with the examples:
   and put down over another application stays in front of it.
 - **Floating window buttons (macOS)**, `qflexdock-basic` — a floated panel has close and maximize at the
   left of its title, before its tabs once it has two, and at the left of the title row once the window is
-  split; the menu of a group stays at the right; the window has a shadow.
+  split; the menu of a group stays at the right; the window has a shadow, which in
+  `qflexdock-photoshop-style` follows the round corners.
 - **Splitters**, `qflexdock-basic` — boundaries in a line highlight and move together, Alt moves one; the
   point where two boundaries meet shows the four-way cursor and moves both.
 - **Workspace inside a panel**, `qflexdock-vscode-style` — a document tab splits and re-tabs only within

@@ -92,7 +92,9 @@ target_link_libraries(app PRIVATE QFlexDock::QFlexDock)
 
 **Not implemented:** keyboard-only docking and accessibility (beyond accessible button names and Ctrl+Tab
 within a group), replacing a group's header by a widget of the application's own (it can add buttons and
-widgets to it), side areas that keep their pixel size when the window is resized, animations. Replacing the dock UI itself with QML is out of scope.
+widgets to it), side areas that keep their pixel size when the window is resized, animations, a shadow
+around floating windows whose frame QFlexDock draws (macOS gives them one; see
+[docs/platform-notes.md](docs/platform-notes.md)). Replacing the dock UI itself with QML is out of scope.
 
 **Tested** — all 15 test suites pass, with warnings as errors, in [CI](.github/workflows/ci.yml) and locally:
 
