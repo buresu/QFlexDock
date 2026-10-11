@@ -19,7 +19,7 @@ Made for creative tools, IDEs, 3D editors and node editors.
 - **Windows of tabs** — an application can do without a main window: floating windows that are rows of tabs, where a tab is dragged into the row of another window or let go of to become a window. The rows can show a drag as it will turn out: the tab gone from one, a place opening for it in the other.
 - Floating windows, auto-hide, maximize, undo/redo, named presets, per-panel dock policies, lazily created panels.
 
-> **Status: 0.1.0, in development.** The public API may still change.
+> **Status: 0.2.0, in development.** The public API may still change.
 
 ## Usage
 
@@ -85,7 +85,7 @@ cmake --install build --prefix /path/to/prefix
 In your own project:
 
 ```cmake
-find_package(QFlexDock 0.1 REQUIRED)            # add COMPONENTS Quick for the QML module
+find_package(QFlexDock 0.2 REQUIRED)            # add COMPONENTS Quick for the QML module
 # or: add_subdirectory(third_party/QFlexDock)
 target_link_libraries(app PRIVATE QFlexDock::QFlexDock)
 ```

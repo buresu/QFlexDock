@@ -20,5 +20,5 @@ int main(int argc, char *argv[])
     const bool ok = workspace->addPanel(QStringLiteral("a"))
         && workspace->addPanel(QStringLiteral("b"), QFlexDock::DockArea::Right)
         && manager.restoreLayout(manager.saveLayout());
-    return ok && QFlexDock::versionString() == QStringLiteral("0.1.0") ? 0 : 1;
+    return ok && QFlexDock::versionString() == QStringLiteral("0.2.0") ? 0 : 1;
 }

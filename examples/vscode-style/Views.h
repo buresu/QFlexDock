@@ -161,7 +161,7 @@ private:
 } // namespace Docking
 )"_s},
         {u"CMakeLists.txt"_s, uR"(cmake_minimum_required(VERSION 3.24)
-project(Docking VERSION 0.1.0 LANGUAGES CXX)
+project(Docking VERSION 0.2.0 LANGUAGES CXX)
 
 option(DOCKING_BUILD_EXAMPLES "Build the examples" ON)
 option(DOCKING_DEVELOPER_BUILD "Warnings as errors" OFF)

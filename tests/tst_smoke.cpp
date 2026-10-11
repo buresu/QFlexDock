@@ -14,7 +14,7 @@ class tst_Smoke : public QObject
 private Q_SLOTS:
     void version()
     {
-        QCOMPARE(versionString(), QStringLiteral("0.1.0"));
+        QCOMPARE(versionString(), QStringLiteral("0.2.0"));
     }
 
     void nodeIdsAreUnique()
