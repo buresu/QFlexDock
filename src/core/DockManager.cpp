@@ -2045,9 +2045,16 @@ bool DockManager::eventFilter(QObject *watched, QEvent *event)
         // Qt closes every window that is open before the application quits.
         // A floating window closed that way goes with the application, which
         // is not the user closing its panels. (Queued: over by then, whether
-        // the application quits or a window refused.)
+        // the application quits or a window refused. Twice: on Wayland a
+        // window that is closed takes the windows that are transient for it
+        // along, with close events that come after what is queued by now.)
         d->quitting = true;
-        QMetaObject::invokeMethod(this, [this] { d->quitEnded(); }, Qt::QueuedConnection);
+        QMetaObject::invokeMethod(
+            this,
+            [this] {
+                QMetaObject::invokeMethod(this, [this] { d->quitEnded(); }, Qt::QueuedConnection);
+            },
+            Qt::QueuedConnection);
     }
     if (event->type() == QEvent::MouseButtonPress && watched->isWidgetType()) {
         // A press travels up the parent chain when ignored; act on the first
