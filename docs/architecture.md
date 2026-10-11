@@ -136,8 +136,8 @@ bar (`DockTheme::splitHandleHoverWidth`) without anything moving.
 
 ## Drag and drop
 
-1. Dragging a tab (or the empty part of a tab bar, for the whole group) creates a `DragSession` and starts a
-   `QDrag` whose `QMimeData` carries only a random token.
+1. Dragging a tab off its bar (or the empty part of a tab bar, for the whole group) creates a `DragSession`
+   and starts a `QDrag` whose `QMimeData` carries only a random token.
 2. Dock areas check that the token belongs to **the session in progress**. Mime data that merely names a
    panel id, or a token from a finished session, moves nothing.
 3. `DockAreaWidget::candidateAt()` turns the pointer position into a `DropCandidate` for the overlay.
@@ -171,6 +171,13 @@ Two things change this for windows that are rows of tabs (or for one workspace o
 dragged panels allow `Center` only), its whole title row counts as its tabs. And with
 `DockManager::setCenterDropEnabled(false)` there is no center zone, not even the "leave it here" one: what
 is not dropped on a header is dropped nowhere, which `finish()` treats like a drop outside every window.
+
+**Moving a tab along its bar** is not a drag. For as long as the pointer stays in the row of the bar
+(`DockTabBar::tabMoveRegion()`), the tab changes places with a neighbour once the pointer is past the middle
+of that one, in the bar alone: no session, no ghost, no guide. Let go of, the bar asks for the move
+(`panelMoveRequested()`), which is committed like a drop among the tabs. Taken off the bar, the tab is shown
+where it was again and the drag of step 1 starts. A bar with one tab, and a panel that is not `Movable`, go
+straight to that drag.
 
 **Previewing a tab drag** (`DockManager::setTabDragPreviewEnabled()`) is a matter of the views alone. A tab
 group can show its node with one panel left out (`setDraggedOut()`, set by the drag once it has its

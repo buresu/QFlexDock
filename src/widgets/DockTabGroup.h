@@ -199,6 +199,8 @@ private:
     void showPanelMenu(const PanelId &panel, const QPoint &globalPos);
     void restyle();
     void startPanelDrag(const PanelId &panel, const QPixmap &pixmap);
+    void moveTabByUser(const PanelId &panel, int index);
+    void showTabsAsPlaced();
     void startGroupDrag();
     [[nodiscard]] bool moveWindowInstead(qsizetype draggedPanels, bool byHeader);
     [[nodiscard]] DockFloatingWindow *floatingWindow() const;

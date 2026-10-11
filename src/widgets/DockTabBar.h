@@ -13,9 +13,12 @@ namespace QFlexDock {
 /// and `QTabBar::tab` style-sheet rules apply as they do everywhere else in
 /// the application (class selector: `QFlexDock--DockTabBar`).
 ///
-/// Tabs are not rearranged by QTabBar's own "movable" mode. Dragging a tab
-/// starts a dock drag instead, and reordering is a drop on the tab bar, so one
-/// mechanism covers reordering, moving between groups and tearing off.
+/// Tabs are not rearranged by QTabBar's own "movable" mode. A tab that is
+/// dragged along the bar changes places with the tabs it is taken across, and
+/// that is asked for once it is let go of (panelMoveRequested()); nothing but
+/// the bar shows it before. Taken off the bar, it is back where it was and a
+/// dock drag starts (panelDragStarted()), which covers moving between groups
+/// and tearing off, and reordering as well: a drop on the tab bar.
 class QFLEXDOCK_EXPORT DockTabBar : public QTabBar
 {
     Q_OBJECT
@@ -39,6 +42,14 @@ public:
 
     /// Panels whose title is drawn in italics (preview tabs).
     void setItalicPanels(const QSet<PanelId> &panels);
+    /// Panels whose tab can be moved among the others by dragging it along
+    /// the bar. Any other tab is dragged as it would be off the bar.
+    void setMovablePanels(const QSet<PanelId> &panels);
+    /// The panel whose tab is being moved along the bar, if one is.
+    [[nodiscard]] PanelId movingPanel() const { return m_moving; }
+    /// Where a tab that is dragged stays a tab of this bar: the row the bar
+    /// is in, and the drag threshold above and below it.
+    [[nodiscard]] QRect tabMoveRegion() const;
     [[nodiscard]] bool isActiveGroup() const { return m_activeGroup; }
     void setActiveGroup(bool active);
     [[nodiscard]] QColor activeIndicatorColor() const { return m_indicatorColor; }
@@ -69,8 +80,12 @@ public:
     [[nodiscard]] QRect insertIndicatorRect(int index) const;
 
 Q_SIGNALS:
-    /// The user pressed a tab and dragged it beyond the drag threshold.
+    /// The user pressed a tab and dragged it beyond the drag threshold: off
+    /// the bar, if its tab can be moved along it.
     void panelDragStarted(const QFlexDock::PanelId &panel);
+    /// The user moved a tab along the bar and let go of it. `index` is its
+    /// place among the tabs now, which only the bar knows of so far.
+    void panelMoveRequested(const QFlexDock::PanelId &panel, int index);
     /// Same, but on the part of the bar without tabs: drags the whole group.
     void groupDragStarted();
     /// Middle click on a tab (pressed and let go of on the same one).
@@ -96,8 +111,13 @@ protected:
 private:
     [[nodiscard]] QSize unsqueezedMinimum(int index) const;
     void updateTabButtons();
+    void moveTabUnder(const QPoint &pos);
+    void finishTabMove();
 
     QSet<PanelId> m_italic;
+    QSet<PanelId> m_movable;
+    /// The panel whose tab is being moved along the bar.
+    PanelId m_moving;
     int m_tabWidth = -1;
     int m_gapWidth = 0;
     bool m_shrink = false;

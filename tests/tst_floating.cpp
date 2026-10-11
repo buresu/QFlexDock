@@ -457,6 +457,49 @@ private Q_SLOTS:
         QVERIFY(manager.panel(p("a"))->isOpen());
     }
 
+    // The ghost of a drag has the corners of the window it may become.
+    void ghostOfARoundWindowIsRound()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        DockTheme theme;
+        theme.floatingBorderWidth = 1;
+        theme.floatingCornerRadius = 10;
+        f.manager.setTheme(theme);
+        // Content of one color, to tell where the picture shows what.
+        const QColor content(0xc0, 0x20, 0x40);
+        f.widgets[p("b")]->setStyleSheet(QStringLiteral("background: #c02040;"));
+        const DockTabGroup *group = areaOf(f.a)->groupOfPanel(p("b"));
+        const QRect host = group->contentHost()->geometry().adjusted(4, 4, -4, -4);
+        QTRY_COMPARE(picture(f.widgets[p("b")]).pixelColor(2, 2), content);
+        DockDragController *controller = priv(f.manager)->drag;
+        QVERIFY(controller->begin(p("b"), false));
+        const QPointer<DockFloatingWindow> ghost = controller->createGhost();
+        QVERIFY(ghost);
+        QVERIFY(QTest::qWaitForWindowExposed(ghost));
+        QCOMPARE(ghost->size(), group->size());
+        const QImage image = picture(ghost);
+        // The group once, as large as the window, at whatever scale the
+        // screen has: the content is where it is in the group, all of it.
+        for (int y = host.top(); y <= host.bottom(); ++y)
+            QCOMPARE(image.pixelColor(host.left(), y), content);
+        for (int x = host.left(); x <= host.right(); ++x)
+            QCOMPARE(image.pixelColor(x, host.bottom()), content);
+        QVERIFY(image.pixelColor(host.center().x(), 2) != content); // the header
+        for (const QPoint &corner : {QPoint(0, 0), QPoint(image.width() - 1, 0),
+                                     QPoint(0, image.height() - 1),
+                                     QPoint(image.width() - 1, image.height() - 1)}) {
+            QCOMPARE(image.pixelColor(corner).alpha(), 0);
+        }
+        QCOMPARE(image.pixelColor(image.width() / 2, 0).alpha(), 255);
+        QCOMPARE(image.pixelColor(0, image.height() / 2).alpha(), 255);
+        QCOMPARE(image.pixelColor(image.width() / 2, image.height() / 2).alpha(), 255);
+        grab(ghost, p("floating-round-ghost"));
+        controller->finish(Qt::IgnoreAction, ghost, false);
+        QTRY_VERIFY(!ghost);
+    }
+
     // How wide the frame QFlexDock draws is, and how round.
     void customFrameFollowsTheTheme()
     {

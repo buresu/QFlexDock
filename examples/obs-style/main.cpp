@@ -43,6 +43,10 @@ int main(int argc, char *argv[])
     theme.titleButtons = DockTitleButton::Float;
     theme.splitHandleWidth = 6; // the gap between docks
     theme.iconSize = 16;
+    // A floating dock is the shape of its dock: nothing around it, and the
+    // same round corners (see the style sheet).
+    theme.floatingBorderWidth = 0;
+    theme.floatingCornerRadius = 4;
     theme.icons.insert(DockIcon::Float, ObsStyle::icon(ObsStyle::Glyph::Float));
     theme.icons.insert(DockIcon::Dock, ObsStyle::icon(ObsStyle::Glyph::Float));
     theme.icons.insert(DockIcon::Close, ObsStyle::icon(ObsStyle::Glyph::Close));

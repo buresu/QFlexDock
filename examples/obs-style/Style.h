@@ -97,10 +97,14 @@ QFlexDock--DockTabBar::tab:hover:!selected { background: #4f5465; }
 QFlexDock--DockSplitHandle { background: transparent; }
 QFlexDock--DockSplitHandle[pressed="true"] { background: #d2d5db; }
 
+/* A floating dock has the corners of a dock (and the theme's
+   floatingCornerRadius, which makes the window see-through outside them). */
 QFlexDock--DockFloatingWindow {
     background: #1d1f26;
     border: 1px solid #3c404d;
+    border-radius: 4px;
 }
+QFlexDock--DockFloatingWindow[maximized="true"] { border: none; border-radius: 0; }
 
 /* --- Application chrome -------------------------------------------------- */
 QMainWindow, QMenuBar, QStatusBar { background: #1d1f26; color: #fefefe; }

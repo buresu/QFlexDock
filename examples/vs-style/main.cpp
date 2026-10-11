@@ -138,7 +138,9 @@ void Workbench::setUpDocking()
     theme.titleButtons = DockTitleButton::Menu | DockTitleButton::AutoHide | DockTitleButton::Close;
     theme.iconSize = 16;
     theme.splitHandleWidth = 6; // the gap between two panes
-    theme.floatingBorderWidth = 1;
+    // A floating window is as round as the pane in it, which reaches its edge.
+    theme.floatingBorderWidth = 0;
+    theme.floatingCornerRadius = 6;
     // A pin standing up in the title bar of what is docked, lying down in
     // what has slid out.
     theme.icons.insert(DockIcon::Unpin, icon(Glyph::Pin));

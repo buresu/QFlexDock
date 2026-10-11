@@ -80,7 +80,8 @@ Notes:
 - Round corners on a floating window need the theme token `floatingCornerRadius` (the window has to be
   translucent, which a style sheet cannot ask for). A style sheet that draws the frame gives it a
   `border-radius` to match, and may round fewer corners; `[maximized="true"]` is where to take border and
-  radius away again.
+  radius away again. Without the token a window with a frame of QFlexDock's is a rectangle in its
+  `background`, whatever the shape of the groups in it. The ghost of a drag has the corners of the token.
 - `qproperty-*` is applied once, when the widget is first polished (a Qt rule), and stays after the style
   sheet is removed.
 - The 2px mark on the current tab of the active group takes its color from `qproperty-activeIndicatorColor`;

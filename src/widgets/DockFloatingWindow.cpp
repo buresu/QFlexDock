@@ -69,6 +69,55 @@ private:
     DockFloatingWindow *m_window;
 };
 
+// What a ghost shows: the picture of what is dragged, at the size of the
+// window, with the corners the window has.
+class GhostPicture : public QWidget
+{
+public:
+    GhostPicture(const QPixmap &picture, int cornerRadius, QWidget *parent)
+        : QWidget(parent)
+        , m_picture(picture)
+        , m_cornerRadius(cornerRadius)
+    {
+        setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        if (m_picture.isNull())
+            return;
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform);
+        if (m_cornerRadius <= 0) {
+            painter.drawPixmap(rect(), m_picture);
+            return;
+        }
+        // The picture inside the round outline, put together once for the
+        // size and the screen at hand.
+        const qreal scale = devicePixelRatioF();
+        const QSize pixels = (QSizeF(size()) * scale).toSize();
+        if (m_rounded.size() != pixels || m_rounded.devicePixelRatio() != scale) {
+            m_rounded = QPixmap(pixels);
+            m_rounded.setDevicePixelRatio(scale);
+            m_rounded.fill(Qt::transparent);
+            QPainter rounded(&m_rounded);
+            rounded.setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
+            rounded.setPen(Qt::NoPen);
+            rounded.setBrush(Qt::black);
+            rounded.drawRoundedRect(QRectF(rect()), m_cornerRadius, m_cornerRadius);
+            rounded.setCompositionMode(QPainter::CompositionMode_SourceIn);
+            rounded.drawPixmap(rect(), m_picture);
+        }
+        painter.drawPixmap(0, 0, m_rounded);
+    }
+
+private:
+    QPixmap m_picture;
+    QPixmap m_rounded;
+    int m_cornerRadius;
+};
+
 } // namespace
 
 DockFloatingWindow::DockFloatingWindow(DockManagerPrivate *manager, const QString &containerId,
@@ -303,10 +352,7 @@ void DockFloatingWindow::beginGhost(const QPixmap &picture, const QString &title
         m_titleLabel->setText(title);
         m_titleIcon->hide();
     }
-    m_ghostPicture = new QLabel(this);
-    m_ghostPicture->setPixmap(picture);
-    m_ghostPicture->setScaledContents(true);
-    m_ghostPicture->setSizePolicy(QSizePolicy::Ignored, QSizePolicy::Ignored);
+    m_ghostPicture = new GhostPicture(picture, m_cornerRadius, this);
     static_cast<QVBoxLayout *>(layout())->addWidget(m_ghostPicture, 1);
     m_area->hide();
     updateFrameMargins(); // a ghost has no border, and is not resized

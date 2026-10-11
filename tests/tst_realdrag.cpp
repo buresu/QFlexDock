@@ -120,6 +120,50 @@ private Q_SLOTS:
         QVERIFY(!target->overlay()->isVisible());
     }
 
+    // Along the bar a tab is moved among the others with no drag at all.
+    // Taken off the bar after that, it is dragged from where it was.
+    void aTabMovedAlongTheBarIsDraggedOffIt()
+    {
+        TwoWindows f;
+        f.windowA.move(20, 20);
+        f.windowB.move(940, 40);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        QVERIFY(f.b->addPanel(p("d")));
+        DockAreaWidget *target = areaOf(f.b);
+        DockTabBar *bar = areaOf(f.a)->groupOfPanel(p("a"))->tabBar();
+        DockDragController *controller = priv(f.manager)->drag;
+
+        const QPoint press = bar->tabRect(0).center();
+        const QPoint along(bar->tabRect(2).right(), press.y());
+        const QRect group = target->groupOfPanel(p("d"))->geometry();
+        const QPoint over = target->mapToGlobal(QPoint(group.right() - 60, group.center().y()));
+        bool done = false;
+
+        QTest::mousePress(bar, Qt::LeftButton, {}, press);
+        QTest::mouseMove(bar, along);
+        QCoreApplication::processEvents();
+        QCOMPARE(bar->panelAt(2), p("a"));
+        QVERIFY(!controller->isActive());
+        for (const QWidget *window : QApplication::topLevelWidgets())
+            QVERIFY(!qobject_cast<const DockFloatingWindow *>(window) || !window->isVisible());
+
+        const QPoint off = bar->mapToGlobal(QPoint(along.x(), bar->height() + 60));
+        QTest::mouseMove(bar, bar->mapFromGlobal(off));
+        QCOMPARE(bar->panelAt(0), p("a"));
+        script(this, {
+            [&] { moveTo(&f.windowA, off + QPoint(20, 20)); },
+            [&] { moveTo(&f.windowB, over - QPoint(30, 0)); },
+            [&] { moveTo(&f.windowB, over); },
+            [&] { releaseAt(&f.windowB, over); },
+        }, &done);
+        QTRY_VERIFY_WITH_TIMEOUT(done && !controller->isActive(), 5000);
+        QCOMPARE(describe(f.a), p("b|c"));
+        QCOMPARE(describe(f.b), p("H(d, a)"));
+    }
+
     // The title bar of a group of stacked panels: dragged, it takes the
     // current panel along, or all of them (setTitleBarMovesGroup()).
     void dragATitleBar_data()

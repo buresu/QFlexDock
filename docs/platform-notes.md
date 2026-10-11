@@ -28,7 +28,8 @@ Dock drags use `QDrag`. The layout never changes during a drag; the drop is comm
 A Wayland client can neither move a window to the pointer nor see the pointer over other windows. The
 compositor can, however, move a window as part of a drag (`xdg-toplevel-drag-v1`). QFlexDock uses that:
 
-- **Dragging a tab** carries a ghost, held where it was grabbed. One tab out of several keeps its place in
+- **Dragging a tab** off its bar carries a ghost, held where it was grabbed (along the bar it is only
+  moved among the other tabs, on every platform). One tab out of several keeps its place in
   the ghost's row of tabs, so that the pointer stays on it; in the window it becomes it is the first tab.
   Dropped on a dock area it docks and the ghost disappears; dropped elsewhere the ghost itself becomes the
   floating window; Esc just removes it. The ghost is what is dragged and nothing else: the frame of
@@ -250,9 +251,9 @@ What the tests cannot drive, to be tried with the examples:
   their sizes; so does pushing the edge of an area far enough against it, and dragging inwards from the
   edge it went to (also at the right edge of the window, for the secondary side bar); with the documents split, the
   point where their boundary meets the panel's or a side bar's moves both.
-- **Windows of tabs**, `qflexdock-chrome-style` — a tab that is dragged is out of its row at once, the
-  others closing up, and a row it is held over opens a place for it (on Wayland the ghost lies over that
-  place, its tab where the pointer is); Esc puts it back; a tab dragged along its row changes places; dragged onto
+- **Windows of tabs**, `qflexdock-chrome-style` — a tab dragged along its row changes places; dragged off
+  the row it is out of it, the others closing up, and a row it is held over opens a place for it (on
+  Wayland the ghost lies over that place, its tab where the pointer is); Esc puts it back; dragged onto
   the row of another window (its tabs, or the row beside them) it becomes a tab there; let go of anywhere
   else, over a page or the desktop, it becomes a window of the same size; the last tab takes its window with
   it, in either direction; the only tab of a window drags the window, and can still be dropped into another

@@ -129,9 +129,12 @@ QFlexDock--DockAutoHidePopup { background: #222222; border: none; }
 }
 #dockAutoHideTitle { color: #e6e6e6; padding: 4px; }
 
-/* Floating windows. */
-QFlexDock--DockFloatingWindow { background: #222222; border: 1px solid #938abf; }
-#dockFloatingTitleBar { background: #222222; }
+/* Floating windows. One pane is the window, and its outline the window's
+   (the theme has no border and the radius of a pane); what shows of the
+   window itself is the row above several panes and the gaps between them. */
+QFlexDock--DockFloatingWindow { background: #222222; border: 1px solid #3d3d3d; border-radius: 6px; }
+QFlexDock--DockFloatingWindow[maximized="true"] { border: none; border-radius: 0; }
+#dockFloatingTitleBar { background: transparent; } /* the window shows, round corners and all */
 #dockFloatingTitle { color: #e6e6e6; }
 
 /* --- Window chrome ----------------------------------------------------- */

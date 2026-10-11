@@ -187,8 +187,10 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
             [this](int index) { closeByUser(m_tabBar->panelAt(index)); });
     connect(m_tabBar, &DockTabBar::panelCloseRequested, this, &DockTabGroup::closeByUser);
     connect(m_tabBar, &DockTabBar::panelDragStarted, this, [this](const PanelId &panel) {
+        showTabsAsPlaced(); // it may have been moved along the bar first
         startPanelDrag(panel, m_tabBar->grab(m_tabBar->tabRect(m_tabBar->indexOfPanel(panel))));
     });
+    connect(m_tabBar, &DockTabBar::panelMoveRequested, this, &DockTabGroup::moveTabByUser);
     connect(m_tabBar, &DockTabBar::groupDragStarted, this, &DockTabGroup::startGroupDrag);
     connect(m_tabBar, &DockTabBar::panelMenuRequested, this, &DockTabGroup::showPanelMenu);
     connect(m_tabBar, &DockTabBar::barDoubleClicked, this, &DockTabGroup::headerDoubleClicked);
@@ -333,6 +335,38 @@ void DockTabGroup::startPanelDrag(const PanelId &panel, const QPixmap &pixmap)
         return;
     }
     m_manager->drag->requestPanelDrag(panel, pixmap);
+}
+
+// A tab was moved along the bar, to `index` among the tabs.
+void DockTabGroup::moveTabByUser(const PanelId &panel, int index)
+{
+    const int from = int(m_panels.indexOf(panel));
+    if (m_manager && from >= 0 && index != from && m_manager->userMay(panel, DockFeature::Movable)) {
+        DropTarget target;
+        target.container = m_area->containerId();
+        target.node = m_nodeId;
+        target.area = DockArea::Center;
+        target.tabIndex = index > from ? index + 1 : index; // before the tab at that index
+        if (m_manager->placePanel(panel, target))
+            return;
+    }
+    showTabsAsPlaced();
+}
+
+// The tabs in the order of the panels again, after the bar showed another.
+void DockTabGroup::showTabsAsPlaced()
+{
+    int index = 0;
+    for (const PanelId &panel : std::as_const(m_panels)) {
+        if (panel == m_draggedOut)
+            continue;
+        if (m_tabBar->isGap(index))
+            ++index;
+        if (m_tabBar->panelAt(index++) != panel) {
+            rebuildTabs();
+            return;
+        }
+    }
 }
 
 void DockTabGroup::startGroupDrag()
@@ -832,12 +866,16 @@ void DockTabGroup::updateTab(int index)
     }
 
     QSet<PanelId> italic;
+    QSet<PanelId> movable;
     for (const PanelId &id : std::as_const(m_panels)) {
         const DockPanel *p = m_manager->panels.value(id);
         if (p && p->isPreviewTab())
             italic.insert(id);
+        if (p && p->features().testFlag(DockFeature::Movable))
+            movable.insert(id);
     }
     m_tabBar->setItalicPanels(italic);
+    m_tabBar->setMovablePanels(movable);
 }
 
 void DockTabGroup::refreshPanel(const PanelId &panel)

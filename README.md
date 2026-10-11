@@ -103,7 +103,7 @@ widgets to it), side areas that keep their pixel size when the window is resized
 | Windows 11, Qt 6.12, native platform | Locally, on a desktop that is not shown (`tests/run-on-hidden-desktop.ps1`), at 200% scaling; `tst_quick` also rendering with Direct3D. Real-drag tests are skipped |
 | macOS, Qt 6.8 and 6.10 | Build and tests on the `offscreen` platform only |
 | `offscreen` | `QOpenGLWidget` and real-drag tests are skipped |
-| X11 (Xvfb) | Includes real `QDrag` between windows, Esc, outside drops, tabs torn off and joined between floating windows, moving a `QOpenGLWidget` |
+| X11 (Xvfb) | Includes real `QDrag` between windows, a tab moved along its bar and then dragged off it, Esc, outside drops, tabs torn off and joined between floating windows, moving a `QOpenGLWidget` |
 | Wayland (headless KWin and Weston) | Real-drag and window-position tests are skipped |
 
 **Not verified:**

@@ -1366,6 +1366,179 @@ private Q_SLOTS:
         QCOMPARE(describe(f.a), p("a|b"));
     }
 
+    // Dragged along the bar, a tab changes places with the others, and no
+    // dock drag starts: there is no ghost and no guide in the way.
+    void tabsAreMovedAlongTheBar()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        DockTabGroup *group = areaOf(f.a)->groupOfPanel(p("a"));
+        DockTabBar *bar = group->tabBar();
+        QSignalSpy panelDrag(bar, &DockTabBar::panelDragStarted);
+        QSignalSpy layoutChanged(&f.manager, &DockManager::layoutChanged);
+        const auto shown = [bar] {
+            QStringList tabs;
+            for (int i = 0; i < bar->count(); ++i)
+                tabs << bar->panelAt(i);
+            return tabs.join(QLatin1Char('|'));
+        };
+        const int y = bar->height() / 2;
+
+        // "a" to the end. Only the bar shows it while the button is down.
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
+        layoutChanged.clear();
+        QTest::mouseMove(bar, QPoint(bar->tabRect(1).right(), y));
+        QCOMPARE(bar->movingPanel(), p("a"));
+        QCOMPARE(shown(), p("b|a|c"));
+        QTest::mouseMove(bar, QPoint(bar->tabRect(2).right(), y));
+        QCOMPARE(shown(), p("b|c|a"));
+        QCOMPARE(describe(f.a), p("a|b|c"));
+        QCOMPARE(layoutChanged.size(), 0);
+        QVERIFY(!priv(f.manager)->drag->isActive());
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(bar->tabRect(2).right(), y));
+        QCOMPARE(describe(f.a), p("b|c|a"));
+        QCOMPARE(shown(), p("b|c|a"));
+        QVERIFY(layoutChanged.size() > 0);
+        QVERIFY(bar->movingPanel().isEmpty());
+        QCOMPARE(f.manager.activePanel(), f.manager.panel(p("a")));
+
+        // Back to the front, past both of the others at once; and behind the
+        // last tab is the end of them.
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(2).center());
+        QTest::mouseMove(bar, QPoint(bar->tabRect(0).left(), y));
+        QCOMPARE(shown(), p("a|b|c"));
+        QTest::mouseMove(bar, QPoint(bar->tabRect(2).right() + 30, y));
+        QCOMPARE(shown(), p("b|c|a"));
+        QTest::mouseMove(bar, QPoint(bar->tabRect(0).left(), y));
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(bar->tabRect(0).left(), y));
+        QCOMPARE(describe(f.a), p("a|b|c"));
+
+        // Let go of where it was: nothing changed, and nothing is said.
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
+        layoutChanged.clear();
+        QTest::mouseMove(bar, QPoint(bar->tabRect(1).right(), y));
+        QTest::mouseMove(bar, QPoint(bar->tabRect(0).left(), y));
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(bar->tabRect(0).left(), y));
+        QCOMPARE(describe(f.a), p("a|b|c"));
+        QCOMPARE(layoutChanged.size(), 0);
+        QCOMPARE(panelDrag.size(), 0);
+    }
+
+    // Taken off the bar, the tab is back where it was and a dock drag starts.
+    void tabLeavesTheBarForADrag()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        DockTabBar *bar = areaOf(f.a)->groupOfPanel(p("a"))->tabBar();
+        QSignalSpy panelDrag(bar, &DockTabBar::panelDragStarted);
+        QSignalSpy moved(bar, &DockTabBar::panelMoveRequested);
+        // Hold a session so that no real, blocking QDrag starts.
+        Drag blocker(f.manager);
+        QVERIFY(blocker.begin("a"));
+
+        const int y = bar->height() / 2;
+        const QPoint off(bar->tabRect(2).center().x(), bar->tabMoveRegion().bottom() + 1);
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
+        QTest::mouseMove(bar, QPoint(bar->tabRect(2).right(), y));
+        QCOMPARE(bar->panelAt(2), p("a"));
+        // Not yet: a little below the bar is still along it.
+        QTest::mouseMove(bar, off - QPoint(0, 1));
+        QCOMPARE(panelDrag.size(), 0);
+        QTest::mouseMove(bar, off);
+        QCOMPARE(panelDrag.size(), 1);
+        QCOMPARE(panelDrag.at(0).at(0).toString(), p("a"));
+        QCOMPARE(bar->panelAt(0), p("a"));
+        QVERIFY(bar->movingPanel().isEmpty());
+        // Back over the bar, it is what the drag holds, not a tab moved here.
+        QTest::mouseMove(bar, QPoint(bar->tabRect(2).right(), y));
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(bar->tabRect(2).right(), y));
+        QCOMPARE(bar->panelAt(0), p("a"));
+        QCOMPARE(panelDrag.size(), 1);
+        QCOMPARE(moved.size(), 0);
+        QCOMPARE(describe(f.a), p("a|b|c"));
+
+        // Straight off the bar: no move comes first.
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(1).center());
+        QTest::mouseMove(bar, off);
+        QCOMPARE(panelDrag.size(), 2);
+        QCOMPARE(panelDrag.at(1).at(0).toString(), p("b"));
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, off);
+
+        // A panel that may not be moved keeps its place among the tabs too.
+        f.manager.panel(p("b"))->setFeatures(f.manager.panel(p("b"))->features()
+                                             & ~DockFeatures(DockFeature::Movable));
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(1).center());
+        QTest::mouseMove(bar, QPoint(bar->tabRect(2).right(), y));
+        QVERIFY(bar->movingPanel().isEmpty());
+        QCOMPARE(bar->panelAt(1), p("b"));
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(bar->tabRect(2).right(), y));
+        QCOMPARE(describe(f.a), p("a|b|c"));
+        QCOMPARE(moved.size(), 0);
+    }
+
+    // Tabs are not one width. A tab is on the other side of a neighbour once
+    // the pointer is past the middle of that one, and where the pointer then
+    // stands still, so does the tab: across a wider one too.
+    void movedTabKeepsItsPlaceUnderAStillPointer()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        f.manager.panel(p("b"))->setTitle(QStringLiteral("A much longer title"));
+        DockTabBar *bar = areaOf(f.a)->groupOfPanel(p("a"))->tabBar();
+        QTRY_VERIFY(bar->tabRect(1).width() > bar->tabRect(0).width());
+        const auto order = [bar] {
+            QStringList tabs;
+            for (int i = 0; i < bar->count(); ++i)
+                tabs << bar->panelAt(i);
+            return tabs.join(QLatin1Char('|'));
+        };
+        const int y = bar->height() / 2;
+        const int first = bar->tabRect(0).left();
+        const int last = bar->tabRect(2).right();
+
+        const int middle = bar->tabRect(1).center().x();
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
+        QTest::mouseMove(bar, QPoint(middle - 1, y));
+        QCOMPARE(bar->movingPanel(), p("a"));
+        QCOMPARE(order(), p("a|b|c"));
+        QTest::mouseMove(bar, QPoint(middle, y));
+        QCOMPARE(order(), p("b|a|c"));
+        QTest::mouseMove(bar, QPoint(middle - 1, y));
+        QCOMPARE(order(), p("b|a|c")); // "b" is elsewhere now, and so is its middle
+        QTest::mouseMove(bar, QPoint(first, y));
+        QCOMPARE(order(), p("a|b|c"));
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(first, y));
+
+        for (const char *moved : {"a", "b"}) {
+            const QPoint press = bar->tabRect(bar->indexOfPanel(p(moved))).center();
+            QTest::mousePress(bar, Qt::LeftButton, {}, press);
+            QList<int> stops;
+            for (int x = press.x(); x <= last; ++x)
+                stops << x;
+            for (int x = last; x >= first; --x)
+                stops << x;
+            for (const int x : std::as_const(stops)) {
+                QTest::mouseMove(bar, QPoint(x, y));
+                const QString now = order();
+                QTest::mouseMove(bar, QPoint(x, y));
+                QCOMPARE(order(), now);
+            }
+            QCOMPARE(bar->movingPanel(), p(moved));
+            QCOMPARE(bar->indexOfPanel(p(moved)), 0);
+            QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(first, y));
+        }
+        QCOMPARE(describe(f.a), p("b|a|c"));
+    }
+
     // --- The other guides ------------------------------------------------------
 
     void buttonLayoutIsACrossThatStaysInside()

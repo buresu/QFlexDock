@@ -243,7 +243,7 @@ tools->setCompactWidget(toolsInOneColumn);                   // what it is in a 
 
 | `DockGroupHeader` | |
 |---|---|
-| `Tabs` (default) | The tabs, always. Drag a tab to move a panel, the empty part of the bar to move the group |
+| `Tabs` (default) | The tabs, always. Drag a tab along the bar to change its place among the others, off the bar to move its panel, and the empty part of the bar to move the group |
 | `TitleBar` | A title bar naming the current panel; drag it to move that panel, double click to float it or dock it again. Tabs appear below the content once a group holds more than one panel |
 
 With `setTitleBarMovesGroup(true)` the title bar stands for all the panels stacked under it: dragging it

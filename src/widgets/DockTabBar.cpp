@@ -154,6 +154,54 @@ void DockTabBar::setItalicPanels(const QSet<PanelId> &panels)
     update();
 }
 
+void DockTabBar::setMovablePanels(const QSet<PanelId> &panels)
+{
+    m_movable = panels;
+}
+
+QRect DockTabBar::tabMoveRegion() const
+{
+    const int slack = QApplication::startDragDistance();
+    QRect region = rect().adjusted(0, -slack, 0, slack);
+    if (const QWidget *row = parentWidget()) {
+        region.setLeft(-x());
+        region.setWidth(row->width());
+    }
+    return region;
+}
+
+// The tab that is moved goes where a tab dropped at the pointer would be put:
+// past the middle of a neighbour, it is on the other side of it. Where it
+// then is, the same pointer leaves it.
+void DockTabBar::moveTabUnder(const QPoint &pos)
+{
+    const int from = indexOfPanel(m_moving);
+    if (from < 0)
+        return;
+    // (Beside the bar is at its end, not among tabs that are scrolled away.)
+    const int before = insertIndexAt(QPoint(qBound(0, pos.x(), width() - 1), pos.y()));
+    const int to = before > from ? before - 1 : before;
+    if (to == from)
+        return;
+    // (The current tab is the same one at another index.)
+    const QSignalBlocker blocker(this);
+    moveTab(from, to);
+    // QTabBar moves tabs as wide as they are, and a style sheet may have
+    // made one wider for being the first: measured again.
+    setElideMode(elideMode());
+}
+
+void DockTabBar::finishTabMove()
+{
+    const PanelId panel = std::exchange(m_moving, PanelId());
+    int index = indexOfPanel(panel);
+    if (index < 0)
+        return;
+    if (const int gap = gapIndex(); gap >= 0 && gap < index)
+        --index;
+    Q_EMIT panelMoveRequested(panel, index);
+}
+
 void DockTabBar::setActiveGroup(bool active)
 {
     if (m_activeGroup == active)
@@ -263,6 +311,9 @@ void DockTabBar::paintEvent(QPaintEvent *)
 void DockTabBar::mousePressEvent(QMouseEvent *event)
 {
     if (event->button() == Qt::LeftButton) {
+        // (A move whose end was never heard of ends as it is shown.)
+        if (!m_moving.isEmpty())
+            finishTabMove();
         m_pressed = true;
         m_pressPos = event->position().toPoint();
         m_pressIndex = tabAt(m_pressPos);
@@ -278,19 +329,44 @@ void DockTabBar::mousePressEvent(QMouseEvent *event)
 
 void DockTabBar::mouseMoveEvent(QMouseEvent *event)
 {
-    if (m_pressed && event->buttons().testFlag(Qt::LeftButton)) {
-        const QPoint offset = event->position().toPoint() - m_pressPos;
+    const QPoint pos = event->position().toPoint();
+    const bool held = event->buttons().testFlag(Qt::LeftButton);
+    // The drag takes the pointer away without a word, and the tabs may be
+    // others by the time it is back.
+    const auto leaveForDrag = [this, event] {
+        QHoverEvent leave(QEvent::HoverLeave, QPointF(-1, -1), QPointF(-1, -1), event->position());
+        QCoreApplication::sendEvent(this, &leave);
+    };
+    if (!m_moving.isEmpty() && !held) {
+        finishTabMove(); // let go of unseen
+    } else if (!m_moving.isEmpty()) {
+        if (tabMoveRegion().contains(pos) && indexOfPanel(m_moving) >= 0) {
+            moveTabUnder(pos);
+        } else {
+            // Off the bar: a dock drag from here on, of a tab that is where
+            // it was.
+            const PanelId panel = std::exchange(m_moving, PanelId());
+            leaveForDrag();
+            Q_EMIT panelDragStarted(panel);
+        }
+        return;
+    }
+    if (m_pressed && held) {
+        const QPoint offset = pos - m_pressPos;
         if (offset.manhattanLength() >= QApplication::startDragDistance()) {
             m_pressed = false; // one drag per press
-            // The drag takes the pointer away without a word, and the tabs
-            // may be others by the time it is back.
-            QHoverEvent leave(QEvent::HoverLeave, QPointF(-1, -1), QPointF(-1, -1),
-                              event->position());
-            QCoreApplication::sendEvent(this, &leave);
-            if (m_pressIndex >= 0 && m_pressIndex < count())
-                Q_EMIT panelDragStarted(panelAt(m_pressIndex));
-            else
+            const PanelId panel = panelAt(m_pressIndex);
+            if (panel.isEmpty()) {
+                leaveForDrag();
                 Q_EMIT groupDragStarted();
+            } else if (m_movable.contains(panel) && count() > 1 && gapIndex() < 0
+                       && tabMoveRegion().contains(pos)) {
+                m_moving = panel;
+                moveTabUnder(pos);
+            } else {
+                leaveForDrag();
+                Q_EMIT panelDragStarted(panel);
+            }
             return;
         }
     }
@@ -309,6 +385,8 @@ void DockTabBar::mouseReleaseEvent(QMouseEvent *event)
     if (event->button() == Qt::LeftButton)
         m_pressed = false;
     QTabBar::mouseReleaseEvent(event);
+    if (event->button() == Qt::LeftButton && !m_moving.isEmpty())
+        finishTabMove();
 }
 
 void DockTabBar::mouseDoubleClickEvent(QMouseEvent *event)

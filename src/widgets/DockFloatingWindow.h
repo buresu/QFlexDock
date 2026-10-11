@@ -191,7 +191,7 @@ private:
     QPoint m_titlePress;
     bool m_titlePressed = false;
 
-    QLabel *m_ghostPicture = nullptr;
+    QWidget *m_ghostPicture = nullptr;
 };
 
 } // namespace QFlexDock
