@@ -299,6 +299,9 @@ public:
     /// The frame of a floating window that workspace `owner` owns.
     [[nodiscard]] DockManager::FloatingWindowFrame floatingFrameFor(const QString &owner) const;
     [[nodiscard]] int columnBarHeight() const;
+    /// Whether the buttons of a floating window are at the start of its
+    /// title (DockTheme::floatingButtonSide).
+    [[nodiscard]] bool windowButtonsAtStart(const QWidget *styledBy) const;
     [[nodiscard]] QString defaultWorkspaceId() const;
     [[nodiscard]] QWidget *windowFor(const QString &container) const;
 

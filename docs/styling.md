@@ -16,6 +16,7 @@ QFlexDock has no theme of its own. Looks are decided in three layers, each overr
 | Title row buttons | `QToolButton`s with line icons in the palette's `WindowText` color; a panel's own actions as `QToolButton`s with the icons they bring |
 | Drop guide | The rectangle a drop would take, in translucent colors derived from the palette's `Highlight` |
 | Floating windows | A thin border, and a title row once the window holds more than one tab group (`FloatingWindowFrame::Minimal`: the border alone), or with `FloatingWindowFrame::Native` the platform's window frame |
+| Buttons of a floating window | At the end of its title where the style has the buttons of a `QDockWidget` there (`QStyle::SE_DockWidgetCloseButton`), at its start where it has them at the start: the macOS style |
 
 Changes to the style, palette, font or style sheet, and the system's light/dark switch, are picked up
 through Qt's change events; there is nothing to call. All sizes are device-independent pixels.
@@ -158,6 +159,7 @@ theme.tabWidth = 200;                                    // every tab this wide;
 theme.tabOverflow = QFlexDock::DockTabOverflow::Shrink;  // tabs share a crowded bar; default: Scroll
 theme.floatingBorderWidth = 1;                           // frames drawn by QFlexDock; -1: 4 pixels
 theme.floatingCornerRadius = 10;                         // their corners; 0: square
+theme.floatingButtonSide = QFlexDock::DockButtonSide::Start;  // their buttons; also End. Default: Style, as the style has them
 theme.columnBarHeight = 12;                              // the bar above a column; -1: 14 pixels
 theme.overlay.guide = QFlexDock::DockGuide::Buttons;     // small buttons; default: Preview
 theme.overlay.buttonSize = 40;                           // their side
@@ -181,6 +183,12 @@ With `DockTabOverflow::Shrink` the tabs of a crowded bar get narrower together i
 too narrow for its close button loses it, except the current one. A border thinner than four pixels is
 still grabbed over four, across the edge of the content. `floatingBorderWidth` and `floatingCornerRadius`
 apply to the floating windows created after `setTheme()`.
+
+`floatingButtonSide` places the buttons that maximize and close a floating window with a frame of
+QFlexDock's: `Start` is the left end of the title (the right one where the layout runs from right to
+left), the one that closes first. That goes for the title row, for the header of the one tab group that is
+the title of its window, where the group's own buttons stay at the end, and for the bar of a column that
+is a window. The windows that are there follow.
 
 A tab of any shape can be drawn by the application's `QStyle` (a `QProxyStyle` handling
 `QStyle::CE_TabBarTab`), as `examples/chrome-style` does; a style sheet rule for `::tab` takes the tabs

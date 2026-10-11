@@ -82,15 +82,10 @@ DockColumnBar::DockColumnBar(DockManagerPrivate *manager, DockAreaWidget *area)
 void DockColumnBar::configure(NodeId column, bool iconified, bool towardsRight, bool closes)
 {
     m_column = column;
-    auto *row = static_cast<QHBoxLayout *>(layout());
-    // The button is at the end the column is pushed to; beside the one that
-    // closes a window, where there is one.
-    const bool atEnd = closes || towardsRight != iconified;
-    const int wanted = atEnd ? 1 : 0;
-    if (row->indexOf(m_iconify) != wanted) {
-        row->removeWidget(m_iconify);
-        row->insertWidget(wanted, m_iconify);
-    }
+    m_closes = closes;
+    // The button is at the end the column is pushed to, or at the end of a
+    // bar that stands for a window.
+    m_iconifyAtEnd = closes || towardsRight != iconified;
     m_close->setVisible(closes);
     if (m_iconified != iconified || m_towardsRight != towardsRight) {
         m_iconified = iconified;
@@ -105,6 +100,24 @@ void DockColumnBar::refreshAppearance()
 {
     if (!m_manager)
         return;
+    // The button that closes a window is where a window has its buttons, the
+    // other one then at the far end.
+    const bool closeAtStart = m_closes && m_manager->windowButtonsAtStart(this);
+    auto *row = static_cast<QHBoxLayout *>(layout());
+    const int iconifyAt = closeAtStart ? 2 : m_iconifyAtEnd ? 1 : 0;
+    const int closeAt = closeAtStart ? 0 : 2;
+    if (row->indexOf(m_iconify) != iconifyAt || row->indexOf(m_close) != closeAt) {
+        while (QLayoutItem *item = row->takeAt(0))
+            delete item;
+        for (int at = 0; at < 3; ++at) {
+            if (at == iconifyAt)
+                row->addWidget(m_iconify);
+            else if (at == closeAt)
+                row->addWidget(m_close);
+            else
+                row->addStretch(1);
+        }
+    }
     const int height = m_manager->columnBarHeight();
     const int icon = qMax(6, height - 4);
     for (QToolButton *button : {m_iconify, m_close}) {

@@ -534,6 +534,7 @@ void DockTabGroup::updateHeader()
                                    && features.testFlag(DockFeature::AutoHideable));
     setShown(m_closeButton, m_windowTitle || (buttons.testFlag(DockTitleButton::Close)
                                               && features.testFlag(DockFeature::Closable)));
+    placeWindowButtons(m_windowTitle && m_manager->windowButtonsAtStart(this));
     const bool maximized = m_windowTitle ? floating->isMaximized() : m_maximized;
     m_maximizeButton->setIcon(
         m_manager->icon(maximized ? DockIcon::Restore : DockIcon::Maximize, this));
@@ -555,6 +556,27 @@ void DockTabGroup::updateHeader()
         m_headerVisible = headerVisible;
         restyle();
     }
+}
+
+// The two buttons that are those of the window while the header is its title
+// go where a window has its buttons: to the start of the header, before all
+// else, the one that closes first. The rest stays at the end.
+void DockTabGroup::placeWindowButtons(bool atStart)
+{
+    if (atStart == m_windowButtonsAtStart)
+        return;
+    m_windowButtonsAtStart = atStart;
+    m_titleLayout->removeWidget(m_maximizeButton);
+    m_titleLayout->removeWidget(m_closeButton);
+    if (atStart) {
+        m_titleLayout->insertWidget(0, m_closeButton, 0, Qt::AlignVCenter);
+        m_titleLayout->insertWidget(1, m_maximizeButton, 0, Qt::AlignVCenter);
+    } else {
+        m_titleLayout->insertWidget(m_titleLayout->indexOf(m_menuButton) + 1, m_maximizeButton, 0,
+                                    Qt::AlignVCenter);
+        m_titleLayout->addWidget(m_closeButton, 0, Qt::AlignVCenter);
+    }
+    m_titleLayout->setContentsMargins(atStart ? 2 : 0, 0, 2, 0);
 }
 
 // The current panel's own actions in their three places, each as a button, a

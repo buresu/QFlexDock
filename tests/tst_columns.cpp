@@ -640,6 +640,41 @@ private Q_SLOTS:
         QVERIFY(onlyFloatingWindow(f.manager)->area()->columnBars().isEmpty());
     }
 
+    // The button of the bar that closes the window is where the theme has
+    // the buttons of a window; the other one is at the end.
+    void theBarOfAFloatingColumnClosesAtEitherEnd()
+    {
+        TwoWindows f;
+        f.show();
+        buildColumns(f);
+        DockTheme theme;
+        theme.floatingButtonSide = DockButtonSide::End;
+        f.manager.setTheme(theme);
+        QVERIFY(f.manager.floatPanel(p("c"), QRect(60, 60, 300, 260)));
+        DockFloatingWindow *window = onlyFloatingWindow(f.manager);
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const DockColumnBar *bar = window->area()->columnBars().constFirst();
+        const QToolButton *close = bar->closeButton();
+        const QToolButton *iconify = bar->iconifyButton();
+        QVERIFY(close->isVisible() && iconify->isVisible());
+        QTRY_VERIFY(iconify->x() > bar->width() / 2);
+        QTRY_COMPARE(close->x(), iconify->geometry().right() + 1);
+
+        theme.floatingButtonSide = DockButtonSide::Start;
+        f.manager.setTheme(theme);
+        QTRY_VERIFY(close->geometry().right() < bar->width() / 2);
+        QTRY_VERIFY(iconify->x() > bar->width() / 2);
+        QVERIFY(close->isVisible() && iconify->isVisible());
+        grab(window, p("floating-column-closes-at-start"));
+        // The bars in the workspace have no such button to place.
+        const DockColumnBar *docked = barOf(areaOf(f.a), "a");
+        QVERIFY(!docked->closeButton()->isVisible());
+
+        QTest::mouseClick(bar->closeButton(), Qt::LeftButton);
+        QTRY_VERIFY(priv(f.manager)->floatingWindows.isEmpty());
+    }
+
     void anIconifiedWindowIsAsLargeAsItsStrip()
     {
         TwoWindows f;

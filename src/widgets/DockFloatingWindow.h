@@ -32,8 +32,9 @@ class DockAreaWidget;
 /// of that group, which then is the title: it names the panel, if there is
 /// one, or holds the tabs, and has the buttons of the window.
 ///
-/// How wide that frame is and how round its corners are is up to the theme
-/// (DockTheme::floatingBorderWidth, floatingCornerRadius).
+/// How wide that frame is, how round its corners are and which end of the
+/// title the buttons of the window are at is up to the theme
+/// (DockTheme::floatingBorderWidth, floatingCornerRadius, floatingButtonSide).
 ///
 /// Style sheets: class selector `QFlexDock--DockFloatingWindow`, with the
 /// `customFrame`, `maximized` and `owner` properties; with the custom frame also
@@ -188,6 +189,7 @@ private:
     // Custom frame only.
     QWidget *m_titleBar = nullptr;
     bool m_titleRow = false;
+    bool m_buttonsAtStart = false;
     QLabel *m_titleIcon = nullptr;
     QLabel *m_titleLabel = nullptr;
     QToolButton *m_maximizeButton = nullptr;

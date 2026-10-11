@@ -23,6 +23,9 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QLabel>
 #include <QtWidgets/QLayout>
+#include <QtWidgets/QProxyStyle>
+#include <QtWidgets/QStyleFactory>
+#include <QtWidgets/QStyleOption>
 #include <QtWidgets/QToolButton>
 
 using namespace QFlexDock;
@@ -34,6 +37,39 @@ DockFloatingWindow *floatingWindowOf(TwoWindows &f, const char *panel)
 {
     return qobject_cast<DockFloatingWindow *>(f.widgets[p(panel)]->window());
 }
+
+/// Whether the widgets are all shown, one after the other from left to right.
+bool leftToRight(std::initializer_list<const QWidget *> widgets)
+{
+    int edge = 0;
+    for (const QWidget *widget : widgets) {
+        const int left = widget->mapTo(widget->window(), QPoint(0, 0)).x();
+        if (!widget->isVisible() || left < edge)
+            return false;
+        edge = left + widget->width();
+    }
+    return true;
+}
+
+/// Has the buttons of a QDockWidget at the start of its title, as the macOS
+/// style does.
+class ButtonsAtStartStyle : public QProxyStyle
+{
+public:
+    ButtonsAtStartStyle()
+        : QProxyStyle(QStyleFactory::create(QStringLiteral("Fusion")))
+    {
+    }
+
+    QRect subElementRect(SubElement element, const QStyleOption *option,
+                         const QWidget *widget) const override
+    {
+        QRect rect = QProxyStyle::subElementRect(element, option, widget);
+        if (element == SE_DockWidgetCloseButton || element == SE_DockWidgetFloatButton)
+            rect.moveLeft(option->rect.left() + option->rect.right() - rect.right());
+        return rect;
+    }
+};
 
 void buildLayout(TwoWindows &f)
 {
@@ -381,6 +417,113 @@ private Q_SLOTS:
     }
 
     // An application made of floating windows alone: no workspace anywhere.
+    // The buttons of a window are at the end of its title or at its start,
+    // as the theme says: in the title row, and in a header that is the title.
+    void windowButtonsAtEitherEnd()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        DockTheme theme;
+        theme.floatingButtonSide = DockButtonSide::Start;
+        f.manager.setTheme(theme);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 360, 260)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+
+        // A header that is the title: the two buttons of the window come
+        // first, the one that closes it before the other. The menu is the
+        // group's, and stays at the end.
+        QVERIFY(window->headerIsTitle());
+        const DockTabGroup *group = window->area()->groupOfPanel(p("b"));
+        QTRY_VERIFY(leftToRight({group->closeButton(), group->maximizeButton(),
+                                 group->titleLabel(), group->menuButton()}));
+        grab(window, p("floating-buttons-at-start-one-panel"));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QTRY_VERIFY(leftToRight({group->closeButton(), group->maximizeButton(), group->tabBar(),
+                                 group->menuButton()}));
+        grab(window, p("floating-buttons-at-start-tabs"));
+
+        // The title row. The headers below it are those of groups, with
+        // their buttons where a group has them.
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Right));
+        QVERIFY(window->hasTitleRow());
+        const auto *title = window->titleBar()->findChild<QLabel *>(QStringLiteral("dockFloatingTitle"));
+        QVERIFY(title);
+        QTRY_VERIFY(leftToRight({window->closeButton(), window->maximizeButton(), title}));
+        group = window->area()->groupOfPanel(p("b"));
+        QTRY_VERIFY(leftToRight({group->tabBar(), group->menuButton(), group->maximizeButton()}));
+        QVERIFY(group->closeButton()->isHidden());
+        grab(window, p("floating-buttons-at-start-title-row"));
+
+        // The theme can change at any time.
+        theme.floatingButtonSide = DockButtonSide::End;
+        f.manager.setTheme(theme);
+        QTRY_VERIFY(leftToRight({title, window->maximizeButton(), window->closeButton()}));
+        QVERIFY(f.manager.closePanel(p("d")));
+        QVERIFY(window->headerIsTitle());
+        group = window->area()->groupOfPanel(p("b"));
+        QTRY_VERIFY(leftToRight({group->tabBar(), group->menuButton(), group->maximizeButton(),
+                                 group->closeButton()}));
+        theme.floatingButtonSide = DockButtonSide::Start;
+        f.manager.setTheme(theme);
+        QTRY_VERIFY(leftToRight({group->closeButton(), group->maximizeButton(), group->tabBar(),
+                                 group->menuButton()}));
+
+        // They do what they did at the end.
+        QTest::mouseClick(group->closeButton(), Qt::LeftButton);
+        QTRY_VERIFY(priv(f.manager)->floatingWindows.isEmpty());
+    }
+
+    // Left to itself, the theme has them where the style has the buttons of
+    // a QDockWidget.
+    void windowButtonsFollowTheStyle()
+    {
+        const QString style = QApplication::style()->objectName();
+        const auto restore = qScopeGuard([&style] {
+            QApplication::setLayoutDirection(Qt::LeftToRight);
+            QApplication::setStyle(style);
+        });
+        QApplication::setStyle(QStringLiteral("Fusion"));
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        QCOMPARE(f.manager.theme().floatingButtonSide, DockButtonSide::Style);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 360, 260)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        const DockTabGroup *group = window->area()->groupOfPanel(p("b"));
+        QTRY_VERIFY(leftToRight({group->titleLabel(), group->menuButton(), group->maximizeButton(),
+                                 group->closeButton()}));
+
+        // Another style, while the window is there.
+        QApplication::setStyle(new ButtonsAtStartStyle);
+        QTRY_VERIFY(leftToRight({group->closeButton(), group->maximizeButton(),
+                                 group->titleLabel(), group->menuButton()}));
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Right));
+        QVERIFY(window->hasTitleRow());
+        const auto *title = window->titleBar()->findChild<QLabel *>(QStringLiteral("dockFloatingTitle"));
+        QVERIFY(title);
+        QTRY_VERIFY(leftToRight({window->closeButton(), window->maximizeButton(), title}));
+
+        // What the theme says goes before the style.
+        DockTheme theme;
+        theme.floatingButtonSide = DockButtonSide::End;
+        f.manager.setTheme(theme);
+        QTRY_VERIFY(leftToRight({title, window->maximizeButton(), window->closeButton()}));
+        f.manager.setTheme(DockTheme());
+        QTRY_VERIFY(leftToRight({window->closeButton(), window->maximizeButton(), title}));
+
+        // From right to left the start is on the right, and the end on the
+        // left, where a style then has what it has at the end.
+        QApplication::setLayoutDirection(Qt::RightToLeft);
+        QTRY_VERIFY(leftToRight({title, window->maximizeButton(), window->closeButton()}));
+        QApplication::setStyle(QStringLiteral("Fusion"));
+        QTRY_VERIFY(leftToRight({window->closeButton(), window->maximizeButton(), title}));
+    }
+
     void windowsNeedNoWorkspace()
     {
         DockManager manager;

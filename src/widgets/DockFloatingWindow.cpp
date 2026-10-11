@@ -296,6 +296,23 @@ void DockFloatingWindow::refreshAppearance()
 {
     if (!m_titleBar || !m_manager)
         return;
+    // The buttons are at the end of the title row or, the other way around,
+    // at its start.
+    if (const bool atStart = m_manager->windowButtonsAtStart(this); atStart != m_buttonsAtStart) {
+        m_buttonsAtStart = atStart;
+        auto *row = static_cast<QHBoxLayout *>(m_titleBar->layout());
+        row->removeWidget(m_maximizeButton);
+        row->removeWidget(m_closeButton);
+        if (atStart) {
+            row->insertWidget(0, m_closeButton);
+            row->insertWidget(1, m_maximizeButton);
+            row->setContentsMargins(3, 3, 8, 3);
+        } else {
+            row->addWidget(m_maximizeButton);
+            row->addWidget(m_closeButton);
+            row->setContentsMargins(8, 3, 3, 3);
+        }
+    }
     m_closeButton->setIcon(m_manager->icon(DockIcon::Close, this));
     m_maximizeButton->setIcon(
         m_manager->icon(isMaximized() ? DockIcon::Restore : DockIcon::Maximize, this));

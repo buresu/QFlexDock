@@ -296,6 +296,8 @@ Which built-in buttons the header has is a theme token (`DockTheme::titleButtons
 panel adds its own with `DockPanel::setTitleActions()`. `AutoHide` puts every panel of the group that
 allows it into the auto-hide bar of the nearest border, as one change. A header that is the title of a floating window
 ([platform-notes.md](platform-notes.md)) always has maximize and close, which there act on the window.
+Those two are at the start of the title where the style has the buttons of a `QDockWidget` there (the
+macOS style), and where `DockTheme::floatingButtonSide` (`DockButtonSide::Style`, `Start`, `End`) says.
 
 **Signals** — `layoutAboutToChange()` / `layoutChanged()`, `panelAboutToMove()` / `panelMoved()`,
 `panelOpenChanged()`, `panelCloseRequested()`, `panelWindowChanged()`, `activePanelChanged()`, `panelRegistered()` /

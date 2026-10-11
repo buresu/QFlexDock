@@ -128,6 +128,15 @@ int main(int argc, char *argv[])
         manager.setFloatingWindowFrame(native ? DockManager::FloatingWindowFrame::Native
                                               : DockManager::FloatingWindowFrame::Custom);
     });
+    QAction *buttonsFirst = layoutMenu->addAction(QStringLiteral("Window Buttons at the Start"));
+    buttonsFirst->setCheckable(true);
+    QObject::connect(buttonsFirst, &QAction::toggled, &manager, [&manager](bool first) {
+        // Of the frames drawn by QFlexDock. Otherwise where the style has
+        // them: at the start with the macOS style.
+        DockTheme theme = manager.theme();
+        theme.floatingButtonSide = first ? DockButtonSide::Start : DockButtonSide::Style;
+        manager.setTheme(theme);
+    });
     QAction *tools = layoutMenu->addAction(QStringLiteral("Floating Windows Stay Above This One"));
     tools->setCheckable(true);
     QObject::connect(tools, &QAction::toggled, &manager, [&manager](bool above) {

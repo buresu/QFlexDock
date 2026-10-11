@@ -19,6 +19,7 @@
 #include <QtWidgets/QApplication>
 #include <QtWidgets/QMenu>
 #include <QtWidgets/QStyle>
+#include <QtWidgets/QStyleOption>
 
 #include <algorithm>
 #include <cmath>
@@ -1895,6 +1896,26 @@ DockManager::FloatingWindowFrame DockManagerPrivate::floatingFrameFor(const QStr
 int DockManagerPrivate::columnBarHeight() const
 {
     return theme.columnBarHeight > 0 ? theme.columnBarHeight : DefaultColumnBarHeight;
+}
+
+bool DockManagerPrivate::windowButtonsAtStart(const QWidget *styledBy) const
+{
+    if (theme.floatingButtonSide != DockButtonSide::Style)
+        return theme.floatingButtonSide == DockButtonSide::Start;
+    // Where the style puts the button that closes a QDockWidget. Asked for
+    // a title that runs from left to right: the rows of buttons here are
+    // layouts, which turn around by themselves.
+    QStyleOptionDockWidget title;
+    if (styledBy)
+        title.initFrom(styledBy);
+    title.direction = Qt::LeftToRight;
+    title.rect = QRect(0, 0, 240, 24);
+    title.closable = true;
+    title.floatable = true;
+    title.movable = true;
+    const QStyle *style = styledBy ? styledBy->style() : QApplication::style();
+    const QRect close = style->subElementRect(QStyle::SE_DockWidgetCloseButton, &title, styledBy);
+    return close.isValid() && close.center().x() < title.rect.center().x();
 }
 
 DockWorkspace *DockManagerPrivate::workspaceFor(const QString &containerId) const

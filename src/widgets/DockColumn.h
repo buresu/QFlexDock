@@ -57,6 +57,8 @@ private:
     NodeId m_column;
     bool m_iconified = false;
     bool m_towardsRight = false;
+    bool m_closes = false;
+    bool m_iconifyAtEnd = false;
     QToolButton *m_iconify;
     QToolButton *m_close;
     QPoint m_press;

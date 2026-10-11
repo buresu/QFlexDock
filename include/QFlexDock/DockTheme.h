@@ -102,6 +102,16 @@ enum class DockTabOverflow {
     Shrink,
 };
 
+/// Which end of its title the buttons of a floating window are at.
+enum class DockButtonSide {
+    /// Where the host style has the buttons of a QDockWidget: at the start
+    /// with the macOS style, at the end with the others.
+    Style,
+    /// On the left, where the layout runs from left to right.
+    Start,
+    End,
+};
+
 /// Dock-specific tokens layered on top of the host's QStyle, QPalette, QFont
 /// and style sheet. Everything left at its default follows the host.
 struct QFLEXDOCK_EXPORT DockTheme
@@ -138,6 +148,11 @@ struct QFLEXDOCK_EXPORT DockTheme
     /// The radius of their corners while they are not maximized; 0 leaves
     /// them square. Used by the windows created from then on.
     int floatingCornerRadius = 0;
+    /// Where they have the buttons that maximize and close them: in the
+    /// title row of the Custom frame, in the header that is the title of
+    /// such a window, and in the bar of the column a window is. The other
+    /// buttons of a header stay at its end.
+    DockButtonSide floatingButtonSide = DockButtonSide::Style;
     /// Height of the bar above a column, where a workspace has such bars
     /// (DockManager::setColumnDocking()); -1 is 14 pixels.
     int columnBarHeight = -1;

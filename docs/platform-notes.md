@@ -132,6 +132,11 @@ title; the header beside the tabs moves the window and nothing else.) Where outs
 the float button. A double click on the header of its one tab group, beside the tabs, maximizes such a
 window. A `Minimal` window that holds more than one tab group has nothing to move it by as a whole.
 
+The buttons of a frame drawn by QFlexDock are where the application's style has the buttons of a
+`QDockWidget`: at the left end of the title with the macOS style, at the right end with the others
+(`DockTheme::floatingButtonSide` says otherwise). They are QFlexDock's own two buttons there too, not the
+three of a macOS window. Tested with a style that has them at the start; **not verified** on macOS.
+
 Frames drawn by QFlexDock can have round corners (`DockTheme::floatingCornerRadius`). The window is then
 translucent, which needs a compositor: without one (a bare X server) the corners are black. QFlexDock
 draws no shadow around such a window.

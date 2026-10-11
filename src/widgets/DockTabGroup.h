@@ -185,6 +185,7 @@ private:
     void insertGap(int index);
     void updateTab(int index);
     void updateHeader();
+    void placeWindowButtons(bool atStart);
     struct ActionBar;
     void updateTitleActions(const DockPanel *current);
     [[nodiscard]] bool fillActionBar(ActionBar &bar, const QList<QAction *> &actions);
@@ -225,6 +226,7 @@ private:
     bool m_titleMode = false;
     /// The header is the title of the floating window the group is alone in.
     bool m_windowTitle = false;
+    bool m_windowButtonsAtStart = false;
     bool m_flyout = false;
     DockArea m_flyoutSide = DockArea::Right;
 
