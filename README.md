@@ -3,6 +3,10 @@
 A docking library for Qt 6 Widgets. C++20, CMake, MIT.
 Made for creative tools, IDEs, 3D editors and node editors.
 
+![A tab dragged to the right side of its tab group, beside a floating panel](docs/images/docking.png)
+
+*`examples/basic` with the drop guide of five zones.*
+
 - **A drop guide to choose** — by default only the place of the drop is shown, as Qt's dock widgets do. By a theme token it is five large zones instead (top, bottom, left, right and center, covering the content of the target panel, with edges and center sized as you like and room between them to drop nowhere), or a cross of small buttons. The row of tabs takes a tab itself, and a separate band docks against the whole workspace.
 - **Linked splitters** — boundaries that form one line move together, and stay one line when a panel beside one of them cannot get any smaller. Grab the point where a vertical and a horizontal boundary meet to move both at once. Side areas can be pushed out of the way with their boundary and pulled back out of the edge they went to, and come back at their size.
 - **Panels move between `QMainWindow`s** — one `DockManager` is shared, and the same widget instance moves to the other window.
