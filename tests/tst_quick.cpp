@@ -458,8 +458,6 @@ Rectangle {
     // would move to the next item of a panel that nobody sees any more.
     void aSceneThatIsCoveredKeepsItsFocusItem()
     {
-        if (!keyboardFocusWorks())
-            QSKIP("No window gets the keyboard here");
         QFile file(m_dir.filePath(p("Fields.qml")));
         QVERIFY(file.open(QIODevice::WriteOnly));
         file.write(R"(
@@ -491,8 +489,9 @@ Rectangle {
         QVERIFY(panel);
         QVERIFY(f.a->addPanel(p("q")));
         QVERIFY(f.manager.movePanel(p("a"), p("q"), DockArea::Center));
-        f.windowA.activateWindow();
-        QVERIFY(QTest::qWaitForWindowActive(&f.windowA));
+        if (!activate(&f.windowA) && onWayland())
+            QSKIP("The compositor does not make this window the active one");
+        QCOMPARE(QApplication::activeWindow(), &f.windowA);
         const QPointer<QQuickWidget> quick = QmlPanelAdapter::quickWidget(panel);
         QVERIFY(quick && quick->rootObject());
         QObject *root = quick->rootObject();

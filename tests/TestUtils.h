@@ -79,27 +79,29 @@ inline QImage picture(QWidget *widget)
     return pixmap.toImage();
 }
 
+inline bool onWayland()
+{
+    return QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+}
+
 /// Whether a client can place its windows and learn where they are. Wayland
 /// leaves both to the compositor: geometry().topLeft() is not meaningful there
 /// and positions are neither saved usefully nor restored.
 inline bool windowPositionsWork()
 {
-    return !QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
+    return !onWayland();
 }
 
-/// Whether a window can be the active one, so that a widget in it has the
-/// keyboard focus. A Wayland compositor without a keyboard (headless Weston
-/// has no seat) activates none, and QApplication::focusWidget() stays null.
-inline bool keyboardFocusWorks()
+/// Makes `window` the active one, so that a widget in it has the keyboard
+/// focus, and says whether it is. On Wayland the compositor decides: headless
+/// Weston has no keyboard and activates no window, and with Qt 6.8 KWin
+/// leaves the window that was shown last the active one.
+/// Not QTest::qWaitForWindowActive(): on Wayland with Qt 6.8 that only waits
+/// for the window to be shown.
+inline bool activate(QWidget *window)
 {
-    if (!QGuiApplication::platformName().startsWith(QLatin1String("wayland")))
-        return true;
-    static const bool works = [] {
-        QWidget probe;
-        probe.show();
-        return QTest::qWaitForWindowActive(&probe, 2000);
-    }();
-    return works;
+    window->activateWindow();
+    return QTest::qWaitFor([window] { return QApplication::activeWindow() == window; });
 }
 
 /// Two main windows with a workspace each, sharing one manager, plus `count`

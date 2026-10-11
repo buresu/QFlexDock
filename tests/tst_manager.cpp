@@ -1061,15 +1061,14 @@ private Q_SLOTS:
     // one that covers it, not to whichever widget Qt finds next.
     void theTabThatCoversTheFocusTakesIt()
     {
-        if (!keyboardFocusWorks())
-            QSKIP("No window gets the keyboard here");
         TwoWindows f;
         f.show();
         QVERIFY(f.a->addPanel(p("a")));
         QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
         QVERIFY(f.a->addPanel(p("c"), DockArea::Right));
-        f.windowA.activateWindow();
-        QVERIFY(QTest::qWaitForWindowActive(&f.windowA));
+        if (!activate(&f.windowA) && onWayland())
+            QSKIP("The compositor does not make this window the active one");
+        QCOMPARE(QApplication::activeWindow(), &f.windowA);
 
         QVERIFY(f.manager.activatePanel(p("a")));
         QCOMPARE(QApplication::focusWidget(), f.widgets[p("a")]);

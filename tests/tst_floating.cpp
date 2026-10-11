@@ -30,11 +30,6 @@ using namespace TestUtils;
 
 namespace {
 
-bool onWayland()
-{
-    return QGuiApplication::platformName().startsWith(QLatin1String("wayland"));
-}
-
 DockFloatingWindow *floatingWindowOf(TwoWindows &f, const char *panel)
 {
     return qobject_cast<DockFloatingWindow *>(f.widgets[p(panel)]->window());
