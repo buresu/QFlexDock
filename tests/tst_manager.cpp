@@ -1057,6 +1057,30 @@ private Q_SLOTS:
         QCOMPARE(f.manager.raisePanel(p("d")).error(), DockError::NotPlaced);
     }
 
+    // The focus cannot stay in a tab that another one covers: it goes to the
+    // one that covers it, not to whichever widget Qt finds next.
+    void theTabThatCoversTheFocusTakesIt()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Right));
+        f.windowA.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&f.windowA));
+
+        QVERIFY(f.manager.activatePanel(p("a")));
+        QCOMPARE(QApplication::focusWidget(), f.widgets[p("a")]);
+        QVERIFY(f.manager.raisePanel(p("b")));
+        QCOMPARE(QApplication::focusWidget(), f.widgets[p("b")]);
+        QCOMPARE(f.manager.activePanel(), f.manager.panel(p("b")));
+
+        // Closed: the tab that takes its place.
+        QVERIFY(f.manager.closePanel(p("b")));
+        QCOMPARE(QApplication::focusWidget(), f.widgets[p("a")]);
+        QCOMPARE(f.manager.activePanel(), f.manager.panel(p("a")));
+    }
+
     void theCurrentTabOfAGroupIsReported()
     {
         QStringList log;

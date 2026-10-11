@@ -64,7 +64,7 @@ Registering does not show a panel.
 | `openPanel(id)`, `closePanel(id)`, `togglePanel(id)` | Reopen a closed panel in its old place, or with none remembered at its default placement / close it (it stays registered) |
 | `openPanels(ids)`, `closePanels(ids)` | The same for several panels as one change and one undo step |
 | `activatePanel(id)`, `activePanel()` | Bring the tab to the front, raise the window, give focus |
-| `raisePanel(id)` | Bring the tab to the front and nothing else: the active panel and keyboard focus stay where they are |
+| `raisePanel(id)` | Bring the tab to the front and nothing else: the active panel and keyboard focus stay where they are (focus that was in the tab it covers goes to it) |
 | `tabGroupPanels(id)`, `currentPanel(id)` | The panels sharing a tab group with `id`, in the order of their tabs, and the one of them in front |
 | `maximizePanel(id)`, `restoreMaximizedPanel()` | Let the tab group fill its container; the layout tree is not changed |
 | `setPanelAutoHide(id, on, edge)` | Collapse into an auto-hide bar / pin back |
@@ -134,7 +134,8 @@ group in which a panel was active last, in the workspace or a floating window it
 its first group). Where the documents have a workspace to themselves it is the document the rest of the
 application is about, and it stays the same while the user works in a panel elsewhere.
 `currentPanelChanged(id)` tells of another one. `setCurrentPanel(id)` makes a panel of the workspace the
-current one without activating it: its tab comes to the front, and keyboard focus stays where it is.
+current one without activating it: its tab comes to the front, and keyboard focus stays where it is, unless
+it was in the tab that is covered.
 
 `setPlaceholderWidget(widget)` gives a workspace something to show while no panel is docked in it: a start
 page, a hint. The widget fills the workspace, which owns it, and the workspace takes dragged panels as an

@@ -248,6 +248,11 @@ public:
     QWidget *ensureWidget(DockPanel *panel);
     /// Moves a panel's content under `parent`, with lifecycle signals.
     void reparentContent(DockPanel *panel, QWidget *parent);
+    /// Takes the keyboard focus out of content that is about to be hidden or
+    /// moved. Called before either, wherever content is.
+    void releaseFocus(QWidget *content);
+    /// Gives the focus to the tab in front of a group, if its content shows.
+    void focusFrontOf(const std::optional<PanelLocation> &group);
     /// Moves content that is still a child of `host` to the parking widget.
     void parkIfHostedBy(DockPanel *panel, const QWidget *host);
     void parkCompactWidgets(const QWidget *host);

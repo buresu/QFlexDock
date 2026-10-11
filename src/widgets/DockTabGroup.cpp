@@ -937,8 +937,10 @@ void DockTabGroup::syncContents()
             continue;
         if (widget->parentWidget() != m_host)
             m_manager->reparentContent(panel, m_host);
-        if (id != shown)
+        if (id != shown) {
+            m_manager->releaseFocus(widget);
             widget->hide();
+        }
     }
     updateContentGeometry();
 }
@@ -953,6 +955,7 @@ void DockTabGroup::updateContentGeometry()
         return;
     widget->setGeometry(m_host->rect());
     if (m_manager->contentSuspended(panel)) {
+        m_manager->releaseFocus(widget);
         widget->hide();
         return;
     }

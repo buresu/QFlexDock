@@ -185,6 +185,9 @@ Tried by hand on macOS; elsewhere **not verified** beyond the window being creat
   not: make such calls from a queued connection or `Qt.callLater()`. `tst_quick` runs on the software
   renderer, where none of this happens; `QFLEXDOCK_TEST_RHI=1` with a native platform plugin runs it on the
   GPU (tried on Windows with Direct3D).
+- **A scene that is covered keeps its focus item.** Qt asks a widget that is hidden with the keyboard
+  focus to pass it on, and a `QQuickWidget` does so by sending its scene a Tab key. Content gives the focus
+  up before it is hidden or moved, and the tab that takes its place gets it (`tst_quick`).
 - For performance, embed a `QQuickWindow` through `NativeWindowAdapter` instead (not verified); the limits
   of native windows below then apply.
 

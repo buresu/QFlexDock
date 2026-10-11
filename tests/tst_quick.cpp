@@ -453,6 +453,78 @@ Rectangle {
         QTRY_VERIFY(panel->isFloating());
     }
 
+    // Qt asks a widget that is hidden with the keyboard focus to pass it on,
+    // and a QQuickWidget does so by sending its scene a Tab key: the focus
+    // would move to the next item of a panel that nobody sees any more.
+    void aSceneThatIsCoveredKeepsItsFocusItem()
+    {
+        QFile file(m_dir.filePath(p("Fields.qml")));
+        QVERIFY(file.open(QIODevice::WriteOnly));
+        file.write(R"(
+import QtQuick
+
+Rectangle {
+    id: root
+    property int tabbed: 0
+    Item {
+        objectName: "first"
+        width: 20; height: 20
+        focus: true
+        activeFocusOnTab: true
+    }
+    Item {
+        y: 30; width: 20; height: 20
+        activeFocusOnTab: true
+        onActiveFocusChanged: if (activeFocus) root.tabbed++
+    }
+}
+)");
+        file.close();
+
+        QQmlEngine engine;
+        TwoWindows f;
+        f.show();
+        DockPanel *panel = QmlPanelAdapter::registerPanel(&f.manager, p("q"), &engine,
+                                                          QUrl::fromLocalFile(file.fileName()));
+        QVERIFY(panel);
+        QVERIFY(f.a->addPanel(p("q")));
+        QVERIFY(f.manager.movePanel(p("a"), p("q"), DockArea::Center));
+        f.windowA.activateWindow();
+        QVERIFY(QTest::qWaitForWindowActive(&f.windowA));
+        const QPointer<QQuickWidget> quick = QmlPanelAdapter::quickWidget(panel);
+        QVERIFY(quick && quick->rootObject());
+        QObject *root = quick->rootObject();
+        auto *first = root->findChild<QQuickItem *>(p("first"));
+        QVERIFY(first);
+        const auto workInScene = [&] {
+            QVERIFY(f.manager.activatePanel(p("q")));
+            QCOMPARE(QApplication::focusWidget(), quick.data());
+            QTRY_VERIFY(first->hasActiveFocus());
+        };
+
+        // Another tab is clicked: it has the focus, and the scene was not
+        // asked for anything.
+        workInScene();
+        QVERIFY(f.manager.activatePanel(p("a")));
+        QVERIFY(!quick->isVisible());
+        QCOMPARE(QApplication::focusWidget(), f.widgets[p("a")]);
+        QCOMPARE(root->property("tabbed").toInt(), 0);
+
+        // Another tab only comes to the front.
+        workInScene();
+        QVERIFY(f.manager.raisePanel(p("a")));
+        QVERIFY(!quick->isVisible());
+        QCOMPARE(root->property("tabbed").toInt(), 0);
+
+        // Moved, the scene is hidden on the way and has the focus again.
+        workInScene();
+        QVERIFY(f.manager.movePanel(p("q"), p("a"), DockArea::Right));
+        QVERIFY(quick->isVisible());
+        QCOMPARE(QApplication::focusWidget(), quick.data());
+        QTRY_VERIFY(first->hasActiveFocus());
+        QCOMPARE(root->property("tabbed").toInt(), 0);
+    }
+
 private:
     QTemporaryDir m_dir;
     QUrl m_source;

@@ -151,6 +151,10 @@ DockResult DockManagerPrivate::apply(LayoutState next, bool recordUndo)
     if (recordUndo)
         pushUndo(state);
     const QPointer<QWidget> focusBefore = QApplication::focusWidget();
+    // The tab group the focus is in, for the tab that may take its place.
+    std::optional<PanelLocation> focusGroup;
+    if (DockPanel *panel = panelContaining(focusBefore))
+        focusGroup = state.locate(panel->id());
     keepCurrentGroups(next);
     state = std::move(next);
     syncViews();
@@ -158,10 +162,13 @@ DockResult DockManagerPrivate::apply(LayoutState next, bool recordUndo)
 
     updatePanelStates(true);
     // Moving widgets around can drop keyboard focus; hand it back if the
-    // widget that had it is still on screen.
-    if (focusBefore && focusBefore != QApplication::focusWidget() && focusBefore->isVisible()
-        && focusBefore->window()->isActiveWindow()) {
-        focusBefore->setFocus(Qt::OtherFocusReason);
+    // widget that had it is still on screen. If its tab is covered or gone,
+    // the focus goes to the tab in front of that group now.
+    if (focusBefore && focusBefore != QApplication::focusWidget()) {
+        if (!focusBefore->isVisible())
+            focusFrontOf(focusGroup);
+        else if (focusBefore->window()->isActiveWindow())
+            focusBefore->setFocus(Qt::OtherFocusReason);
     }
     for (const QPointer<DockPanel> &panel : std::as_const(moving)) {
         if (panel)
@@ -1139,6 +1146,7 @@ void DockManagerPrivate::setDragInProgress(bool inProgress)
         if (!p->hideContentDuringDrag || !p->widget)
             continue;
         if (inProgress) {
+            releaseFocus(p->widget);
             p->widget->hide();
         } else if (const std::optional<PanelLocation> location = state.locate(p->id)) {
             if (location->isAutoHidden()) {
@@ -1411,6 +1419,7 @@ void DockManagerPrivate::reparentContent(DockPanel *panel, QWidget *parent)
     };
     QWidget *before = topLevelOf(widget->parentWidget());
     Q_EMIT panel->aboutToBeReparented();
+    releaseFocus(widget); // it is hidden on the way
     widget->setParent(parent);
     QWidget *after = topLevelOf(parent);
     Q_EMIT panel->reparented(before != after);
@@ -1418,6 +1427,33 @@ void DockManagerPrivate::reparentContent(DockPanel *panel, QWidget *parent)
         Q_EMIT panel->topLevelChanged(after);
         Q_EMIT q->panelWindowChanged(panel, after);
     }
+}
+
+// Qt asks a widget that is hidden while it has the keyboard focus to pass it
+// on (focusNextPrevChild()), and not every widget passes it to another widget:
+// a QQuickWidget sends its scene a Tab key, so the focus moves to the next
+// item of a panel nobody sees any more, with whatever that item does when it
+// is focused. Content gives the focus up before that; apply() hands it to
+// what is shown in its place.
+void DockManagerPrivate::releaseFocus(QWidget *content)
+{
+    QWidget *focus = QApplication::focusWidget();
+    if (content && focus && (focus == content || content->isAncestorOf(focus)))
+        focus->clearFocus();
+}
+
+void DockManagerPrivate::focusFrontOf(const std::optional<PanelLocation> &group)
+{
+    if (!group || group->isAutoHidden())
+        return;
+    const ContainerState *container = state.find(group->container);
+    const LayoutNode *node = container ? container->tree.findNode(group->node) : nullptr;
+    DockPanel *front = node ? panels.value(node->active) : nullptr;
+    QWidget *content = front ? get(front)->widget.data() : nullptr;
+    if (!content || !content->isVisible())
+        return;
+    QWidget *target = content->focusWidget() ? content->focusWidget() : content;
+    target->setFocus(Qt::OtherFocusReason);
 }
 
 void DockManagerPrivate::parkIfHostedBy(DockPanel *panel, const QWidget *host)
@@ -1482,6 +1518,7 @@ QWidget *DockManagerPrivate::removePanel(const PanelId &id, DockManager::Placeme
         panelByWidget.remove(widget);
         widget->removeEventFilter(panel);
         QObject::disconnect(widget, &QObject::destroyed, q, nullptr);
+        releaseFocus(widget);
         widget->hide();
         widget->setParent(nullptr);
         if (!keepWidget) {
