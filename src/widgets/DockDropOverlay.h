@@ -33,6 +33,7 @@ class QFLEXDOCK_EXPORT DockDropOverlay : public QWidget
     Q_PROPERTY(int zoneGap READ zoneGap WRITE setZoneGap)
     Q_PROPERTY(int zoneMargin READ zoneMargin WRITE setZoneMargin)
     Q_PROPERTY(bool showPreview READ showPreview WRITE setShowPreview)
+    Q_PROPERTY(bool previewCoversHeader READ previewCoversHeader WRITE setPreviewCoversHeader)
     Q_PROPERTY(QFlexDock::DockGuide guide READ guide WRITE setGuide)
     Q_PROPERTY(int buttonSize READ buttonSize WRITE setButtonSize)
 
@@ -69,6 +70,8 @@ public:
     void setZoneMargin(int margin) { m_overrides.zoneMargin = margin; update(); }
     bool showPreview() const { return effectiveStyle().showPreview; }
     void setShowPreview(bool show) { m_showPreview = show; update(); }
+    bool previewCoversHeader() const { return effectiveStyle().previewCoversHeader; }
+    void setPreviewCoversHeader(bool covers) { m_previewCoversHeader = covers; update(); }
     QColor buttonColor() const { return effectiveStyle().buttonColor; }
     void setButtonColor(const QColor &c) { m_overrides.buttonColor = c; update(); }
     DockGuide guide() const { return effectiveStyle().guide; }
@@ -85,6 +88,7 @@ private:
     // Values set through the properties; invalid / negative means "not set".
     DockOverlayStyle m_overrides;
     std::optional<bool> m_showPreview;
+    std::optional<bool> m_previewCoversHeader;
     std::optional<DockGuide> m_guide;
 };
 

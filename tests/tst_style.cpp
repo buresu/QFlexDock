@@ -280,6 +280,7 @@ private Q_SLOTS:
                 qproperty-zoneGap: 12;
                 qproperty-zoneMargin: 30;
                 qproperty-showPreview: true;
+                qproperty-previewCoversHeader: true;
             }
         )"));
         QCoreApplication::processEvents();
@@ -369,6 +370,8 @@ private Q_SLOTS:
         QCOMPARE(style.zoneMargin, 30);
         QCOMPARE(style.showPreview, true);
         QCOMPARE(DockOverlayStyle{}.showPreview, false); // off unless asked for
+        QCOMPARE(style.previewCoversHeader, true);
+        QCOMPARE(DockOverlayStyle{}.previewCoversHeader, false);
         // What the sheet does not mention keeps its default.
         QCOMPARE(style.outerBandWidth, DockOverlayStyle{}.outerBandWidth);
         showGuide(f, area, "b", "a");

@@ -145,10 +145,18 @@ bar (`DockTheme::splitHandleHoverWidth`) without anything moving.
 4. A drop only registers its target. **After `QDrag::exec()` has returned**, the policies are checked again
    and the change is committed as one transaction.
 
-Priority at a position: the band along the border (docking against the whole workspace), then tabs
-(insertion and reordering — only over the tabs themselves), then the five zones of the panel. The five zones
-are a center rectangle and four trapezoids that together cover the target, so there is no small icon to aim
-for. Over the dragged group itself the center zone means "leave it here" and changes nothing.
+Priority at a position: the band along the border (docking against the whole workspace), then the rows
+that take a tab (insertion and reordering: the title row of a group, where what is dropped beside the tabs
+becomes the last one, and tabs that are below the content), then the five zones of the panel. The five zones
+are a center rectangle and four trapezoids that together cover the content of the group, so there is no
+small icon to aim for, and nothing is drawn over the rows. (A group whose content is less than half of it
+has them over all of it.) A row that cannot take what is dragged as a tab is no dead space: the zone next
+to it reaches over it (`DropZoneLayout::bounds`). Over the dragged group itself the center zone means
+"leave it here" and changes nothing.
+
+The band is as wide on every side and is drawn over the rows it crosses. Over the tabs themselves no more
+than a strip at the very edge is the band's, so tabs along the border still take a tab between them; the
+empty rest of such a row is the band's, which is what keeps the band along a row of tabs easy to hit.
 
 `DockGuide::Preview` has the same areas and shows only the place of the drop. `DockGuide::Buttons` has a
 button per area instead (`DropButtonLayout`): a cross in the middle of the group, kept inside the dock
@@ -166,11 +174,11 @@ panel that stays (`retarget()` in DockManager.cpp). A strip of buttons is hit li
 for, each by its buttons. A drag of a whole column (`DockDragController::beginColumn()`) has a split for
 its source node, as a drag of a whole floating window has.
 
-Two things change this for windows that are rows of tabs (or for one workspace of them, by
-`setCenterDropEnabled(workspace, false)`). Where a group has no edge zone to offer (the
-dragged panels allow `Center` only), its whole title row counts as its tabs. And with
-`DockManager::setCenterDropEnabled(false)` there is no center zone, not even the "leave it here" one: what
-is not dropped on a header is dropped nowhere, which `finish()` treats like a drop outside every window.
+For windows that are rows of tabs (or for one workspace of them, by
+`DockWorkspace::setCenterDropEnabled(false)`), `DockManager::setCenterDropEnabled(false)` leaves no center
+zone, not even the "leave it here" one: what is not dropped on a header is dropped nowhere (where the
+dragged panels allow `Center` only, so that there is no edge zone either), which `finish()` treats like a
+drop outside every window.
 
 **Moving a tab along its bar** is not a drag. For as long as the pointer stays in the row of the bar
 (`DockTabBar::tabMoveRegion()`), where the tab would go is where a drop at the pointer would put it (past

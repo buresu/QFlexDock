@@ -83,8 +83,10 @@ inline constexpr DockFeatures AllDockFeatures = DockFeatures(0x3f);
 /// What the drop guide shows while something is dragged over a dock area, and
 /// with that what the user aims at (DockOverlayStyle::guide).
 enum class DockGuide {
-    /// Five large areas that together cover the tab group under the pointer,
-    /// and a band along the border of the workspace. Nothing small to aim at.
+    /// Five large areas that together cover the content of the tab group
+    /// under the pointer, and a band along the border of the workspace.
+    /// Nothing small to aim at. The header of the group is left free: it
+    /// takes what is dropped on it as a tab, with every guide.
     Zones,
     /// The same areas, not drawn: all there is to see is the rectangle the
     /// dropped content would take.

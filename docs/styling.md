@@ -134,8 +134,9 @@ again from some of the groups.
 | `borderWidth` | real | 0 for no border |
 | `cornerRadius` | real | Sharp corners are rounded less so that their tips survive |
 | `zoneGap` | int | Space between zones |
-| `zoneMargin` | int | Space between the zones and the edge of the target (default 6) |
+| `zoneMargin` | int | Space between the zones and the edge of what they lie over, the content of a tab group (default 6) |
 | `showPreview` | bool | `false` (default): highlight the zone under the pointer. `true`: show the area the panel would take instead |
+| `previewCoversHeader` | bool | What that area is for a panel that would become a tab of a group. `false` (default): the content of the group. `true`: all of the group, its header included |
 | `guide` | `Zones`, `Preview`, `Buttons` | What the guide consists of (`DockGuide`, see [api.md](api.md)) |
 | `buttonSize` | int | Side of a button of the `Buttons` guide (default 36); `zoneGap` is the space between two, `zoneMargin` that to the border of the workspace |
 | `buttonColor` | color | Background of such a button. Its border is `zoneBorderColor`; the hovered one has `hoverColor` over it and `hoverBorderColor` around it |
@@ -161,6 +162,7 @@ theme.columnBarHeight = 12;                              // the bar above a colu
 theme.overlay.guide = QFlexDock::DockGuide::Buttons;     // small buttons; default: Zones
 theme.overlay.buttonSize = 40;                           // their side
 theme.overlay.hoverColor = QColor(255, 128, 0, 120);     // an invalid color is derived from the palette
+theme.overlay.previewCoversHeader = true;                // a new tab is shown over all of its group; default: its content
 theme.overlay.edgeFraction = 0.25;                       // depth of the edge zones, relative to the target
 theme.overlay.edgeExtent = 10;                           // or in pixels, the same on every target; -1: the fraction
 theme.overlay.outerBandWidth = 32;                       // band along the workspace border; 0 disables it
@@ -203,7 +205,9 @@ manager.setOverlayPainter(std::make_shared<MyOverlayPainter>());
 ```
 
 `style` has all three layers resolved, so every color is valid. `scene.preview` (the area the panel would
-take) is always filled in, whatever `showPreview` says, and `scene.tabIndicator` marks an insertion between tabs.
+take: half of a group it is put beside, the content of a group it becomes a tab of, or all of that group
+with `previewCoversHeader`) is always filled in,
+whatever `showPreview` says, and `scene.tabIndicator` marks an insertion between tabs.
 With `DockGuide::Buttons` (`style.guide`) the shape of a zone is the square of its button.
 
 For a guide that shows a drop by what it does, the scene also says what the drop is about: `scene.target`

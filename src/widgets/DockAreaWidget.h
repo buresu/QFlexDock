@@ -28,7 +28,8 @@ struct DropCandidate
     DropTarget target;
 
     // Presentation only.
-    /// Region the five large areas are laid over (the hovered tab group).
+    /// Region the five large areas are laid over: the content of the
+    /// hovered tab group, below its header.
     QRect zoneRect;
     DockAreas zones;
     /// The tab group the guide is for; null over none.
@@ -226,6 +227,7 @@ private:
     [[nodiscard]] QStringList panelsOf(NodeId node) const;
 
     [[nodiscard]] int headerHeight() const;
+    [[nodiscard]] QRect partRect(const QWidget *part) const;
     void handleDrag(QDragMoveEvent *event);
     [[nodiscard]] std::vector<int> linkedGroup(int handleIndex, bool linked) const;
     [[nodiscard]] std::vector<int> linkedGroup(const std::vector<int> &handles, bool linked) const;

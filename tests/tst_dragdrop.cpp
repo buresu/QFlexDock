@@ -124,6 +124,19 @@ QPoint zonePoint(DockAreaWidget *area, const char *panel, DockArea zone)
     }
 }
 
+/// The part of the tab group holding `panel` that the guide is for: what is
+/// below its title row, and above its tabs where those are below the content.
+QRect contentRect(DockAreaWidget *area, const char *panel)
+{
+    const DockTabGroup *group = area->groupOfPanel(p(panel));
+    QRect rect = group->geometry();
+    if (group->titleBar()->isVisible())
+        rect.setTop(group->titleBar()->mapTo(area, QPoint(0, 0)).y() + group->titleBar()->height());
+    if (group->tabBar()->isVisible() && group->tabBar()->parentWidget() != group->titleBar())
+        rect.setBottom(group->tabBar()->mapTo(area, QPoint(0, 0)).y() - 1);
+    return rect;
+}
+
 const DockOverlayScene::Zone *hoveredZone(DockAreaWidget *area)
 {
     for (const auto &zone : area->overlay()->scene().zones) {
@@ -162,10 +175,15 @@ private Q_SLOTS:
         QVERIFY(drag.enter(area, zonePoint(area, "b", DockArea::Center)));
         QVERIFY(drag.move(area, zonePoint(area, "b", DockArea::Center)));
 
-        // Five large areas over the hovered group, plus the four outer bands.
+        // Five large areas over the content of the hovered group, plus the
+        // four outer bands.
         DockDropOverlay *overlay = area->overlay();
         QVERIFY(overlay->isVisible());
-        const QRect groupRect = area->groupOfPanel(p("b"))->geometry();
+        const DockTabGroup *group = area->groupOfPanel(p("b"));
+        const QRect groupRect = group->geometry();
+        const QRect content = contentRect(area, "b");
+        const QRect header(group->titleBar()->mapTo(area, QPoint(0, 0)), group->titleBar()->size());
+        QCOMPARE(content.top(), header.bottom() + 1);
         int inner = 0;
         int outer = 0;
         QRegion guide;
@@ -176,17 +194,21 @@ private Q_SLOTS:
         }
         QCOMPARE(inner, 5);
         QCOMPARE(outer, 4);
-        // "Large" means the guide spans the target (short of the outer bands
+        // "Large" means the guide spans the content (short of the outer bands
         // it borders on and of its own margin), not a cluster in its middle.
         const int band = overlay->effectiveStyle().outerBandWidth;
         const int margin = overlay->effectiveStyle().zoneMargin;
-        QVERIFY(guide.boundingRect().width() >= groupRect.width() - band - 2 * margin - 2);
-        QVERIFY(guide.boundingRect().height() >= groupRect.height() - 2 * band - 2 * margin - 2);
-        // ...and keeps that margin from the target's border.
-        QVERIFY(groupRect.adjusted(margin, margin, -margin, -margin).contains(guide.boundingRect()));
+        QVERIFY(guide.boundingRect().width() >= content.width() - band - 2 * margin - 2);
+        QVERIFY(guide.boundingRect().height() >= content.height() - band - 2 * margin - 2);
+        // ...and keeps that margin from its border, and so stays clear of the
+        // row of the tabs, which takes a tab itself.
+        QVERIFY(content.adjusted(margin, margin, -margin, -margin).contains(guide.boundingRect()));
+        QVERIFY(!guide.intersects(header));
         QVERIFY(hoveredZone(area));
         QCOMPARE(hoveredZone(area)->area, DockArea::Center);
-        QCOMPARE(overlay->scene().preview, groupRect);
+        // Its content is what a tab of the group takes.
+        QCOMPARE(overlay->scene().preview, content);
+        QCOMPARE(overlay->scene().target, groupRect);
         grab(&f.windowA, p("overlay-center"));
 
         // The preview shows what the drop would occupy.
@@ -792,7 +814,7 @@ private Q_SLOTS:
     // Dropping between tabs takes the tabs themselves. The empty rest of a
     // title row must not: someone aiming at the top of a panel, or at the top
     // edge of the window, passes right over it.
-    void onlyTheTabsTakeTabDrops()
+    void theRowOfTheTabsTakesTabDrops()
     {
         TwoWindows f;
         f.show();
@@ -821,34 +843,256 @@ private Q_SLOTS:
             QCOMPARE(onTab.target.area, DockArea::Center);
             QVERIFY(onTab.target.tabIndex >= 0);
         }
+
         // Just behind the last tab still appends.
         {
-            const DockTabBar *bar = area->groupOfPanel(p("c"))->tabBar();
-            const QPoint behind = bar->mapTo(area, QPoint(bar->tabRect(0).right() + 6, bar->height() / 2));
+            const DockTabBar *bar = area->groupOfPanel(p("a"))->tabBar();
+            const QPoint behind = bar->mapTo(area, QPoint(bar->tabRect(1).right() + 6, bar->height() / 2));
             const DropCandidate append = area->candidateAt(behind, drag.session());
             QVERIFY(append.tabIndicator.isValid());
-            QCOMPARE(append.target.tabIndex, 1);
+            QCOMPARE(append.target.tabIndex, 2);
         }
 
-        // Beside the tabs, in the title row along the top of the window: the
-        // outer band, at its full width, not a tab drop.
+        // Beside the tabs, in a row along the top of the window: the outer
+        // band, at its full width. It is drawn over the tabs as well, where
+        // no more than a strip at the very edge is the band's.
         const DropCandidate topRow = area->candidateAt(titlePoint("a", false), drag.session());
         QVERIFY(topRow.valid);
         QVERIFY(!topRow.tabIndicator.isValid());
         QVERIFY(topRow.outer);
         QCOMPARE(topRow.target.area, DockArea::Top);
         QVERIFY(topRow.target.node.isNull());
+        const DropCandidate edge =
+            area->candidateAt(QPoint(titlePoint("a", true).x(), 2), drag.session());
+        QVERIFY(edge.valid);
+        QVERIFY(edge.outer);
+        QCOMPARE(edge.target.area, DockArea::Top);
 
-        // Beside the tabs of a group in the middle of the window: that group's
-        // top area.
-        const DropCandidate middle = area->candidateAt(titlePoint("c", false), drag.session());
-        QVERIFY(middle.valid);
-        QVERIFY(!middle.tabIndicator.isValid());
-        QVERIFY(!middle.outer);
-        QCOMPARE(middle.target.area, DockArea::Top);
-        QCOMPARE(middle.target.node, areaOf(f.a)->tree().findPanel(p("c"))->id);
+        // Beside the tabs of a group in the middle of the window, anywhere
+        // along their row: behind the last of them.
+        {
+            const DockTabGroup *group = area->groupOfPanel(p("c"));
+            const DropCandidate beside = area->candidateAt(titlePoint("c", false), drag.session());
+            QVERIFY(beside.valid);
+            QVERIFY(!beside.outer);
+            QVERIFY(beside.byHeader);
+            QVERIFY(beside.tabIndicator.isValid());
+            QCOMPARE(beside.target.area, DockArea::Center);
+            QCOMPARE(beside.target.node, group->nodeId());
+            QCOMPARE(beside.target.tabIndex, 1);
+            // What is shown as taken is the content, not the row.
+            QCOMPARE(beside.preview, contentRect(area, "c"));
+            // The buttons at the end of the row are part of it, short of
+            // the outer band at the side.
+            const QPoint onButton = group->menuButton()->mapTo(area, QPoint(3, 3));
+            QVERIFY(onButton.x() < area->width() - area->overlay()->effectiveStyle().outerBandWidth);
+            QCOMPARE(area->candidateAt(onButton, drag.session()).target.tabIndex, 1);
+        }
+
+        // Just below the row the areas of the guide begin.
+        const QRect content = contentRect(area, "c");
+        const DropCandidate below =
+            area->candidateAt(QPoint(content.center().x(), content.top() + 2), drag.session());
+        QVERIFY(below.valid);
+        QVERIFY(!below.byHeader);
+        QCOMPARE(below.target.area, DockArea::Top);
+        QCOMPARE(below.target.node, area->groupOfPanel(p("c"))->nodeId());
+
         QVERIFY(drag.drop(area, titlePoint("c", false)));
-        QCOMPARE(describe(f.a), p("V(a|b, d, c)"));
+        QCOMPARE(describe(f.a), p("V(a|b, c|d)"));
+        // A tab of the group itself is put last there.
+        QVERIFY(drag.begin("c"));
+        QVERIFY(drag.drop(area, titlePoint("c", false)));
+        QCOMPARE(describe(f.a), p("V(a|b, d|c)"));
+    }
+
+    // What cannot become a tab finds no dead space in a row of tabs: the area
+    // of the guide next to the row reaches over it.
+    void aRowThatTakesNoTabBelongsToTheAreaBelowIt()
+    {
+        TwoWindows f;
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom, 0.5));
+        QVERIFY(f.b->addPanel(p("d")));
+        DockPolicy policy;
+        policy.allowedAreas = EdgeDockAreas;
+        f.manager.panel(p("d"))->setPolicy(policy);
+        DockAreaWidget *area = areaOf(f.a);
+        const DockTabGroup *group = area->groupOfPanel(p("c"));
+        const DockTabBar *bar = group->tabBar();
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        for (const QPoint &local : {bar->tabRect(0).center(),
+                                    QPoint(bar->tabRect(0).right() + 200, bar->height() / 2)}) {
+            const DropCandidate onRow = area->candidateAt(bar->mapTo(area, local), drag.session());
+            QVERIFY(onRow.valid);
+            QVERIFY(!onRow.byHeader);
+            QVERIFY(!onRow.tabIndicator.isValid());
+            QCOMPARE(onRow.target.area, DockArea::Top);
+            QCOMPARE(onRow.target.node, group->nodeId());
+        }
+        // The areas are drawn below the row all the same.
+        QVERIFY(drag.move(area, bar->mapTo(area, bar->tabRect(0).center())));
+        QCOMPARE(hoveredZone(area)->area, DockArea::Top);
+        QVERIFY(contentRect(area, "c").contains(hoveredZone(area)->shape.boundingRect().toRect()));
+    }
+
+    // A header that names its panel takes a tab, and so do tabs that are
+    // below the content: the guide is for what lies between the two.
+    void titleBarAndTabsBelowTakeTabDrops()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.outerBandWidth = 0;
+        f.manager.setTheme(theme);
+        f.manager.setGroupHeader(DockGroupHeader::TitleBar);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Right));
+        QVERIFY(f.b->addPanel(p("d")));
+        DockAreaWidget *area = areaOf(f.a);
+        const DockTabGroup *group = area->groupOfPanel(p("a"));
+        const DockTabBar *bar = group->tabBar();
+        QVERIFY(bar->isVisible());
+        QVERIFY(bar->parentWidget() != group->titleBar());
+        const QRect whole = group->geometry();
+        const QRect title(group->titleBar()->mapTo(area, QPoint(0, 0)), group->titleBar()->size());
+        const QRect tabs(bar->mapTo(area, QPoint(0, 0)), bar->size());
+        const QRect content = contentRect(area, "a");
+        QCOMPARE(content.top(), title.bottom() + 1);
+        QCOMPARE(content.bottom(), tabs.top() - 1);
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        // The areas lie over the content, clear of both rows.
+        QVERIFY(drag.move(area, content.center()));
+        QRegion guide;
+        for (const auto &zone : area->overlay()->scene().zones)
+            guide += zone.shape.toPolygon();
+        QVERIFY(content.contains(guide.boundingRect()));
+        QCOMPARE(area->overlay()->scene().preview, content);
+        QCOMPARE(area->overlay()->scene().target, whole);
+        QCOMPARE(area->overlay()->scene().header, title);
+
+        // The title bar: a tab behind the others.
+        const DropCandidate onTitle = area->candidateAt(title.center(), drag.session());
+        QVERIFY(onTitle.valid);
+        QVERIFY(onTitle.byHeader);
+        QCOMPARE(onTitle.target.area, DockArea::Center);
+        QCOMPARE(onTitle.target.tabIndex, 2);
+        QCOMPARE(onTitle.preview, content);
+        // The tabs below: where the pointer is among them, and behind them
+        // anywhere beside them.
+        const DropCandidate first =
+            area->candidateAt(bar->mapTo(area, bar->tabRect(0).center() - QPoint(8, 0)),
+                              drag.session());
+        QVERIFY(first.valid);
+        QVERIFY(first.tabIndicator.isValid());
+        QCOMPARE(first.target.tabIndex, 0);
+        const DropCandidate beside =
+            area->candidateAt(QPoint(tabs.right() - 4, tabs.center().y()), drag.session());
+        QVERIFY(beside.valid);
+        QVERIFY(beside.byHeader);
+        QCOMPARE(beside.target.tabIndex, 2);
+
+        // A group with one panel has no tabs below: the guide reaches down
+        // to its lower edge.
+        QVERIFY(!area->groupOfPanel(p("c"))->tabBar()->isVisible());
+        QCOMPARE(contentRect(area, "c").bottom(), area->groupOfPanel(p("c"))->geometry().bottom());
+        QVERIFY(drag.drop(area, title.center()));
+        QCOMPARE(describe(f.a), p("H(a|b|d, c)"));
+    }
+
+    // The preview of a drop that adds a tab may cover the header as well.
+    // Nothing else changes with that: not the areas, not what takes the drop.
+    void previewOfANewTabCanCoverTheHeader()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.previewCoversHeader = true;
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom, 0.5));
+        QVERIFY(f.b->addPanel(p("d")));
+        DockAreaWidget *area = areaOf(f.a);
+        const DockTabGroup *group = area->groupOfPanel(p("c"));
+        const QRect whole = group->geometry();
+        const QRect content = contentRect(area, "c");
+        const QRect header(group->titleBar()->mapTo(area, QPoint(0, 0)), group->titleBar()->size());
+        const DockTabBar *bar = group->tabBar();
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        // Over the middle: all of the group, with the areas where they were.
+        QVERIFY(drag.move(area, zonePoint(area, "c", DockArea::Center)));
+        QCOMPARE(hoveredZone(area)->area, DockArea::Center);
+        QCOMPARE(area->overlay()->scene().preview, whole);
+        QCOMPARE(area->overlay()->scene().header, header);
+        QRegion guide;
+        for (const auto &zone : area->overlay()->scene().zones) {
+            if (!zone.outer)
+                guide += zone.shape.toPolygon();
+        }
+        QVERIFY(content.contains(guide.boundingRect()));
+        // Among the tabs and beside them.
+        for (const QPoint &local : {bar->tabRect(0).center(),
+                                    QPoint(bar->tabRect(0).right() + 200, bar->height() / 2)}) {
+            const DropCandidate onRow = area->candidateAt(bar->mapTo(area, local), drag.session());
+            QVERIFY(onRow.byHeader);
+            QCOMPARE(onRow.preview, whole);
+        }
+        // A drop beside the group takes half of it, as ever.
+        QVERIFY(drag.move(area, zonePoint(area, "c", DockArea::Left)));
+        QCOMPARE(area->overlay()->scene().preview, dropPreviewRect(whole, DockArea::Left, 0.5));
+
+        // A style sheet can say so too, for one dock area.
+        theme.overlay.previewCoversHeader = false;
+        f.manager.setTheme(theme);
+        QVERIFY(drag.move(area, zonePoint(area, "c", DockArea::Center)));
+        QCOMPARE(area->overlay()->scene().preview, content);
+        area->overlay()->setPreviewCoversHeader(true);
+        QVERIFY(drag.move(area, zonePoint(area, "c", DockArea::Center)));
+        QCOMPARE(area->overlay()->scene().preview, whole);
+    }
+
+    // Next to no content showing: the areas lie over all of the group, whose
+    // rows take tabs as ever.
+    void aGroupOfLittleMoreThanItsHeaderHasTheGuideOverAllOfIt()
+    {
+        TwoWindows f;
+        DockTheme theme;
+        theme.overlay.outerBandWidth = 0;
+        f.manager.setTheme(theme);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.b->addPanel(p("d")));
+        DockAreaWidget *area = areaOf(f.a);
+        // As low as it takes for the header to be the greater part of it.
+        const int header = area->groupOfPanel(p("a"))->titleBar()->height();
+        QVERIFY(f.a->addPanel(p("c"), DockArea::Bottom, 1.5 * header / area->height()));
+        const DockTabGroup *group = area->groupOfPanel(p("c"));
+        QTRY_VERIFY(group->height() > header && group->height() < 2 * header);
+        const QRect whole = group->geometry();
+
+        Drag drag(f.manager);
+        QVERIFY(drag.begin("d"));
+        const QPoint below(whole.center().x(), whole.bottom() - 2);
+        QVERIFY(drag.move(area, below));
+        QRegion guide;
+        for (const auto &zone : area->overlay()->scene().zones)
+            guide += zone.shape.toPolygon();
+        QVERIFY(guide.boundingRect().top() < whole.top() + header);
+        QCOMPARE(hoveredZone(area)->area, DockArea::Bottom);
+        const DockTabBar *bar = group->tabBar();
+        const DropCandidate onTab =
+            area->candidateAt(bar->mapTo(area, bar->tabRect(0).center()), drag.session());
+        QVERIFY(onTab.valid);
+        QVERIFY(onTab.tabIndicator.isValid());
     }
 
     void failedDropRollsBack()
@@ -1053,14 +1297,6 @@ private Q_SLOTS:
         const QPoint beside = bar->mapTo(area, QPoint(bar->tabRect(1).right() + 200, bar->height() / 2));
         QVERIFY(group->titleBar()->geometry().contains(group->mapFrom(area, beside)));
         QVERIFY(!bar->tabDropRegion().contains(bar->mapFrom(area, beside)));
-
-        // Ordinarily that spot belongs to the areas that split.
-        {
-            Drag drag(f.manager);
-            QVERIFY(drag.begin("c"));
-            QVERIFY(drag.move(area, beside));
-            QVERIFY(area->overlay()->scene().tabIndicator.isNull());
-        }
 
         DockPolicy policy;
         policy.allowedAreas = DockArea::Center;
@@ -1795,7 +2031,7 @@ private Q_SLOTS:
         QVERIFY((crossRegion.boundingRect().center() - groupRect.center()).manhattanLength() <= 2);
         QVERIFY(crossRegion.boundingRect().width() < groupRect.width() * 2 / 3);
         QCOMPARE(hoveredZone(area)->area, DockArea::Center);
-        QCOMPARE(overlay->scene().preview, groupRect);
+        QCOMPARE(overlay->scene().preview, contentRect(area, "b"));
         grab(&f.windowA, p("buttons-center"));
 
         // Beside the buttons the group takes nothing.
@@ -1877,8 +2113,8 @@ private Q_SLOTS:
         QCOMPARE(describe(f.a), p("H(a, V(H(b, d), c))"));
     }
 
-    // A header that names its panel takes a tab with the button guide: the
-    // rest of the group is no target there.
+    // A header that names its panel takes a tab with the button guide as
+    // well, where the rest of the group, the buttons aside, is no target.
     void buttonGuideLetsATitleBarTakeATab()
     {
         TwoWindows f;
@@ -1896,7 +2132,7 @@ private Q_SLOTS:
         Drag drag(f.manager);
         QVERIFY(drag.begin("a"));
         QVERIFY(drag.move(area, onTitle));
-        QCOMPARE(area->overlay()->scene().preview, group->geometry());
+        QCOMPARE(area->overlay()->scene().preview, contentRect(area, "b"));
         // Its own title bar is where the drag began: nothing to do there.
         const DockTabGroup *own = area->groupOfPanel(p("a"));
         QVERIFY(!drag.move(area, own->titleBar()->mapTo(area, QPoint(30, 4))));
@@ -2358,7 +2594,7 @@ private Q_SLOTS:
             area->candidateAt(out->geometry().center(), drag.session());
         QVERIFY(candidate.valid);
         QCOMPARE(candidate.zones, DockAreas(DockArea::Center));
-        QCOMPARE(candidate.preview, out->geometry());
+        QCOMPARE(candidate.preview, contentRect(area, "b"));
         QVERIFY(drag.drop(area, out->geometry().center()));
         QCOMPARE(describe(f.a), p("H(V(a, c), b|d)"));
         QVERIFY(f.manager.isColumnIconified(p("d")));
@@ -2383,23 +2619,25 @@ private Q_SLOTS:
         DockTabGroup *group = area->groupOfPanel(p("a"));
         const QRect header(group->titleBar()->mapTo(area, QPoint(0, 0)), group->titleBar()->size());
         const QRect whole = group->geometry();
+        const QRect content = contentRect(area, "a");
         DockDragController *controller = priv(f.manager)->drag;
 
-        // Another group's panel, over the middle: the group and its header.
+        // Another group's panel, over the middle: the group, its content
+        // and its header.
         {
             Drag drag(f.manager);
             QVERIFY(drag.begin("d"));
             controller->showSourcePreview();
             QVERIFY(drag.move(area, whole.center()));
             const DockOverlayScene scene = area->overlay()->scene();
-            QCOMPARE(scene.preview, whole);
+            QCOMPARE(scene.preview, content);
             QCOMPARE(scene.target, whole);
             QCOMPARE(scene.header, header);
             QVERIFY(!scene.ownGroup);
             QVERIFY(scene.tabGap.isNull());
             // Twelve pixels in is the middle, with edges twelve deep.
             QVERIFY(drag.move(area, QPoint(whole.left() + 12, whole.center().y())));
-            QCOMPARE(area->overlay()->scene().preview, whole);
+            QCOMPARE(area->overlay()->scene().preview, content);
             // At an edge nothing is joined.
             QVERIFY(drag.move(area, QPoint(whole.left() + 11, whole.center().y())));
             QCOMPARE(area->overlay()->scene().preview, dropPreviewRect(whole, DockArea::Left, 0.5));
@@ -2445,7 +2683,7 @@ private Q_SLOTS:
         QVERIFY(drag.move(area, whole.center()));
         const DockOverlayScene scene = area->overlay()->scene();
         QVERIFY(scene.ownGroup);
-        QCOMPARE(scene.preview, whole);
+        QCOMPARE(scene.preview, content);
         QCOMPARE(scene.header, header);
         QCOMPARE(group->dropGap(), 1);
         QVERIFY(header.contains(scene.tabGap));

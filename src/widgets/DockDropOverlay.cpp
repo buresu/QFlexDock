@@ -55,6 +55,8 @@ DockOverlayStyle DockDropOverlay::effectiveStyle() const
         style.buttonSize = m_overrides.buttonSize;
     if (m_showPreview)
         style.showPreview = *m_showPreview;
+    if (m_previewCoversHeader)
+        style.previewCoversHeader = *m_previewCoversHeader;
     if (m_guide)
         style.guide = *m_guide;
     return style.resolved(palette());

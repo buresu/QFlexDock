@@ -14,6 +14,8 @@ namespace QFlexDock {
 /// The target rectangle is cut into a centre rectangle and four trapezoids
 /// that reach from the centre to the edges, so the five areas together cover
 /// the whole target: there is no dead space and no small icon to aim for.
+/// The target is the content of a tab group; `bounds` may be set to more
+/// than that afterwards, for a header the edge areas are to reach over.
 /// Pure geometry; painting lives in DockOverlayPainter.
 struct QFLEXDOCK_EXPORT DropZoneLayout
 {

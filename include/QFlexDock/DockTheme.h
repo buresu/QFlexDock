@@ -35,7 +35,8 @@ struct QFLEXDOCK_EXPORT DockOverlayStyle
     qreal cornerRadius = 6.0;
     /// Gap between neighbouring areas, in pixels.
     int zoneGap = 6;
-    /// Distance the areas keep from the border of the target they lie over.
+    /// Distance the areas keep from the border of what they lie over (the
+    /// content of a tab group).
     int zoneMargin = 6;
     /// What the guide consists of: large areas (the default), the preview
     /// of the drop alone, or small buttons.
@@ -50,6 +51,11 @@ struct QFLEXDOCK_EXPORT DockOverlayStyle
     /// DockGuide::Zones: Preview shows nothing but that rectangle, and
     /// Buttons shows it along with the hovered button.
     bool showPreview = false;
+    /// What the preview of a drop that adds a tab to a group covers. False
+    /// (the default): the content of the group, below its header. True: all
+    /// of the group, its header included. (Where the drop goes is the same
+    /// either way, and so are the areas of DockGuide::Zones.)
+    bool previewCoversHeader = false;
     /// Depth of the four edge areas as a share of the target (0.1 - 0.4).
     double edgeFraction = 0.28;
     /// Their depth in pixels where that is to be the same on every target,
@@ -146,8 +152,11 @@ struct QFLEXDOCK_EXPORT DockOverlayScene
     QRect bounds;
     QList<Zone> zones;
     /// Where the dropped content would end up; null when nothing is hovered.
-    /// Always filled in; whether to show it is the painter's decision (the
-    /// built-in one follows DockOverlayStyle::showPreview).
+    /// For a drop that makes it a tab of a group, that is the content of the
+    /// group, without its header (see `header`), or all of the group with
+    /// DockOverlayStyle::previewCoversHeader. Always filled in; whether to
+    /// show it is the painter's decision (the built-in one follows
+    /// DockOverlayStyle::showPreview).
     QRect preview;
     /// What the drop is aimed at, all of it whatever part `preview` is: a
     /// tab group, the column beside which a workspace that docks in columns

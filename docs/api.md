@@ -151,7 +151,7 @@ token (`DockTheme::overlay.guide`):
 
 | `DockGuide` | |
 |---|---|
-| `Zones` (default) | Five large areas that cover the tab group under the pointer, and a band along the border of the workspace |
+| `Zones` (default) | Five large areas that cover the content of the tab group under the pointer, and a band along the border of the workspace |
 | `Preview` | The same areas, not drawn: only the rectangle the drop would take is shown |
 | `Buttons` | A cross of small buttons in the middle of the tab group under the pointer, and a button at each border of the workspace. Only a button takes the drop, or a header: the tabs of a group, and a title bar that names its panel |
 
@@ -161,7 +161,16 @@ its buttons, so the workspace around it offers its own along with them, to what 
 around the inner cross docks beside the inner workspace, and the buttons at the outer border are there
 as always. The inner workspace then has no buttons at its own border.
 
-The edge areas of `Zones` and `Preview` are a share of the group they lie over (`edgeFraction`), or with
+The row of the tabs is a target of its own, with every guide, and nothing is drawn over it: a panel
+dropped among the tabs goes where it is dropped, and one dropped beside them, anywhere along the row,
+becomes the last tab. A title bar that names its panel (`DockGroupHeader::TitleBar`) takes a tab as well,
+and so do the tabs below the content there. The areas lie over what is left of the group, its content,
+which is also what is shown as taken by a drop that adds a tab (all of the group, header included, with
+`DockTheme::overlay.previewCoversHeader`: `examples/obs-style`). The band along the border of the workspace
+comes first where it crosses such a row, except over the tabs themselves: beside the tabs of a row along
+the border, a drop docks against the workspace.
+
+The edge areas of `Zones` and `Preview` are a share of the content they lie over (`edgeFraction`), or with
 `DockTheme::overlay.edgeExtent` as many pixels deep on every group, however large.
 
 With `setSplitterPushEnabled(true)` a boundary that is dragged against a neighbour that can get no smaller
@@ -175,10 +184,9 @@ every boundary is on its own in both respects.
 
 **Windows of tabs.** Floating windows need no workspace, so an application can consist of them alone.
 With `setCenterDropEnabled(false)` the middle of a tab group takes no drop: a panel becomes a tab by the
-header only, and let go of anywhere else it floats. Panels that allow `DockArea::Center` only never split a
-window, and for them the whole title row takes a tab, not just the tabs. A title bar that names its panel
-(`DockGroupHeader::TitleBar`, or the title of a floating window) takes one as well, and a workspace with
-nothing in it where its tabs will be: along its top, as high as a row of tabs. `examples/chrome-style` is
+header only (the row of the tabs, or a title bar that names its panel), and let go of anywhere else it
+floats. Panels that allow `DockArea::Center` only never split a window. A workspace with nothing in it
+takes a tab where its tabs will be: along its top, as high as a row of tabs. `examples/chrome-style` is
 built this way. `DockWorkspace::setCenterDropEnabled(false)` does it for one workspace and the floating
 windows it owns: the documents of `examples/photoshop-style`, among panels that take a drop anywhere.
 

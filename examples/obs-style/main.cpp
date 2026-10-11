@@ -49,6 +49,9 @@ int main(int argc, char *argv[])
     // same round corners (see the style sheet).
     theme.floatingBorderWidth = 0;
     theme.floatingCornerRadius = 4;
+    // A dock that would become a tab of another is shown over all of that
+    // one, its title included.
+    theme.overlay.previewCoversHeader = true;
     theme.icons.insert(DockIcon::Float, ObsStyle::icon(ObsStyle::Glyph::Float));
     theme.icons.insert(DockIcon::Dock, ObsStyle::icon(ObsStyle::Glyph::Float));
     theme.icons.insert(DockIcon::Close, ObsStyle::icon(ObsStyle::Glyph::Close));
