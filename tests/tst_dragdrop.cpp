@@ -1539,6 +1539,181 @@ private Q_SLOTS:
         QCOMPARE(describe(f.a), p("b|a|c"));
     }
 
+    // DockTabReorder::Animated: the tabs are in their new places at once and
+    // are drawn sliding there, their buttons with them.
+    void tabsSlideToTheirPlaces()
+    {
+        TwoWindows f;
+        f.manager.setTabReorder(DockTabReorder::Animated);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        DockTabBar *bar = areaOf(f.a)->groupOfPanel(p("a"))->tabBar();
+        QCOMPARE(bar->tabReorder(), DockTabReorder::Animated);
+        const auto closeButton = [bar](const char *panel) {
+            const int index = bar->indexOfPanel(p(panel));
+            QWidget *right = bar->tabButton(index, QTabBar::RightSide);
+            return right ? right : bar->tabButton(index, QTabBar::LeftSide);
+        };
+        const auto buttonInTab = [&](const char *panel) {
+            return closeButton(panel)->pos() - bar->tabRect(bar->indexOfPanel(p(panel))).topLeft();
+        };
+        QVERIFY(closeButton("b"));
+        const QPoint inTab = buttonInTab("b");
+        // (The current tab has its button a little higher in some styles.)
+        const int inTabC = buttonInTab("c").x();
+        const QRect placeOfA = bar->tabRect(0);
+        const int y = bar->height() / 2;
+
+        QTest::mousePress(bar, Qt::LeftButton, {}, placeOfA.center());
+        QCOMPARE(bar->visualTabRect(1), bar->tabRect(1)); // nothing slides yet
+        QTest::mouseMove(bar, QPoint(bar->tabRect(1).right(), y));
+        QCOMPARE(bar->panelAt(0), p("b"));
+        QCOMPARE(bar->panelAt(1), p("a"));
+        // Both are drawn where they were, and the button of "b" is in its tab.
+        QCOMPARE(bar->visualTabRect(1).left(), placeOfA.left());
+        QVERIFY(bar->visualTabRect(0).left() > bar->tabRect(0).left());
+        QCOMPARE(closeButton("b")->pos() - bar->visualTabRect(0).topLeft(), inTab);
+        QTest::qWait(40);
+        grab(areaOf(f.a)->groupOfPanel(p("a")), p("tabs-sliding"));
+        // And then where they are.
+        QTRY_COMPARE(bar->visualTabRect(0), bar->tabRect(0));
+        QCOMPARE(bar->visualTabRect(1), bar->tabRect(1));
+        QCOMPARE(buttonInTab("b"), inTab);
+        QCOMPARE(describe(f.a), p("a|b|c"));
+
+        // Let go of while they slide: the move is made, and they slide on.
+        QTest::mouseMove(bar, QPoint(bar->tabRect(2).right(), y));
+        QVERIFY(bar->visualTabRect(1) != bar->tabRect(1));
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(bar->tabRect(2).right(), y));
+        QCOMPARE(describe(f.a), p("b|c|a"));
+        QTRY_COMPARE(bar->visualTabRect(1), bar->tabRect(1));
+        QCOMPARE(buttonInTab("b"), inTab);
+        QCOMPARE(buttonInTab("c").x(), inTabC);
+
+        // Taken off the bar, nothing slides back: the tabs are as they were.
+        Drag blocker(f.manager);
+        QVERIFY(blocker.begin("a"));
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
+        QTest::mouseMove(bar, QPoint(bar->tabRect(1).right(), y));
+        QCOMPARE(bar->panelAt(1), p("b"));
+        QTest::mouseMove(bar, QPoint(bar->tabRect(1).right(), bar->tabMoveRegion().bottom() + 1));
+        QCOMPARE(bar->panelAt(0), p("b"));
+        QCOMPARE(bar->visualTabRect(0), bar->tabRect(0));
+        QCOMPARE(bar->visualTabRect(1), bar->tabRect(1));
+        QTest::mouseRelease(bar, Qt::LeftButton, {},
+                            QPoint(bar->tabRect(1).right(), bar->tabMoveRegion().bottom() + 1));
+    }
+
+    // DockTabReorder::Picture and Marker: the tabs stay, and a mark shows where
+    // the tab goes when it is let go of. With Picture, a picture of the tab
+    // follows the pointer.
+    void tabIsMovedToAMark_data()
+    {
+        QTest::addColumn<DockTabReorder>("reorder");
+        QTest::newRow("picture") << DockTabReorder::Picture;
+        QTest::newRow("marker") << DockTabReorder::Marker;
+    }
+
+    void tabIsMovedToAMark()
+    {
+        QFETCH(DockTabReorder, reorder);
+        TwoWindows f;
+        QCOMPARE(f.manager.tabReorder(), DockTabReorder::Instant);
+        f.manager.setTabReorder(reorder);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Center));
+        QVERIFY(f.manager.movePanel(p("c"), p("a"), DockArea::Center));
+        DockAreaWidget *area = areaOf(f.a);
+        DockTabBar *bar = area->groupOfPanel(p("a"))->tabBar();
+        QSignalSpy panelDrag(bar, &DockTabBar::panelDragStarted);
+        const auto shown = [bar] {
+            QStringList tabs;
+            for (int i = 0; i < bar->count(); ++i)
+                tabs << bar->panelAt(i);
+            return tabs.join(QLatin1Char('|'));
+        };
+        const auto picture = [&f] {
+            return f.windowA.findChild<QWidget *>(QStringLiteral("dockTabPicture"));
+        };
+        const auto markInBar = [&] {
+            const QRect mark = area->overlay()->scene().tabIndicator;
+            return QRect(bar->mapFrom(area, mark.topLeft()), mark.size());
+        };
+        const int y = bar->height() / 2;
+
+        // "a" over the far half of "b": it would go behind it.
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
+        QVERIFY(!picture());
+        const QPoint overB(bar->tabRect(1).right() - 2, y);
+        QTest::mouseMove(bar, overB);
+        QCOMPARE(bar->movingPanel(), p("a"));
+        QCOMPARE(shown(), p("a|b|c"));
+        QCOMPARE(bar->moveMark(), 2);
+        QVERIFY(area->overlay()->isVisible());
+        QCOMPARE(markInBar(), bar->insertIndicatorRect(2));
+        QVERIFY(area->overlay()->scene().zones.isEmpty());
+        QVERIFY(!priv(f.manager)->drag->isActive());
+        if (reorder == DockTabReorder::Picture) {
+            QVERIFY(picture());
+            QVERIFY(picture()->isVisible());
+            QCOMPARE(picture()->size(), bar->tabRect(0).size());
+            // It hangs from the pointer, beside it.
+            const QPoint pointer = bar->mapTo(&f.windowA, overB);
+            QVERIFY(picture()->x() > pointer.x() && picture()->y() > pointer.y());
+            QVERIFY(picture()->x() - pointer.x() < 24);
+        } else {
+            QVERIFY(!picture());
+        }
+        grab(&f.windowA, reorder == DockTabReorder::Picture ? p("tab-move-picture")
+                                                            : p("tab-move-marker"));
+        // Behind the last tab; and on itself or the near half of its
+        // neighbour, where it would stay: no mark.
+        QTest::mouseMove(bar, QPoint(bar->tabRect(2).right() + 20, y));
+        QCOMPARE(bar->moveMark(), 3);
+        QTest::mouseMove(bar, QPoint(bar->tabRect(1).left() + 2, y));
+        QCOMPARE(bar->moveMark(), -1);
+        QVERIFY(!area->overlay()->isVisible());
+        QTest::mouseMove(bar, overB);
+        QCOMPARE(bar->moveMark(), 2);
+
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, overB);
+        QCOMPARE(describe(f.a), p("b|a|c"));
+        QCOMPARE(shown(), p("b|a|c"));
+        QCOMPARE(bar->moveMark(), -1);
+        QVERIFY(!area->overlay()->isVisible());
+        QTRY_VERIFY(!picture());
+        QVERIFY(bar->movingPanel().isEmpty());
+
+        // To the front, and let go of where nothing changes.
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(2).center());
+        QTest::mouseMove(bar, QPoint(bar->tabRect(0).left() + 2, y));
+        QCOMPARE(bar->moveMark(), 0);
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, QPoint(bar->tabRect(0).left() + 2, y));
+        QCOMPARE(describe(f.a), p("c|b|a"));
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(1).center());
+        QTest::mouseMove(bar, bar->tabRect(1).center() + QPoint(QApplication::startDragDistance(), 0));
+        QCOMPARE(bar->movingPanel(), p("b"));
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, bar->tabRect(1).center());
+        QCOMPARE(describe(f.a), p("c|b|a"));
+
+        // Off the bar the mark and the picture go, and a dock drag starts.
+        Drag blocker(f.manager);
+        QTest::mousePress(bar, Qt::LeftButton, {}, bar->tabRect(0).center());
+        QTest::mouseMove(bar, QPoint(bar->tabRect(1).right() - 2, y));
+        QCOMPARE(bar->moveMark(), 2);
+        QVERIFY(blocker.begin("a"));
+        const QPoint off(bar->tabRect(1).right() - 2, bar->tabMoveRegion().bottom() + 1);
+        QTest::mouseMove(bar, off);
+        QCOMPARE(panelDrag.size(), 1);
+        QCOMPARE(bar->moveMark(), -1);
+        QTRY_VERIFY(!picture());
+        QTest::mouseRelease(bar, Qt::LeftButton, {}, off);
+        QCOMPARE(describe(f.a), p("c|b|a"));
+    }
+
     // --- The other guides ------------------------------------------------------
 
     void buttonLayoutIsACrossThatStaysInside()

@@ -116,7 +116,7 @@ Features: `Movable`, `Closable`, `Floatable`, `Tabbable` (both the dragged and t
 floating window are none.
 
 **Behaviour and looks** — `setLinkedSplittersEnabled()`, `setCornerResizeEnabled()`, `setSplitterPushEnabled()`, `setFloatsOnOutsideDrop()`,
-`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setFloatingWindowFrame(FloatingWindowFrame::Custom | Minimal | Native)`,
+`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setTabReorder()`, `setFloatingWindowFrame(FloatingWindowFrame::Custom | Minimal | Native)`,
 `setFloatingWindowType(FloatingWindowType::Window | Tool)`, `setGroupHeader()`, `setTitleBarMovesGroup()`,
 `setAutoHideReveal(AutoHideReveal::Over | Beside)`,
 `setDragGhostEnabled()`, `setTheme()`, `setOverlayPainter()`. See [styling.md](styling.md) and
@@ -245,6 +245,19 @@ tools->setCompactWidget(toolsInOneColumn);                   // what it is in a 
 |---|---|
 | `Tabs` (default) | The tabs, always. Drag a tab along the bar to change its place among the others, off the bar to move its panel, and the empty part of the bar to move the group |
 | `TitleBar` | A title bar naming the current panel; drag it to move that panel, double click to float it or dock it again. Tabs appear below the content once a group holds more than one panel |
+
+`setTabReorder()` chooses how a tab that is dragged along its bar gets to another place among the tabs.
+Nothing is dragged while it stays in the row of the bar, and the layout changes when it is let go of:
+
+| `DockTabReorder` | |
+|---|---|
+| `Instant` (default) | It changes places with a neighbour once the pointer is past the middle of that one |
+| `Animated` | The same, the tabs sliding to where they go |
+| `Picture` | The tabs stay where they are. A picture of the tab hangs from the pointer, and a mark between the tabs shows where it goes |
+| `Marker` | The same without the picture |
+
+The mark is the one a drop between tabs has: `DockOverlayStyle::hoverBorderColor`, or whatever the overlay
+painter draws for `DockOverlayScene::tabIndicator`.
 
 With `setTitleBarMovesGroup(true)` the title bar stands for all the panels stacked under it: dragging it
 moves the whole tab group, and a double click floats the group or docks all of it again, as one change.

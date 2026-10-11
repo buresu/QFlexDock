@@ -2658,6 +2658,20 @@ void DockManager::setTabDragPreviewEnabled(bool enabled)
     Q_EMIT tabDragPreviewEnabledChanged(enabled);
 }
 
+DockTabReorder DockManager::tabReorder() const
+{
+    return d->tabReorder;
+}
+
+void DockManager::setTabReorder(DockTabReorder reorder)
+{
+    if (d->tabReorder == reorder)
+        return;
+    d->tabReorder = reorder;
+    d->refreshAllAppearance();
+    Q_EMIT tabReorderChanged(reorder);
+}
+
 bool DockManager::floatsOnOutsideDrop() const
 {
     return d->floatOnOutsideDrop;

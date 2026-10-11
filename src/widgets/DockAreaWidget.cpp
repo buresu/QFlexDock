@@ -1396,6 +1396,29 @@ void DockAreaWidget::showOverlay(const DropCandidate &candidate)
     m_overlay->raise();
 }
 
+// The mark between the tabs of `group` for a tab that is moved along their
+// bar (DockTabReorder::Picture, Marker): before the tab at `index`, -1 for
+// none. It is the mark a drop between the tabs has, with no drag going on.
+void DockAreaWidget::showTabMoveMark(const DockTabGroup *group, int index)
+{
+    if (!m_manager || m_manager->drag->isActive())
+        return;
+    if (index < 0) {
+        hideOverlay();
+        return;
+    }
+    const DockTabBar *bar = group->tabBar();
+    const QRect mark = bar->insertIndicatorRect(index);
+    DockOverlayScene scene;
+    scene.bounds = rect();
+    scene.tabIndicator = QRect(bar->mapTo(this, mark.topLeft()), mark.size());
+    scene.ownGroup = true;
+    m_overlay->setScene(scene);
+    m_overlay->setGeometry(rect());
+    m_overlay->show();
+    m_overlay->raise();
+}
+
 void DockAreaWidget::hideOverlay()
 {
     m_overlay->hide();

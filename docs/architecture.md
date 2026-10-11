@@ -173,11 +173,15 @@ dragged panels allow `Center` only), its whole title row counts as its tabs. And
 is not dropped on a header is dropped nowhere, which `finish()` treats like a drop outside every window.
 
 **Moving a tab along its bar** is not a drag. For as long as the pointer stays in the row of the bar
-(`DockTabBar::tabMoveRegion()`), the tab changes places with a neighbour once the pointer is past the middle
-of that one, in the bar alone: no session, no ghost, no guide. Let go of, the bar asks for the move
-(`panelMoveRequested()`), which is committed like a drop among the tabs. Taken off the bar, the tab is shown
-where it was again and the drag of step 1 starts. A bar with one tab, and a panel that is not `Movable`, go
-straight to that drag.
+(`DockTabBar::tabMoveRegion()`), where the tab would go is where a drop at the pointer would put it (past
+the middle of a neighbour, on the other side of it), and the bar alone shows that, in the way
+`DockManager::setTabReorder()` says: the tabs change places at once (`Instant`), or do and are drawn sliding
+there (`Animated`: offsets on what is painted and on the buttons of the tabs, `visualTabRect()`), or stay
+with a mark between them (`Picture`, `Marker`: the mark is the dock area's overlay showing a
+`tabIndicator` and nothing else, the picture a widget in the window). No session, no ghost, no guide. Let go
+of, the bar asks for the move (`panelMoveRequested()`), which is committed like a drop among the tabs. Taken
+off the bar, the tab is shown where it was again and the drag of step 1 starts. A bar with one tab, and a
+panel that is not `Movable`, go straight to that drag.
 
 **Previewing a tab drag** (`DockManager::setTabDragPreviewEnabled()`) is a matter of the views alone. A tab
 group can show its node with one panel left out (`setDraggedOut()`, set by the drag once it has its

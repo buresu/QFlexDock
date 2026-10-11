@@ -35,6 +35,8 @@ int main(int argc, char *argv[])
     manager.setGroupHeader(DockGroupHeader::TitleBar);
     // A floating dock is just the dock: no window title above its own.
     manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
+    // Stacked docks change places by their tabs, which slide there.
+    manager.setTabReorder(DockTabReorder::Animated);
     // Every boundary is dragged on its own.
     manager.setLinkedSplittersEnabled(false);
     manager.setCornerResizeEnabled(false);

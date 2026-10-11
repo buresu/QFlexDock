@@ -108,6 +108,22 @@ enum class DockGroupHeader {
 };
 Q_ENUM_NS(DockGroupHeader)
 
+/// How a tab that is dragged along its bar gets to another place among the
+/// tabs (DockManager::setTabReorder()). Taken off the bar it is a dock drag,
+/// whichever of these it is.
+enum class DockTabReorder {
+    /// It changes places with the tabs it is taken across, at once.
+    Instant,
+    /// The same, the tabs sliding to where they go.
+    Animated,
+    /// The tabs stay where they are. A picture of the tab follows the pointer
+    /// and a mark between the tabs shows where it goes when it is let go of.
+    Picture,
+    /// The same without the picture: the mark alone.
+    Marker,
+};
+Q_ENUM_NS(DockTabReorder)
+
 /// Buttons in the header of a tab group. Float and Close act on the current
 /// panel and are only shown for a panel that may be floated or closed.
 /// AutoHide puts every panel of the group that allows it into the auto-hide

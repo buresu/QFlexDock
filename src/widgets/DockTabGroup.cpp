@@ -191,6 +191,8 @@ DockTabGroup::DockTabGroup(DockManagerPrivate *manager, DockAreaWidget *area)
         startPanelDrag(panel, m_tabBar->grab(m_tabBar->tabRect(m_tabBar->indexOfPanel(panel))));
     });
     connect(m_tabBar, &DockTabBar::panelMoveRequested, this, &DockTabGroup::moveTabByUser);
+    connect(m_tabBar, &DockTabBar::moveMarkChanged, this,
+            [this](int index) { m_area->showTabMoveMark(this, index); });
     connect(m_tabBar, &DockTabBar::groupDragStarted, this, &DockTabGroup::startGroupDrag);
     connect(m_tabBar, &DockTabBar::panelMenuRequested, this, &DockTabGroup::showPanelMenu);
     connect(m_tabBar, &DockTabBar::barDoubleClicked, this, &DockTabGroup::headerDoubleClicked);
@@ -908,6 +910,7 @@ void DockTabGroup::refreshAppearance()
         }
     }
     m_tabBar->setTabSizing(m_manager->theme.tabWidth, m_manager->theme.tabOverflow);
+    m_tabBar->setTabReorder(m_manager->tabReorder);
     m_closeButton->setIcon(m_manager->icon(DockIcon::Close, this));
     m_autoHideButton->setIcon(m_manager->icon(DockIcon::Unpin, this));
     if (themed > 0)
@@ -1140,7 +1143,7 @@ QRect DockTabGroup::currentTabRect() const
     const int index = m_tabBar->currentIndex();
     if (index < 0)
         return {};
-    const QRect shown = m_tabBar->tabRect(index).intersected(m_tabBar->rect());
+    const QRect shown = m_tabBar->visualTabRect(index).intersected(m_tabBar->rect());
     return shown.isEmpty() ? QRect() : QRect(m_tabBar->mapTo(this, shown.topLeft()), shown.size());
 }
 

@@ -79,6 +79,8 @@ class QFLEXDOCK_EXPORT DockManager : public QObject
                NOTIFY centerDropEnabledChanged)
     Q_PROPERTY(bool tabDragPreviewEnabled READ isTabDragPreviewEnabled
                WRITE setTabDragPreviewEnabled NOTIFY tabDragPreviewEnabledChanged)
+    Q_PROPERTY(QFlexDock::DockTabReorder tabReorder READ tabReorder WRITE setTabReorder
+               NOTIFY tabReorderChanged)
     Q_PROPERTY(bool floatsOnOutsideDrop READ floatsOnOutsideDrop WRITE setFloatsOnOutsideDrop
                NOTIFY floatsOnOutsideDropChanged)
     Q_PROPERTY(bool dragGhostEnabled READ isDragGhostEnabled WRITE setDragGhostEnabled
@@ -347,6 +349,11 @@ public:
     /// only: the layout changes when the tab is dropped, and a cancelled
     /// drag puts everything back as it was. The last tab of a group stays.
     void setTabDragPreviewEnabled(bool enabled);
+    [[nodiscard]] DockTabReorder tabReorder() const;
+    /// How a tab that is dragged along its bar is moved among the others
+    /// (default DockTabReorder::Instant). No drag is in progress while it
+    /// stays in the row of the bar: the layout changes when it is let go of.
+    void setTabReorder(DockTabReorder reorder);
     [[nodiscard]] bool floatsOnOutsideDrop() const;
     /// Whether dropping a dragged panel outside every dock area floats it.
     /// Defaults to true where that can be told apart from a cancelled drag
@@ -427,6 +434,7 @@ Q_SIGNALS:
     void splitterPushEnabledChanged(bool enabled);
     void centerDropEnabledChanged(bool enabled);
     void tabDragPreviewEnabledChanged(bool enabled);
+    void tabReorderChanged(QFlexDock::DockTabReorder reorder);
     void floatsOnOutsideDropChanged(bool enabled);
     void dragGhostEnabledChanged(bool enabled);
     void floatingWindowFrameChanged(QFlexDock::DockManager::FloatingWindowFrame frame);

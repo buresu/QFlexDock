@@ -169,6 +169,8 @@ void Workbench::setUpDocking()
     m_manager.setLinkedSplittersEnabled(false);
     m_manager.setCornerResizeEnabled(false);
     m_manager.setFloatsOnOutsideDrop(true);
+    // A tab dragged along its row changes places at once.
+    m_manager.setTabReorder(DockTabReorder::Instant);
     // A title bar takes all the tool windows stacked under it along; one of
     // them is taken out by its tab.
     m_manager.setTitleBarMovesGroup(true);

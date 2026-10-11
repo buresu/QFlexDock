@@ -159,6 +159,9 @@ public:
     [[nodiscard]] DropCandidate resolveDrag(const QPoint &pos, const DragSession &session,
                                             bool show);
     void showOverlay(const DropCandidate &candidate);
+    /// The mark of a tab that is moved along the bar of `group`, before the
+    /// tab at `index` (-1: none). See DockTabBar::moveMark().
+    void showTabMoveMark(const DockTabGroup *group, int index);
     void hideOverlay();
     /// Preview of a tab drag: see DockTabGroup::setDropGap().
     void showDropGap(NodeId node, int index);

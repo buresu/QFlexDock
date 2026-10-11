@@ -4,8 +4,14 @@
 #include <QFlexDock/DockTheme.h>
 #include <QFlexDock/Global.h>
 
+#include <QtCore/QHash>
+#include <QtCore/QPointer>
 #include <QtCore/QSet>
 #include <QtWidgets/QTabBar>
+
+QT_BEGIN_NAMESPACE
+class QVariantAnimation;
+QT_END_NAMESPACE
 
 namespace QFlexDock {
 
@@ -14,11 +20,13 @@ namespace QFlexDock {
 /// the application (class selector: `QFlexDock--DockTabBar`).
 ///
 /// Tabs are not rearranged by QTabBar's own "movable" mode. A tab that is
-/// dragged along the bar changes places with the tabs it is taken across, and
-/// that is asked for once it is let go of (panelMoveRequested()); nothing but
-/// the bar shows it before. Taken off the bar, it is back where it was and a
-/// dock drag starts (panelDragStarted()), which covers moving between groups
-/// and tearing off, and reordering as well: a drop on the tab bar.
+/// dragged along the bar is moved among the others in one of the ways of
+/// DockTabReorder: it changes places with the tabs it is taken across, or a
+/// mark shows where it will go. That is asked for once it is let go of
+/// (panelMoveRequested()); nothing but the bar shows it before. Taken off the
+/// bar, it is back where it was and a dock drag starts (panelDragStarted()),
+/// which covers moving between groups and tearing off, and reordering as
+/// well: a drop on the tab bar.
 class QFLEXDOCK_EXPORT DockTabBar : public QTabBar
 {
     Q_OBJECT
@@ -50,6 +58,14 @@ public:
     /// Where a tab that is dragged stays a tab of this bar: the row the bar
     /// is in, and the drag threshold above and below it.
     [[nodiscard]] QRect tabMoveRegion() const;
+    [[nodiscard]] DockTabReorder tabReorder() const { return m_reorder; }
+    void setTabReorder(DockTabReorder reorder);
+    /// Where the tab at `index` is drawn: tabRect(), or on its way there
+    /// while the tabs slide (DockTabReorder::Animated).
+    [[nodiscard]] QRect visualTabRect(int index) const;
+    /// The tab the mark of a tab that is moved stands before, among the tabs
+    /// (0..count; DockTabReorder::Picture and Marker). -1: no mark.
+    [[nodiscard]] int moveMark() const { return m_moveMark; }
     [[nodiscard]] bool isActiveGroup() const { return m_activeGroup; }
     void setActiveGroup(bool active);
     [[nodiscard]] QColor activeIndicatorColor() const { return m_indicatorColor; }
@@ -86,6 +102,8 @@ Q_SIGNALS:
     /// The user moved a tab along the bar and let go of it. `index` is its
     /// place among the tabs now, which only the bar knows of so far.
     void panelMoveRequested(const QFlexDock::PanelId &panel, int index);
+    /// moveMark() changed.
+    void moveMarkChanged(int index);
     /// Same, but on the part of the bar without tabs: drags the whole group.
     void groupDragStarted();
     /// Middle click on a tab (pressed and let go of on the same one).
@@ -111,13 +129,27 @@ protected:
 private:
     [[nodiscard]] QSize unsqueezedMinimum(int index) const;
     void updateTabButtons();
+    void beginTabMove(const PanelId &panel, const QPoint &pos);
     void moveTabUnder(const QPoint &pos);
     void finishTabMove();
+    void endMoveFeedback();
+    void setMoveMark(int index);
+    void slideTabsFrom(const QHash<PanelId, int> &shownAt);
+    void stopSliding();
+    void placeSlidingButtons();
+    [[nodiscard]] int slideOffset(int index) const;
 
     QSet<PanelId> m_italic;
     QSet<PanelId> m_movable;
     /// The panel whose tab is being moved along the bar.
     PanelId m_moving;
+    DockTabReorder m_reorder = DockTabReorder::Instant;
+    int m_moveMark = -1;
+    QPointer<QWidget> m_movePicture;
+    /// How far from its place each tab was when the tabs began to slide.
+    QHash<PanelId, int> m_slideFrom;
+    /// From 1 to 0: how much of that is left.
+    QVariantAnimation *m_slide = nullptr;
     int m_tabWidth = -1;
     int m_gapWidth = 0;
     bool m_shrink = false;

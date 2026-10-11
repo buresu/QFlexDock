@@ -9,7 +9,7 @@ Made for creative tools, IDEs, 3D editors and node editors.
 - **Layouts as JSON** — versioned, validated and repaired on load; unknown panels and broken data do not break the layout.
 - **QML and GPU content** — `QQuickWidget`, `QOpenGLWidget` and native `QWindow`s as panels.
 - **Follows the host application** — drawn with its `QStyle`, `QPalette`, `QFont` and style sheet, and follows changes at run time.
-- **Tabs or title bars** — groups headed by their tabs, or by a title bar with tabs only where panels are stacked, for all workspaces or each its own; fixed content that panels dock around; your own buttons and widgets in the headers.
+- **Tabs or title bars** — groups headed by their tabs, or by a title bar with tabs only where panels are stacked, for all workspaces or each its own; fixed content that panels dock around; your own buttons and widgets in the headers. A tab dragged along its bar changes places with the others at once or sliding, or goes where a mark shows.
 - **Workspaces within workspaces** — a document area in the middle of the tool panels, each kind of panel staying in its own, with boundaries that are resized together across the two.
 - **Columns that shrink to icons** — a workspace can dock in columns, each under a bar that moves it as a whole and shrinks it to a strip of buttons; a button brings its tab group out beside the strip. Drops go beside a column, into it, or into the tabs of a group.
 - **Windows of tabs** — an application can do without a main window: floating windows that are rows of tabs, where a tab is dragged into the row of another window or let go of to become a window. The rows can show a drag as it will turn out: the tab gone from one, a place opening for it in the other.

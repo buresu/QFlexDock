@@ -175,6 +175,9 @@ void Workbench::setUpDocking()
     theme.overlay.borderWidth = 0;
     theme.overlay.cornerRadius = 0;
     m_manager.setTheme(theme);
+    // A tab dragged along its row stays where it is until it is let go of:
+    // a picture of it hangs from the pointer, and a line shows where it goes.
+    m_manager.setTabReorder(DockTabReorder::Picture);
 }
 
 // --- Panels ----------------------------------------------------------------------------

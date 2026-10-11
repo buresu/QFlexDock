@@ -321,6 +321,7 @@ public:
     bool splitterPush = false;
     bool centerDrop = true;
     bool tabDragPreview = false;
+    DockTabReorder tabReorder = DockTabReorder::Instant;
     DockGroupHeader groupHeader = DockGroupHeader::Tabs;
     bool titleBarMovesGroup = false;
     DockManager::AutoHideReveal autoHideReveal = DockManager::AutoHideReveal::Over;

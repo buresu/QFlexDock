@@ -1011,7 +1011,7 @@ private Q_SLOTS:
             QVERIFY(property.write(&manager, after));
             QCOMPARE(changed.size(), 1);
         }
-        QCOMPARE(settings, 14);
+        QCOMPARE(settings, 15);
     }
 
     void raisingATabLeavesTheActivePanelAlone()

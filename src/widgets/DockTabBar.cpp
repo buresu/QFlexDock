@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "widgets/DockTabBar.h"
 
+#include <QtCore/QVariantAnimation>
 #include <QtGui/QContextMenuEvent>
 #include <QtGui/QMouseEvent>
 #include <QtWidgets/QApplication>
@@ -11,6 +12,42 @@
 #include <utility>
 
 namespace QFlexDock {
+
+namespace {
+
+// How long tabs take to slide to their places (DockTabReorder::Animated), in
+// milliseconds.
+constexpr int SlideDuration = 150;
+// Where the picture of a tab that is moved hangs from the pointer
+// (DockTabReorder::Picture).
+constexpr QPoint PictureOffset(10, 6);
+
+// The picture of a tab that is moved, over whatever is in its window.
+class TabPicture : public QWidget
+{
+public:
+    TabPicture(const QPixmap &picture, QWidget *parent)
+        : QWidget(parent)
+        , m_picture(picture)
+    {
+        setObjectName(QStringLiteral("dockTabPicture"));
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setFocusPolicy(Qt::NoFocus);
+        resize(picture.deviceIndependentSize().toSize());
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter painter(this);
+        painter.drawPixmap(rect(), m_picture);
+    }
+
+private:
+    QPixmap m_picture;
+};
+
+} // namespace
 
 DockTabBar::DockTabBar(QWidget *parent)
     : QTabBar(parent)
@@ -170,9 +207,33 @@ QRect DockTabBar::tabMoveRegion() const
     return region;
 }
 
-// The tab that is moved goes where a tab dropped at the pointer would be put:
-// past the middle of a neighbour, it is on the other side of it. Where it
-// then is, the same pointer leaves it.
+void DockTabBar::setTabReorder(DockTabReorder reorder)
+{
+    m_reorder = reorder;
+}
+
+void DockTabBar::beginTabMove(const PanelId &panel, const QPoint &pos)
+{
+    m_moving = panel;
+    const bool marked = m_reorder == DockTabReorder::Picture || m_reorder == DockTabReorder::Marker;
+    if (marked)
+        setCursor(Qt::ClosedHandCursor); // the tabs do not show that one is held
+    if (m_reorder == DockTabReorder::Picture) {
+        // The tab as it looks: with what is behind it, which may be all of
+        // its background.
+        const QRect tab = tabRect(indexOfPanel(panel)).intersected(rect());
+        QWidget *top = window();
+        m_movePicture = new TabPicture(top->grab(QRect(mapTo(top, tab.topLeft()), tab.size())), top);
+        m_movePicture->show();
+        m_movePicture->raise();
+    }
+    moveTabUnder(pos);
+}
+
+// Where a tab dropped at the pointer would be put is where the tab that is
+// moved goes: past the middle of a neighbour, on the other side of it. Either
+// the tabs show that at once, and where the tab then is the same pointer
+// leaves it; or they stay, and a mark stands where it would go.
 void DockTabBar::moveTabUnder(const QPoint &pos)
 {
     const int from = indexOfPanel(m_moving);
@@ -180,26 +241,135 @@ void DockTabBar::moveTabUnder(const QPoint &pos)
         return;
     // (Beside the bar is at its end, not among tabs that are scrolled away.)
     const int before = insertIndexAt(QPoint(qBound(0, pos.x(), width() - 1), pos.y()));
+    if (m_reorder == DockTabReorder::Picture || m_reorder == DockTabReorder::Marker) {
+        // No mark for staying where it is.
+        setMoveMark(before == from || before == from + 1 ? -1 : before);
+        if (m_movePicture)
+            m_movePicture->move(mapTo(m_movePicture->parentWidget(), pos) + PictureOffset);
+        return;
+    }
     const int to = before > from ? before - 1 : before;
     if (to == from)
         return;
-    // (The current tab is the same one at another index.)
-    const QSignalBlocker blocker(this);
-    moveTab(from, to);
-    // QTabBar moves tabs as wide as they are, and a style sheet may have
-    // made one wider for being the first: measured again.
-    setElideMode(elideMode());
+    QHash<PanelId, int> shownAt;
+    if (m_reorder == DockTabReorder::Animated) {
+        for (int i = 0; i < count(); ++i)
+            shownAt.insert(panelAt(i), visualTabRect(i).left());
+    }
+    {
+        // (The current tab is the same one at another index.)
+        const QSignalBlocker blocker(this);
+        moveTab(from, to);
+        // QTabBar moves tabs as wide as they are, and a style sheet may have
+        // made one wider for being the first: measured again.
+        setElideMode(elideMode());
+    }
+    if (m_reorder == DockTabReorder::Animated)
+        slideTabsFrom(shownAt);
 }
 
 void DockTabBar::finishTabMove()
 {
     const PanelId panel = std::exchange(m_moving, PanelId());
+    const int mark = m_moveMark;
+    endMoveFeedback();
     int index = indexOfPanel(panel);
     if (index < 0)
         return;
-    if (const int gap = gapIndex(); gap >= 0 && gap < index)
+    if (mark >= 0)
+        index = mark > index ? mark - 1 : mark;
+    else if (const int gap = gapIndex(); gap >= 0 && gap < index)
         --index;
     Q_EMIT panelMoveRequested(panel, index);
+}
+
+// The mark, the picture and the cursor of a tab that is moved.
+void DockTabBar::endMoveFeedback()
+{
+    setMoveMark(-1);
+    delete m_movePicture.data();
+    unsetCursor();
+}
+
+void DockTabBar::setMoveMark(int index)
+{
+    if (m_moveMark == index)
+        return;
+    m_moveMark = index;
+    Q_EMIT moveMarkChanged(index);
+}
+
+// --- Tabs that slide ------------------------------------------------------------
+
+QRect DockTabBar::visualTabRect(int index) const
+{
+    return tabRect(index).translated(slideOffset(index), 0);
+}
+
+int DockTabBar::slideOffset(int index) const
+{
+    if (m_slideFrom.isEmpty() || !m_slide)
+        return 0;
+    return qRound(m_slideFrom.value(panelAt(index)) * m_slide->currentValue().toReal());
+}
+
+// The tabs are in their places already. They are drawn from where they were
+// shown (`shownAt`, the left edge of each) to there.
+void DockTabBar::slideTabsFrom(const QHash<PanelId, int> &shownAt)
+{
+    m_slideFrom.clear();
+    for (int i = 0; i < count(); ++i) {
+        const int left = tabRect(i).left();
+        if (const int offset = shownAt.value(panelAt(i), left) - left; offset != 0)
+            m_slideFrom.insert(panelAt(i), offset);
+    }
+    if (!m_slide) {
+        m_slide = new QVariantAnimation(this);
+        m_slide->setDuration(SlideDuration);
+        m_slide->setEasingCurve(QEasingCurve::OutCubic);
+        m_slide->setStartValue(1.0);
+        m_slide->setEndValue(0.0);
+        connect(m_slide, &QVariantAnimation::valueChanged, this, [this] {
+            placeSlidingButtons();
+            update();
+        });
+        connect(m_slide, &QVariantAnimation::finished, this, &DockTabBar::stopSliding);
+    }
+    m_slide->stop();
+    m_slide->start();
+    placeSlidingButtons();
+    update();
+}
+
+void DockTabBar::stopSliding()
+{
+    if (m_slideFrom.isEmpty())
+        return;
+    m_slideFrom.clear();
+    m_slide->stop();
+    setElideMode(elideMode()); // QTabBar puts the buttons of the tabs back
+    update();
+}
+
+// The buttons of a tab are widgets, which QTabBar puts where the tab is.
+void DockTabBar::placeSlidingButtons()
+{
+    for (int i = 0; i < count(); ++i) {
+        if (!m_slideFrom.contains(panelAt(i)))
+            continue;
+        QStyleOptionTab option;
+        initStyleOption(&option, i);
+        for (const ButtonPosition side : {QTabBar::LeftSide, QTabBar::RightSide}) {
+            QWidget *button = tabButton(i, side);
+            if (!button)
+                continue;
+            const QRect place = style()->subElementRect(
+                side == QTabBar::LeftSide ? QStyle::SE_TabBarTabLeftButton
+                                          : QStyle::SE_TabBarTabRightButton,
+                &option, this);
+            button->move(place.topLeft() + QPoint(slideOffset(i), 0));
+        }
+    }
 }
 
 void DockTabBar::setActiveGroup(bool active)
@@ -282,6 +452,7 @@ void DockTabBar::paintEvent(QPaintEvent *)
             return;
         QStyleOptionTab option;
         initStyleOption(&option, index);
+        option.rect.translate(slideOffset(index), 0);
         if (!option.rect.intersects(rect()))
             return;
         QFont tabFont = font();
@@ -301,7 +472,7 @@ void DockTabBar::paintEvent(QPaintEvent *)
             ? m_indicatorColor : palette().color(QPalette::Active, QPalette::Highlight);
         if (m_activeGroup && mark.alpha() > 0) {
             // On the edge of the tab that faces away from the content.
-            const QRect r = tabRect(current);
+            const QRect r = visualTabRect(current);
             const bool below = shape() == QTabBar::RoundedSouth || shape() == QTabBar::TriangularSouth;
             painter.fillRect(QRect(r.left(), below ? r.bottom() - 1 : r.top(), r.width(), 2), mark);
         }
@@ -346,6 +517,8 @@ void DockTabBar::mouseMoveEvent(QMouseEvent *event)
             // Off the bar: a dock drag from here on, of a tab that is where
             // it was.
             const PanelId panel = std::exchange(m_moving, PanelId());
+            endMoveFeedback();
+            stopSliding();
             leaveForDrag();
             Q_EMIT panelDragStarted(panel);
         }
@@ -361,8 +534,7 @@ void DockTabBar::mouseMoveEvent(QMouseEvent *event)
                 Q_EMIT groupDragStarted();
             } else if (m_movable.contains(panel) && count() > 1 && gapIndex() < 0
                        && tabMoveRegion().contains(pos)) {
-                m_moving = panel;
-                moveTabUnder(pos);
+                beginTabMove(panel, pos);
             } else {
                 leaveForDrag();
                 Q_EMIT panelDragStarted(panel);
