@@ -688,7 +688,26 @@ bool DockFloatingWindow::nativeEvent(const QByteArray &eventType, void *message,
 {
 #ifdef Q_OS_WIN
     const auto *msg = static_cast<const MSG *>(message);
-    if (m_unified && !m_ghost && eventType == "windows_generic_MSG" && msg->message == WM_NCHITTEST) {
+    if (!m_unified || m_ghost || eventType != "windows_generic_MSG")
+        return QWidget::nativeEvent(eventType, message, result);
+    // The window has no caption to Windows (see prepareUnifiedFrame()), which
+    // then draws one of the classic sort over its top when it is activated or
+    // deactivated, or its title or icon change: over ours, and it stays there.
+    // Qt keeps that from frameless windows only (QTBUG-127116).
+    if (msg->message == WM_NCACTIVATE) {
+        // -1: the state changes, and nothing is drawn.
+        *result = DefWindowProcW(msg->hwnd, WM_NCACTIVATE, msg->wParam, -1);
+        return true;
+    }
+    if (msg->message == WM_SETTEXT || msg->message == WM_SETICON) {
+        // Nothing is drawn of a window that is not visible.
+        const LONG_PTR style = GetWindowLongPtrW(msg->hwnd, GWL_STYLE);
+        SetWindowLongPtrW(msg->hwnd, GWL_STYLE, style & ~LONG_PTR(WS_VISIBLE));
+        *result = DefWindowProcW(msg->hwnd, msg->message, msg->wParam, msg->lParam);
+        SetWindowLongPtrW(msg->hwnd, GWL_STYLE, style);
+        return true;
+    }
+    if (msg->message == WM_NCHITTEST) {
         const HWND hwnd = msg->hwnd;
         POINT point{static_cast<short>(LOWORD(msg->lParam)), static_cast<short>(HIWORD(msg->lParam))};
         ScreenToClient(hwnd, &point);

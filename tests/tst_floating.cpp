@@ -86,6 +86,27 @@ LRESULT hitTest(QWidget *window, const QPoint &pos)
     ClientToScreen(hwnd, &point);
     return SendMessageW(hwnd, WM_NCHITTEST, 0, MAKELPARAM(point.x, point.y));
 }
+
+/// Whether what is on the surface of `window` at these points (in the window)
+/// is what the window painted there, and nothing Windows drew over it.
+bool showsWhatItPainted(QWidget *window, std::initializer_list<QPoint> points)
+{
+    const QImage painted = window->grab().toImage();
+    const qreal ratio = window->devicePixelRatioF();
+    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+    const HDC dc = GetDC(hwnd);
+    bool same = true;
+    for (const QPoint &pos : points) {
+        const int x = qRound(pos.x() * ratio);
+        const int y = qRound(pos.y() * ratio);
+        const COLORREF shown = GetPixel(dc, x, y);
+        const QRgb own = painted.pixel(x, y);
+        same = same && GetRValue(shown) == qRed(own) && GetGValue(shown) == qGreen(own)
+            && GetBValue(shown) == qBlue(own);
+    }
+    ReleaseDC(hwnd, dc);
+    return same;
+}
 #endif
 
 void buildLayout(TwoWindows &f)
@@ -368,6 +389,21 @@ private Q_SLOTS:
             QTRY_VERIFY(!window->isMaximized());
             QTRY_COMPARE(window->size(), normalSize);
         }
+        // Windows draws no caption of its own over the title when the window
+        // is deactivated, or its title changes.
+        const auto inTitle = {QPoint(window->width() / 3, title.top() / 2),
+                              QPoint(window->width() / 2, title.top() / 2)};
+        QTRY_VERIFY(showsWhatItPainted(window, inTitle));
+        const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+        SendMessageW(hwnd, WM_NCACTIVATE, FALSE, 0);
+        QVERIFY(showsWhatItPainted(window, inTitle));
+        SendMessageW(hwnd, WM_NCACTIVATE, TRUE, 0);
+        QVERIFY(showsWhatItPainted(window, inTitle));
+        f.manager.panel(p("b"))->setTitle(p("B"));
+        QTRY_COMPARE(window->windowTitle(), p("B"));
+        QCoreApplication::processEvents();
+        QVERIFY(showsWhatItPainted(window, inTitle));
+        f.manager.panel(p("b"))->setTitle(p("b"));
 #else
         Q_UNUSED(inWindow);
 #endif

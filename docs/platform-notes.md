@@ -171,6 +171,9 @@ the window (`QWindowsWindow`, Qt 6.9 to 6.12). Border, shadow and round corners 
   that question itself (`nativeEvent()`), from where the pointer is alone: the borders resize, and all of
   the title (tabs, beside them, the title row, buttons) is the window's. Over Qt's two buttons lie widgets
   of QFlexDock's that take the clicks.
+- Without a title to Windows, the window has no caption to it either, and Windows draws one of the classic
+  sort over the top of the window when it is deactivated or its title changes (`WM_NCACTIVATE`,
+  `WM_SETTEXT`). QFlexDock keeps that from being drawn, as Qt does for frameless windows (QTBUG-127116).
 - As with `Custom`, all of the title is a dock drag: the window follows the pointer, docks when it is let
   go of over a dock area, and stays where it is let go of elsewhere. The system does not snap it to the
   screen edges then; a double click on the title still maximizes it.
