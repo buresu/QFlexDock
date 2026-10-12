@@ -412,6 +412,15 @@ bool DockTabGroup::titleBarEvent(QEvent *event)
             if (m_titleMode)
                 (void)m_manager->activate(m_current, Activation::Focus);
         }
+        // In the title bar of the window system (Unified frame) a press that
+        // nobody takes is the window system's, which only moves the window, or
+        // opens its menu. A title that stands for a panel is dragged as that
+        // panel, as anywhere else, and the menu is the panel's.
+        if (const DockFloatingWindow *floating = m_windowTitle ? floatingWindow() : nullptr;
+            floating && floating->hasUnifiedFrame()
+            && (m_titleMode || mouse->button() == Qt::RightButton)) {
+            return true;
+        }
         break;
     }
     case QEvent::MouseMove: {

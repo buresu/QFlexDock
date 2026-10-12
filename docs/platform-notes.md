@@ -164,7 +164,8 @@ the window (`QWindowsWindow`, Qt 6.9 to 6.12). Border, shadow and round corners 
   QFlexDock works it out from the system's metrics, as Qt does.
 - A press on the title that nothing takes (the header beside the tabs, the title row) is a press on a
   caption to the system: it moves the window, snaps it to the screen edges and maximizes it on a double
-  click.
+  click. A title that names its panel takes the press, so that dragging it is a dock drag that can dock
+  the window, and so does a right click on a header, which opens the panel's menu.
 
 Checked on the native platform at 200% (`tst_floating`, and pictures of the window with Qt's title bar on
 it); **not tried by hand** with a real pointer, and not at other scalings or on a second monitor.

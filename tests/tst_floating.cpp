@@ -304,6 +304,23 @@ private Q_SLOTS:
         QVERIFY(group->closeButton()->isHidden());
         QTRY_VERIFY(clearOfTheButtons(group->titleBar()));
         grab(window, p("floating-unified-one-panel"));
+        // A press on the title that names the panel is taken: dragged, the
+        // title takes the panel along, which can dock it. Taken by nobody, the
+        // press would be the window system's (on Windows), which only moves
+        // the window. So would a right click, which opens the panel's menu.
+        const auto pressTaken = [](QWidget *widget, const QPoint &pos, Qt::MouseButton button) {
+            const QPointF global = widget->mapToGlobal(QPointF(pos));
+            QMouseEvent press(QEvent::MouseButtonPress, QPointF(pos), global, button, button,
+                              Qt::NoModifier);
+            QApplication::sendEvent(widget, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, QPointF(pos), global, button,
+                                Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(widget, &release);
+            return press.isAccepted();
+        };
+        const QPoint onTitle = group->titleLabel()->geometry().center();
+        QVERIFY(pressTaken(group->titleBar(), onTitle, Qt::LeftButton));
+        QVERIFY(pressTaken(group->titleBar(), onTitle, Qt::RightButton));
         QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
         QVERIFY(group->tabBar()->isVisible());
         QTRY_VERIFY(clearOfTheButtons(group->titleBar()));
