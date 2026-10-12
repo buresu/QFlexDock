@@ -33,7 +33,7 @@ compositor can, however, move a window as part of a drag (`xdg-toplevel-drag-v1`
   the ghost's row of tabs, so that the pointer stays on it; in the window it becomes it is the first tab.
   Dropped on a dock area it docks and the ghost disappears; dropped elsewhere the ghost itself becomes the
   floating window; Esc just removes it. The ghost is what is dragged and nothing else: the frame of
-  the window, whichever it is, comes when it is dropped (on Windows and macOS too, **not verified** there).
+  the window, whichever it is, comes when it is dropped (on Windows and macOS too).
 - **Dragging everything a floating window contains** (its only tab or only tab group) carries that window
   itself: no second window appears.
 - **A floating window with a custom frame** can be dragged by its title row and dropped onto a dock area.
@@ -84,8 +84,7 @@ a timer, for as long as the drag lasts:
   takes no drop, and without a ghost.
 - `DockManager::setDragGhostEnabled(false)` goes back to a picture of the tab.
 
-All of this was tried by hand on Windows 11 at 200% scaling, Esc included, before the ghost and the moved
-window took drops themselves there; that is covered by `tst_floating` only. **Not verified:** a maximized
+All of this was tried by hand on Windows 11 at 200% scaling, Esc included. **Not verified:** a maximized
 `Minimal` window taken by its header, drags by touch or pen (a drop is told from Esc by the mouse button),
 and monitors of different scaling.
 
@@ -185,11 +184,12 @@ the window (`QWindowsWindow`, Qt 6.9 to 6.12). Border, shadow and round corners 
   screen edges then; a double click on the title still maximizes it.
 
 Checked on the native platform at 200% (`tst_floating`, and pictures of the window with Qt's title bar on
-it); **not tried by hand** with a real pointer, and not at other scalings or on a second monitor.
+it) and tried by hand there; **not verified** at other scalings or on a second monitor.
 
 **macOS.** The title bar is the system's, with its three buttons. QFlexDock hides the window's title
 (`NSWindow.titleVisibility`), and leaves the buttons as much room again beside them as they have from the
-edge (`standardWindowButton`). **Not verified** on macOS at all, neither built nor run.
+edge (`standardWindowButton`). Tried by hand; not automated (CI runs `offscreen` there, where `Unified`
+falls back to `Custom`).
 
 ### Shadows and the window system's buttons
 
