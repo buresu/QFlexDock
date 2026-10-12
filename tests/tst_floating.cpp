@@ -992,6 +992,11 @@ private Q_SLOTS:
         QCOMPARE(remembered(), QSize(420, 300));
         window->showNormal();
         QTRY_VERIFY(!window->isMaximized());
+        // Back to a size it had, which one is up to the window system.
+        // (Resized before the compositor has taken it back, as the fixture
+        // does on its way out, Qt Wayland breaks the connection: a protocol
+        // error with Qt 6.9 and Weston.)
+        QTRY_VERIFY(window->size() == QSize(900, 700) || window->size() == QSize(420, 300));
     }
 
     void outsideDropDefaultFollowsThePlatform()
