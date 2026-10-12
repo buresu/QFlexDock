@@ -4,13 +4,13 @@
 cmake_minimum_required(VERSION 3.23)
 project(QFlexDockConsumer LANGUAGES CXX)
 
-find_package(QFlexDock 0.2 REQUIRED)
+find_package(QFlexDock 0.3 REQUIRED)
 
 add_executable(consumer main.cpp)
 target_link_libraries(consumer PRIVATE QFlexDock::QFlexDock)
 
 # The Quick component is optional; when the installation has it, use it.
-find_package(QFlexDock 0.2 QUIET COMPONENTS Quick)
+find_package(QFlexDock 0.3 QUIET COMPONENTS Quick)
 if(QFlexDock_Quick_FOUND)
     add_executable(consumer_quick main_quick.cpp)
     target_link_libraries(consumer_quick PRIVATE QFlexDock::Quick)

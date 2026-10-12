@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.23)
 
 project(QFlexDock
-    VERSION 0.2.0
+    VERSION 0.3.0
     DESCRIPTION "Flexible docking library for Qt 6 Widgets"
     LANGUAGES CXX)
 
