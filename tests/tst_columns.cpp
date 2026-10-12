@@ -633,6 +633,15 @@ private Q_SLOTS:
         QTRY_VERIFY(!f.manager.panel(p("c"))->isOpen());
         QTRY_VERIFY(priv(f.manager)->floatingWindows.isEmpty());
 
+        // So it is where the window system's title bar would take the title.
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Unified);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 300, 260)));
+        QVERIFY(onlyFloatingWindow(f.manager)->hasMinimalFrame());
+        QVERIFY(!onlyFloatingWindow(f.manager)->hasUnifiedFrame());
+        QVERIFY(f.manager.closePanel(p("b")));
+        QTRY_VERIFY(priv(f.manager)->floatingWindows.isEmpty());
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Custom);
+
         // A workspace that does not dock in columns has its windows as ever.
         QVERIFY(f.b->addPanel(p("e")));
         QVERIFY(f.manager.floatPanel(p("e"), QRect(80, 80, 300, 260)));

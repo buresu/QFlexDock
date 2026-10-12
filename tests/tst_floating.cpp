@@ -242,6 +242,100 @@ private Q_SLOTS:
         QCOMPARE(window->area()->geometry(), window->rect());
     }
 
+    // The window system's frame, with the title of the Custom frame in its
+    // title bar. Where the window system has no room for it, the Custom frame.
+    void unifiedFrameHasTheTitleInTheWindowSystemsTitleBar()
+    {
+        TwoWindows f;
+        f.show();
+        buildLayout(f);
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Unified);
+        QCOMPARE(f.manager.floatingWindowFrame(), DockManager::FloatingWindowFrame::Unified);
+        QVERIFY(f.manager.floatPanel(p("b"), QRect(60, 60, 360, 260)));
+        DockFloatingWindow *window = floatingWindowOf(f, "b");
+        QVERIFY(window);
+        QVERIFY(QTest::qWaitForWindowExposed(window));
+        if (!DockFloatingWindow::unifiedFrameSupported()) {
+            QVERIFY(!window->hasUnifiedFrame());
+            QVERIFY(window->hasCustomFrame());
+            QVERIFY(!window->hasMinimalFrame());
+            QVERIFY(window->systemTitleInsets().isNull());
+            QSKIP("No window system here leaves its title bar to a window");
+        }
+
+        QVERIFY(window->hasUnifiedFrame());
+        QVERIFY(!window->hasCustomFrame());
+        QVERIFY(window->windowFlags().testFlag(Qt::ExpandedClientAreaHint));
+        QVERIFY(window->windowFlags().testFlag(Qt::NoTitleBarBackgroundHint));
+        QVERIFY(!window->windowFlags().testFlag(Qt::FramelessWindowHint));
+        if (QGuiApplication::platformName() == QLatin1String("windows")) {
+            // Qt would draw the window's icon and title over ours.
+            const Qt::WindowFlags drawn = window->windowHandle()->flags();
+            QVERIFY(!drawn.testFlag(Qt::WindowTitleHint));
+            QVERIFY(drawn.testFlag(Qt::WindowCloseButtonHint));
+        }
+        // Nothing of ours around the dock area: it reaches up into the title bar.
+        QTRY_COMPARE(window->area()->geometry(), window->rect());
+        const QMargins title = window->systemTitleInsets();
+        QVERIFY(title.top() > 0);
+        QVERIFY(title.left() > 0 || title.right() > 0);
+
+        // The window system's buttons are the window's; whatever is in the
+        // title is clear of them, and it is as high as the title bar.
+        // (At the top of the window, but for the frame of a tab group.)
+        const auto clearOfTheButtons = [window, title](const QWidget *row) {
+            if (row->mapTo(window, QPoint(0, 0)).y() >= title.top() / 2)
+                return false;
+            const QList<QWidget *> parts = row->findChildren<QWidget *>(Qt::FindDirectChildrenOnly);
+            for (const QWidget *part : parts) {
+                if (!part->isVisible())
+                    continue;
+                const QRect rect(part->mapTo(window, QPoint(0, 0)), part->size());
+                if (rect.left() < title.left() || rect.right() >= window->width() - title.right())
+                    return false;
+            }
+            return row->height() >= title.top();
+        };
+        QVERIFY(window->headerIsTitle());
+        const DockTabGroup *group = window->area()->groupOfPanel(p("b"));
+        QVERIFY(group->titleLabel()->isVisible());
+        QCOMPARE(group->titleLabel()->text(), p("b"));
+        QVERIFY(group->maximizeButton()->isHidden());
+        QVERIFY(group->closeButton()->isHidden());
+        QTRY_VERIFY(clearOfTheButtons(group->titleBar()));
+        grab(window, p("floating-unified-one-panel"));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
+        QVERIFY(group->tabBar()->isVisible());
+        QTRY_VERIFY(clearOfTheButtons(group->titleBar()));
+
+        // Two groups: the title row of the Custom frame, without its buttons.
+        QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Right));
+        QVERIFY(window->hasTitleRow());
+        QVERIFY(!window->closeButton() && !window->maximizeButton());
+        QVERIFY(group->closeButton()->isHidden());
+        QWidget *row = window->titleBar();
+        QVERIFY(row->isVisible());
+        QTRY_VERIFY(clearOfTheButtons(row));
+        QCOMPARE(window->customFrameMargins(), QMargins(0, row->height(), 0, 0));
+        QCOMPARE(window->area()->geometry().top(), row->height());
+        grab(window, p("floating-unified-title-row"));
+        QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Center));
+        QVERIFY(!window->hasTitleRow());
+        QVERIFY(group->maximizeButton()->isHidden());
+
+        // The ghost of a drag has nothing of the window system's frame.
+        DockDragController *controller = priv(f.manager)->drag;
+        QVERIFY(controller->begin(p("a"), false));
+        const QPointer<DockFloatingWindow> ghost = controller->createGhost();
+        QVERIFY(ghost);
+        QVERIFY(ghost->hasUnifiedFrame());
+        QVERIFY(ghost->windowFlags().testFlag(Qt::FramelessWindowHint));
+        QVERIFY(!ghost->windowFlags().testFlag(Qt::ExpandedClientAreaHint));
+        QVERIFY(ghost->systemTitleInsets().isNull());
+        controller->finish(Qt::IgnoreAction, ghost, false);
+        QTRY_VERIFY(!ghost);
+    }
+
     void toolWindowsWhereAWorkspaceOwnsThem()
     {
         TwoWindows f;

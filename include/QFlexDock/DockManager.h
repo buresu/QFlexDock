@@ -121,6 +121,13 @@ public:
         /// the content. The headers of the tab groups inside are what the
         /// user takes hold of, which suits DockGroupHeader::TitleBar.
         Minimal,
+        /// The window system's frame, with the title drawn by QFlexDock into
+        /// its title bar (Qt::ExpandedClientAreaHint): the header of the
+        /// window's one tab group, or a title row as with Custom, beside the
+        /// window system's buttons. Border, shadow, corners, resizing and
+        /// snapping are the window system's. Windows and macOS; elsewhere
+        /// windows get the Custom frame.
+        Unified,
     };
     Q_ENUM(FloatingWindowFrame)
 

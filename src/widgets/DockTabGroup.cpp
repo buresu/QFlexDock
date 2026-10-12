@@ -486,6 +486,10 @@ void DockTabGroup::updateHeader()
     // The title of a floating window names its one panel, and needs no tab.
     const DockFloatingWindow *floating = floatingWindow();
     m_windowTitle = floating && floating->headerIsTitle();
+    // It has the buttons of the window, unless it is in the title bar of the
+    // window system (Unified frame), which has them, and has to be clear of them.
+    const bool windowButtons = m_windowTitle && !floating->hasUnifiedFrame();
+    const QMargins systemTitle = m_windowTitle ? floating->systemTitleInsets() : QMargins();
     const bool titleBars =
         m_manager->groupHeaderFor(m_area->containerId()) == DockGroupHeader::TitleBar;
     const bool titleMode = titleBars || (m_windowTitle && m_panels.size() == 1);
@@ -526,15 +530,19 @@ void DockTabGroup::updateHeader()
     setShown(m_menuButton, buttons.testFlag(DockTitleButton::Menu));
     setShown(m_flyoutButton, m_flyout);
     // (A window's title has the buttons of a window, whatever the theme.)
-    setShown(m_maximizeButton,
-             m_windowTitle || (buttons.testFlag(DockTitleButton::Maximize) && !m_flyout));
+    setShown(m_maximizeButton, m_windowTitle ? windowButtons
+                                             : buttons.testFlag(DockTitleButton::Maximize) && !m_flyout);
     setShown(m_floatButton, buttons.testFlag(DockTitleButton::Float)
                                 && features.testFlag(DockFeature::Floatable));
     setShown(m_autoHideButton, buttons.testFlag(DockTitleButton::AutoHide) && !floating
                                    && features.testFlag(DockFeature::AutoHideable));
-    setShown(m_closeButton, m_windowTitle || (buttons.testFlag(DockTitleButton::Close)
-                                              && features.testFlag(DockFeature::Closable)));
-    placeWindowButtons(m_windowTitle && m_manager->windowButtonsAtStart(this));
+    setShown(m_closeButton, m_windowTitle ? windowButtons
+                                          : buttons.testFlag(DockTitleButton::Close)
+                                                && features.testFlag(DockFeature::Closable));
+    placeWindowButtons(windowButtons && m_manager->windowButtonsAtStart(this));
+    m_titleLayout->setContentsMargins((m_windowButtonsAtStart ? 2 : 0) + systemTitle.left(), 0,
+                                      2 + systemTitle.right(), 0);
+    m_titleBar->setMinimumHeight(systemTitle.top());
     const bool maximized = m_windowTitle ? floating->isMaximized() : m_maximized;
     m_maximizeButton->setIcon(
         m_manager->icon(maximized ? DockIcon::Restore : DockIcon::Maximize, this));
@@ -576,7 +584,6 @@ void DockTabGroup::placeWindowButtons(bool atStart)
                                     Qt::AlignVCenter);
         m_titleLayout->addWidget(m_closeButton, 0, Qt::AlignVCenter);
     }
-    m_titleLayout->setContentsMargins(atStart ? 2 : 0, 0, 2, 0);
 }
 
 // The current panel's own actions in their three places, each as a button, a
@@ -746,13 +753,20 @@ QSize DockTabGroup::preferredSize() const
     if (const QWidget *widget = panel ? panel->widget() : nullptr)
         content = content.expandedTo(widget->sizeHint());
     const bool tabsBelow = m_titleMode && !m_tabBar->isHidden();
-    const int header = (m_titleBar->isHidden() ? 0 : m_titleBar->sizeHint().height())
-        + (tabsBelow ? m_tabBar->sizeHint().height() : 0);
+    const int header = titleBarHeight() + (tabsBelow ? m_tabBar->sizeHint().height() : 0);
     const QMargins frame = contentsMargins();
     const SizeLimits limits = sizeLimits();
     return QSize(content.width() + frame.left() + frame.right(),
                  content.height() + header + frame.top() + frame.bottom())
         .expandedTo(limits.min).boundedTo(limits.max);
+}
+
+// (As high as the title bar of the window system, where it is in that.)
+int DockTabGroup::titleBarHeight() const
+{
+    if (m_titleBar->isHidden())
+        return 0;
+    return qMax(m_titleBar->sizeHint().height(), m_titleBar->minimumHeight());
 }
 
 void DockTabGroup::restyle()
@@ -1004,8 +1018,7 @@ SizeLimits DockTabGroup::sizeLimits() const
 
     // The header: the title row, and tabs that are shown below the content.
     const bool tabsBelow = m_titleMode && !m_tabBar->isHidden();
-    const int headerH = (m_titleBar->isHidden() ? 0 : m_titleBar->sizeHint().height())
-        + (tabsBelow ? m_tabBar->sizeHint().height() : 0);
+    const int headerH = titleBarHeight() + (tabsBelow ? m_tabBar->sizeHint().height() : 0);
     const QMargins frame = contentsMargins();
     const int extraW = frame.left() + frame.right();
     const int extraH = frame.top() + frame.bottom() + headerH;

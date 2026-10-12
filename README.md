@@ -63,7 +63,7 @@ after Chrome, and `photoshop-style` after Photoshop.
 
 ## Build
 
-Requires CMake 3.23+, a C++20 compiler and Qt 6.8+ (Core, Gui, Widgets; Quick and QuickWidgets for the Quick module).
+Requires CMake 3.23+, a C++20 compiler and Qt 6.9+ (Core, Gui, Widgets; Quick and QuickWidgets for the Quick module).
 
 ```sh
 cmake -S . -B build -G Ninja
@@ -104,13 +104,13 @@ around floating windows whose frame QFlexDock draws (macOS gives them one; see
 
 | Environment | Notes |
 |---|---|
-| Linux, Qt 6.8, 6.10 and 6.12 | Static and shared; also with ASan + UBSan |
-| Windows, Qt 6.8 and 6.10 | Build and tests on the `offscreen` platform only |
+| Linux, Qt 6.10 and 6.12 | Static and shared; also with ASan + UBSan |
+| Windows, Qt 6.10 | Build and tests on the `offscreen` platform only |
 | Windows 11, Qt 6.12, native platform | Locally, on a desktop that is not shown (`tests/run-on-hidden-desktop.ps1`), at 200% scaling; `tst_quick` also rendering with Direct3D. Real-drag tests are skipped |
-| macOS, Qt 6.8 and 6.10 | Build and tests on the `offscreen` platform only |
+| macOS, Qt 6.10 | Build and tests on the `offscreen` platform only |
 | `offscreen` | `QOpenGLWidget` and real-drag tests are skipped |
 | X11 (Xvfb) | Includes real `QDrag` between windows, a tab moved along its bar and then dragged off it, Esc, outside drops, tabs torn off and joined between floating windows, moving a `QOpenGLWidget` |
-| Wayland (headless KWin and Weston) | Real-drag and window-position tests are skipped; so are the two keyboard-focus tests where the compositor does not activate the window (Weston, which has no keyboard; KWin with Qt 6.8) |
+| Wayland (headless KWin and Weston) | Real-drag and window-position tests are skipped; so are the two keyboard-focus tests where the compositor does not activate the window (Weston, which has no keyboard) |
 
 **Not verified:**
 

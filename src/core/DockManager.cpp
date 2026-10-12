@@ -1882,15 +1882,20 @@ void DockManagerPrivate::columnDockingChanged(const DockWorkspace *workspace)
 }
 
 // Where every column has a bar, that bar is what a floating window is moved
-// by: there is nothing left for a title row to stand for.
+// by: there is nothing left for a title row to stand for. Where the window
+// system has no room for a title of ours in its title bar, ours has a frame
+// of its own.
 DockManager::FloatingWindowFrame DockManagerPrivate::floatingFrameFor(const QString &owner) const
 {
+    using Frame = DockManager::FloatingWindowFrame;
     const bool columns = std::any_of(workspaces.cbegin(), workspaces.cend(),
                                      [&owner](const DockWorkspace *workspace) {
         return workspace->workspaceId() == owner && workspace->d->columnDocking;
     });
-    return columns && floatingFrame == DockManager::FloatingWindowFrame::Custom
-        ? DockManager::FloatingWindowFrame::Minimal : floatingFrame;
+    Frame frame = floatingFrame;
+    if (frame == Frame::Unified && !DockFloatingWindow::unifiedFrameSupported())
+        frame = Frame::Custom;
+    return columns && (frame == Frame::Custom || frame == Frame::Unified) ? Frame::Minimal : frame;
 }
 
 int DockManagerPrivate::columnBarHeight() const

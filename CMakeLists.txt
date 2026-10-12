@@ -5,7 +5,12 @@ project(QFlexDock
     DESCRIPTION "Flexible docking library for Qt 6 Widgets"
     LANGUAGES CXX)
 
-set(QFLEXDOCK_QT_MIN_VERSION 6.8)
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    # The title bar of a macOS window (src/widgets/DockFloatingWindow_mac.mm).
+    enable_language(OBJCXX)
+endif()
+
+set(QFLEXDOCK_QT_MIN_VERSION 6.9)
 
 # NMake and JOM makefiles hand the prefix by which CMake picks the headers out
 # of what `cl /showIncludes` prints to the compiler through the system's code
@@ -46,7 +51,7 @@ function(qflexdock_configure_target target)
         QT_NO_CAST_FROM_ASCII
         QT_NO_CAST_TO_ASCII
         QT_NO_KEYWORDS
-        QT_DISABLE_DEPRECATED_UP_TO=0x060800)
+        QT_DISABLE_DEPRECATED_UP_TO=0x060900)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /permissive- /utf-8)
         if(QFLEXDOCK_WARNINGS_AS_ERRORS)

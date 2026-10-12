@@ -70,7 +70,7 @@ tests/                    Qt Test; shared fixtures in TestUtils.h
 - **The layout does not change during a drag.** It is committed after `QDrag::exec()` returns.
 - **No Qt private API.** The build uses `QT_NO_KEYWORDS` and `QT_NO_CAST_FROM_ASCII`
   (`Q_EMIT` / `Q_SIGNALS`, `QStringLiteral`).
-- **No API newer than Qt 6.8.** The local Qt is 6.12, so check when an API was introduced.
+- **No API newer than Qt 6.9.** The local Qt is 6.12, so check when an API was introduced.
 - **Nothing copied from other docking libraries or applications**: no code, no artwork, no theme files, no
   material of unclear origin, no Conan files. Other docking libraries are not named in the repository. An
   example that rebuilds the layout and look of an existing application may name it (`examples/obs-style`,

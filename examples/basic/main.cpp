@@ -22,6 +22,8 @@
 #include <QtWidgets/QMessageBox>
 #include <QtWidgets/QStatusBar>
 
+#include <utility>
+
 using namespace QFlexDock;
 
 int main(int argc, char *argv[])
@@ -121,13 +123,24 @@ int main(int argc, char *argv[])
     QObject::connect(&manager, &DockManager::presetsChanged, &window, rebuildPresets);
     rebuildPresets();
     layoutMenu->addSeparator();
-    QAction *nativeFrame = layoutMenu->addAction(QStringLiteral("Native Frame for Floating Windows"));
-    nativeFrame->setCheckable(true);
-    QObject::connect(nativeFrame, &QAction::toggled, &manager, [&manager](bool native) {
-        // Applies to floating windows created from now on.
-        manager.setFloatingWindowFrame(native ? DockManager::FloatingWindowFrame::Native
-                                              : DockManager::FloatingWindowFrame::Custom);
-    });
+    // Applies to floating windows created from now on.
+    QMenu *frameMenu = layoutMenu->addMenu(QStringLiteral("Floating Window Frame"));
+    auto *frames = new QActionGroup(frameMenu);
+    for (const auto &[name, frame] :
+         {std::pair(QStringLiteral("Custom"), DockManager::FloatingWindowFrame::Custom),
+          std::pair(QStringLiteral("Minimal"), DockManager::FloatingWindowFrame::Minimal),
+          std::pair(QStringLiteral("Native"), DockManager::FloatingWindowFrame::Native),
+          // The title in the window system's title bar; Custom where there is
+          // no room for it there.
+          std::pair(QStringLiteral("Unified (Windows, macOS)"),
+                    DockManager::FloatingWindowFrame::Unified)}) {
+        QAction *action = frameMenu->addAction(name, &manager, [&manager, frame] {
+            manager.setFloatingWindowFrame(frame);
+        });
+        action->setCheckable(true);
+        action->setChecked(manager.floatingWindowFrame() == frame);
+        frames->addAction(action);
+    }
     QAction *buttonsFirst = layoutMenu->addAction(QStringLiteral("Window Buttons at the Start"));
     buttonsFirst->setCheckable(true);
     QObject::connect(buttonsFirst, &QAction::toggled, &manager, [&manager](bool first) {

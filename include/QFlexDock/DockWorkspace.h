@@ -85,7 +85,8 @@ public:
     ///    the column to buttons (DockManager::setColumnIconified()). In a
     ///    floating window the bar is what the window is moved by and closed
     ///    with, so such a window has no title row
-    ///    (DockManager::FloatingWindowFrame::Custom is Minimal there).
+    ///    (DockManager::FloatingWindowFrame::Custom and Unified are Minimal
+    ///    there).
     [[nodiscard]] bool isColumnDocking() const;
     void setColumnDocking(bool enabled);
 

@@ -736,7 +736,7 @@ void DockDragController::finish(Qt::DropAction action, DockFloatingWindow *ghost
         const std::optional<PanelLocation> location = m_manager->state.locate(session.primary);
         DockFloatingWindow *window =
             location ? m_manager->floatingWindows.value(location->container) : nullptr;
-        if (window && window->hasCustomFrame()) {
+        if (window && (window->hasCustomFrame() || window->hasUnifiedFrame())) {
             window->resize(geometry.marginsAdded(window->customFrameMargins()).size());
         }
     }

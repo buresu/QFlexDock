@@ -58,8 +58,13 @@ target_sources(QFlexDock
 target_include_directories(QFlexDock PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(QFlexDock PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets)
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    # The mouse button and the Escape key during a drag (DockDragController).
-    target_link_libraries(QFlexDock PRIVATE "-framework CoreGraphics")
+    # The title bar of a window (DockFloatingWindow, Unified frame).
+    target_sources(QFlexDock PRIVATE
+        widgets/DockFloatingWindow_mac.h
+        widgets/DockFloatingWindow_mac.mm)
+    # The mouse button and the Escape key during a drag (DockDragController),
+    # and the title bar.
+    target_link_libraries(QFlexDock PRIVATE "-framework CoreGraphics" "-framework AppKit")
 endif()
 target_compile_definitions(QFlexDock PRIVATE QFLEXDOCK_BUILD)
 qflexdock_configure_target(QFlexDock)

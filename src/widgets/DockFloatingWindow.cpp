@@ -4,6 +4,7 @@
 #include "core/DockDragController.h"
 #include "widgets/DockAreaWidget.h"
 
+#include <QtCore/QtMath>
 #include <QtGui/QCloseEvent>
 #include <QtGui/QPainter>
 #include <QtGui/QWindow>
@@ -16,9 +17,33 @@
 
 #include <utility>
 
+#ifdef Q_OS_WIN
+#  include <QtCore/qt_windows.h>
+#endif
+#ifdef Q_OS_MACOS
+#  include "widgets/DockFloatingWindow_mac.h"
+#endif
+
 namespace QFlexDock {
 
 namespace {
+
+// What has the window system leave its title bar to the window (Unified).
+constexpr Qt::WindowFlags UnifiedHints = Qt::ExpandedClientAreaHint | Qt::NoTitleBarBackgroundHint;
+
+Qt::WindowFlags flagsFor(DockManager::FloatingWindowFrame frame)
+{
+    switch (frame) {
+    case DockManager::FloatingWindowFrame::Native:
+        return Qt::Window;
+    case DockManager::FloatingWindowFrame::Unified:
+        return Qt::Window | UnifiedHints;
+    case DockManager::FloatingWindowFrame::Custom:
+    case DockManager::FloatingWindowFrame::Minimal:
+        break;
+    }
+    return Qt::Window | Qt::FramelessWindowHint;
+}
 
 // How long before a window is known to be maximized its geometry may have
 // begun to change towards that already, in milliseconds.
@@ -122,17 +147,22 @@ private:
 
 DockFloatingWindow::DockFloatingWindow(DockManagerPrivate *manager, const QString &containerId,
                                        DockManager::FloatingWindowFrame frame)
-    : QWidget(nullptr, frame == DockManager::FloatingWindowFrame::Native
-                           ? Qt::Window : Qt::Window | Qt::FramelessWindowHint)
+    : QWidget(nullptr, flagsFor(frame))
     , m_manager(manager)
     , m_containerId(containerId)
-    , m_customFrame(frame != DockManager::FloatingWindowFrame::Native)
+    , m_customFrame(frame == DockManager::FloatingWindowFrame::Custom
+                    || frame == DockManager::FloatingWindowFrame::Minimal)
+    , m_unified(frame == DockManager::FloatingWindowFrame::Unified)
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(0, 0, 0, 0);
     layout->setSpacing(0);
+    // The title bar of the window system is where the title of ours goes,
+    // which leaves its buttons room itself.
+    if (m_unified)
+        setAttribute(Qt::WA_ContentsMarginsRespectsSafeArea, false);
 
-    if (frame == DockManager::FloatingWindowFrame::Custom) {
+    if (frame == DockManager::FloatingWindowFrame::Custom || m_unified) {
         m_titleBar = new QWidget(this);
         m_titleBar->setObjectName(QStringLiteral("dockFloatingTitleBar"));
         m_titleBar->setAttribute(Qt::WA_StyledBackground);
@@ -152,18 +182,20 @@ DockFloatingWindow::DockFloatingWindow(DockManagerPrivate *manager, const QStrin
             button->setAccessibleName(tip);
             return button;
         };
-        m_maximizeButton = makeButton("dockFloatingMaximizeButton", tr("Maximize"));
-        m_closeButton = makeButton("dockFloatingCloseButton", tr("Close"));
-        connect(m_maximizeButton, &QToolButton::clicked, this, &DockFloatingWindow::toggleMaximized);
-        connect(m_closeButton, &QToolButton::clicked, this, &QWidget::close);
-
         auto *titleLayout = new QHBoxLayout(m_titleBar);
         titleLayout->setContentsMargins(8, 3, 3, 3);
         titleLayout->setSpacing(6);
         titleLayout->addWidget(m_titleIcon);
         titleLayout->addWidget(m_titleLabel, 1);
-        titleLayout->addWidget(m_maximizeButton);
-        titleLayout->addWidget(m_closeButton);
+        if (!m_unified) {
+            m_maximizeButton = makeButton("dockFloatingMaximizeButton", tr("Maximize"));
+            m_closeButton = makeButton("dockFloatingCloseButton", tr("Close"));
+            connect(m_maximizeButton, &QToolButton::clicked, this,
+                    &DockFloatingWindow::toggleMaximized);
+            connect(m_closeButton, &QToolButton::clicked, this, &QWidget::close);
+            titleLayout->addWidget(m_maximizeButton);
+            titleLayout->addWidget(m_closeButton);
+        }
         layout->addWidget(m_titleBar);
         m_titleBar->hide(); // until the window holds what needs it
     }
@@ -266,9 +298,59 @@ bool DockFloatingWindow::showTitleRow(bool shown)
 QMargins DockFloatingWindow::customFrameMargins() const
 {
     QMargins frame = layout()->contentsMargins();
-    if (m_titleRow)
-        frame.setTop(frame.top() + m_titleBar->sizeHint().height());
+    if (m_titleRow) {
+        frame.setTop(frame.top()
+                     + qMax(m_titleBar->sizeHint().height(), m_titleBar->minimumHeight()));
+    }
     return frame;
+}
+
+bool DockFloatingWindow::unifiedFrameSupported()
+{
+    const QString platform = QGuiApplication::platformName();
+    return platform == QLatin1String("windows") || platform == QLatin1String("cocoa");
+}
+
+QMargins DockFloatingWindow::systemTitleInsets() const
+{
+    if (!m_unified || m_ghost || isFullScreen())
+        return {};
+#ifdef Q_OS_WIN
+    if (QGuiApplication::platformName() == QLatin1String("windows")) {
+        // Qt draws the title bar there itself (QWindowsWindow::updateCustomTitlebar()):
+        // as high as the system's caption and resize border together, with
+        // buttons half as wide again as that at the right, here two of them.
+        // QWindow::safeAreaMargins() has that height, but for 96 dpi on a
+        // screen that is scaled (seen with Qt 6.12).
+        const qreal ratio = devicePixelRatioF();
+        const WId id = internalWinId();
+        const UINT dpi = id ? GetDpiForWindow(reinterpret_cast<HWND>(id)) : UINT(qRound(96 * ratio));
+        const int height = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi)
+            + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi)
+            + GetSystemMetricsForDpi(SM_CYCAPTION, dpi);
+        const int buttons = 2 * int(height * 1.5);
+        return QMargins(0, qCeil(height / ratio), qCeil(buttons / ratio), 0);
+    }
+#endif
+#ifdef Q_OS_MACOS
+    if (QGuiApplication::platformName() == QLatin1String("cocoa")) {
+        // The window's own buttons are at one end of its title bar.
+        const QWindow *handle = windowHandle();
+        if (!handle || !internalWinId())
+            return {};
+        QMargins insets(0, handle->safeAreaMargins().top(), 0, 0);
+        if (const QRect buttons = MacWindow::buttonsRect(handle); buttons.isValid()) {
+            // Beside them, as much room again as they have from the edge.
+            const int fromRight = width() - 1 - buttons.right();
+            if (buttons.center().x() < width() / 2)
+                insets.setLeft(buttons.right() + 1 + buttons.left());
+            else
+                insets.setRight(width() - buttons.left() + fromRight);
+        }
+        return insets;
+    }
+#endif
+    return {};
 }
 
 void DockFloatingWindow::updateTitle()
@@ -296,6 +378,14 @@ void DockFloatingWindow::refreshAppearance()
 {
     if (!m_titleBar || !m_manager)
         return;
+    if (m_unified) {
+        // The title row is the title bar of the window system, clear of its
+        // buttons, which are the only ones.
+        const QMargins room = systemTitleInsets();
+        m_titleBar->layout()->setContentsMargins(8 + room.left(), 3, 8 + room.right(), 3);
+        m_titleBar->setMinimumHeight(room.top());
+        return;
+    }
     // The buttons are at the end of the title row or, the other way around,
     // at its start.
     if (const bool atStart = m_manager->windowButtonsAtStart(this); atStart != m_buttonsAtStart) {
@@ -347,11 +437,48 @@ void DockFloatingWindow::present(const QRect &geometry, QWidget *ownerWindow)
         if (QWindow *owner = ownerWindow->windowHandle())
             windowHandle()->setTransientParent(owner);
     }
+    if (m_unified && !m_ghost)
+        prepareUnifiedFrame();
     m_presented = true;
     show();
     // Where the plain window is, to begin with.
     m_clock.start();
     m_reported = {Reported{0, this->geometry()}};
+}
+
+// What the window system does with the title bar of a Unified window that
+// Qt's flags do not say, and what the window learns of it from then on. Once
+// the window exists.
+void DockFloatingWindow::prepareUnifiedFrame()
+{
+    winId();
+    QWindow *handle = windowHandle();
+#ifdef Q_OS_WIN
+    // Qt draws the title bar there, with the window's icon and title if it has
+    // a title, which every window with buttons has to QWidget. They would be
+    // drawn over ours: the window itself is told of the buttons alone.
+    handle->setFlags((handle->flags() & ~(Qt::WindowTitleHint | Qt::WindowMinimizeButtonHint))
+                     | Qt::CustomizeWindowHint | Qt::WindowSystemMenuHint
+                     | Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
+#endif
+#ifdef Q_OS_MACOS
+    // macOS writes the title in the middle of its title bar, over ours.
+    MacWindow::hideTitle(handle);
+#endif
+    connect(handle, &QWindow::safeAreaMarginsChanged, this, &DockFloatingWindow::systemTitleChanged,
+            Qt::UniqueConnection);
+    systemTitleChanged();
+}
+
+// The title bar of the window system has another size, or its buttons are
+// elsewhere: the title of ours follows.
+void DockFloatingWindow::systemTitleChanged()
+{
+    if (!m_unified)
+        return;
+    refreshAppearance();
+    if (headerIsTitle())
+        m_area->refreshAppearance();
 }
 
 // --- Drag ghost --------------------------------------------------------------
@@ -361,7 +488,8 @@ void DockFloatingWindow::beginGhost(const QPixmap &picture, const QString &title
     m_ghost = true;
     if (bare && !m_customFrame) {
         m_bareGhost = true;
-        setWindowFlag(Qt::FramelessWindowHint);
+        // Nothing of the window system's frame, its buttons included.
+        setWindowFlags((windowFlags() | Qt::FramelessWindowHint) & ~UnifiedHints);
     }
     showTitleRow(false);
     setWindowTitle(title);
@@ -392,9 +520,12 @@ void DockFloatingWindow::adoptAs(const QString &containerId, const QSize &size)
         m_bareGhost = false;
         // The frame comes to the window as it is (see setCarriedAlong()); the
         // widget is only told.
-        overrideWindowFlags(windowFlags() & ~Qt::FramelessWindowHint);
+        const Qt::WindowFlags unified = m_unified ? UnifiedHints : Qt::WindowFlags();
+        overrideWindowFlags((windowFlags() & ~Qt::FramelessWindowHint) | unified);
         if (QWindow *handle = windowHandle())
-            handle->setFlag(Qt::FramelessWindowHint, false);
+            handle->setFlags((handle->flags() & ~Qt::FramelessWindowHint) | unified);
+        if (m_unified)
+            prepareUnifiedFrame();
     }
     // What was torn off keeps its size, also if the window system takes the
     // room for its frame from the window: see resizeEvent().
@@ -473,6 +604,15 @@ void DockFloatingWindow::ghostDragMoved()
 }
 
 // --- Events ------------------------------------------------------------------
+
+bool DockFloatingWindow::event(QEvent *event)
+{
+    // On another screen, the title bar of the window system may have another
+    // height in pixels of ours.
+    if (event->type() == QEvent::DevicePixelRatioChange)
+        systemTitleChanged();
+    return QWidget::event(event);
+}
 
 void DockFloatingWindow::paintEvent(QPaintEvent *)
 {
@@ -560,8 +700,10 @@ void DockFloatingWindow::changeEvent(QEvent *event)
             settlePlainGeometry();
         updateFrameMargins();
         refreshAppearance();
+        // Its maximize button is the window's; or, Unified, it leaves the
+        // window system's room, which full screen has none of.
         if (headerIsTitle())
-            m_area->refreshAppearance(); // its maximize button is the window's
+            m_area->refreshAppearance();
         // For style sheet rules that go by the `maximized` property.
         style()->unpolish(this);
         style()->polish(this);

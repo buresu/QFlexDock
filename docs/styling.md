@@ -15,7 +15,7 @@ QFlexDock has no theme of its own. Looks are decided in three layers, each overr
 | Tab group frame | `QFrame::StyledPanel` |
 | Title row buttons | `QToolButton`s with line icons in the palette's `WindowText` color; a panel's own actions as `QToolButton`s with the icons they bring |
 | Drop guide | The rectangle a drop would take, in translucent colors derived from the palette's `Highlight` |
-| Floating windows | A thin border, and a title row once the window holds more than one tab group (`FloatingWindowFrame::Minimal`: the border alone), or with `FloatingWindowFrame::Native` the platform's window frame |
+| Floating windows | A thin border, and a title row once the window holds more than one tab group (`FloatingWindowFrame::Minimal`: the border alone), or with `FloatingWindowFrame::Native` the platform's window frame; `Unified` has the platform's frame with that title row (or header) in its title bar |
 | Buttons of a floating window | At the end of its title where the style has the buttons of a `QDockWidget` there (`QStyle::SE_DockWidgetCloseButton`), at its start where it has them at the start: the macOS style |
 
 Changes to the style, palette, font or style sheet, and the system's light/dark switch, are picked up
@@ -188,7 +188,8 @@ apply to the floating windows created after `setTheme()`.
 QFlexDock's: `Start` is the left end of the title (the right one where the layout runs from right to
 left), the one that closes first. That goes for the title row, for the header of the one tab group that is
 the title of its window, where the group's own buttons stay at the end, and for the bar of a column that
-is a window. The windows that are there follow.
+is a window. The windows that are there follow. A `Unified` window has none of these tokens: its border,
+corners and buttons are the window system's.
 
 A tab of any shape can be drawn by the application's `QStyle` (a `QProxyStyle` handling
 `QStyle::CE_TabBarTab`), as `examples/chrome-style` does; a style sheet rule for `::tab` takes the tabs

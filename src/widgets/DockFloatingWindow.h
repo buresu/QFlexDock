@@ -25,12 +25,15 @@ class DockAreaWidget;
 /// drawn here: a frameless window with resizable edges and (Custom) a title
 /// row of its own, or (Minimal) none, in which case the headers of the tab
 /// groups inside are what moves it. Moving and resizing are still done by the
-/// window system (QWindow::startSystemMove() / startSystemResize()).
+/// window system (QWindow::startSystemMove() / startSystemResize()). The
+/// Unified frame is the platform's, with the title of the Custom frame in its
+/// title bar (Qt::ExpandedClientAreaHint), beside the platform's buttons.
 ///
-/// The title row of the Custom frame is only there for what no header in the
-/// window stands for. A window holding one tab group leaves it to the header
-/// of that group, which then is the title: it names the panel, if there is
-/// one, or holds the tabs, and has the buttons of the window.
+/// The title row of the Custom and Unified frames is only there for what no
+/// header in the window stands for. A window holding one tab group leaves it
+/// to the header of that group, which then is the title: it names the panel,
+/// if there is one, or holds the tabs, and has the buttons of the window (or,
+/// Unified, leaves room for the window system's).
 ///
 /// How wide that frame is, how round its corners are and which end of the
 /// title the buttons of the window are at is up to the theme
@@ -63,14 +66,27 @@ public:
     [[nodiscard]] QString owner() const { return m_owner; }
     /// A custom frame without a title row (FloatingWindowFrame::Minimal).
     [[nodiscard]] bool hasMinimalFrame() const { return m_customFrame && !m_titleBar; }
+    /// The window system's frame with the title drawn into it
+    /// (FloatingWindowFrame::Unified).
+    [[nodiscard]] bool hasUnifiedFrame() const { return m_unified; }
+    /// Whether the window system leaves the title bar of a window to what
+    /// the window holds: Windows and macOS.
+    [[nodiscard]] static bool unifiedFrameSupported();
+    /// Unified frame: how much of the top of the window the title bar of the
+    /// window system takes (top), and how far in from the left and the right
+    /// its buttons reach there. None for the other frames.
+    [[nodiscard]] QMargins systemTitleInsets() const;
     [[nodiscard]] QWidget *titleBar() const { return m_titleBar; }
-    /// Whether the title row of the Custom frame is there at the moment.
+    /// Whether the title row of the Custom or Unified frame is there at the
+    /// moment.
     [[nodiscard]] bool hasTitleRow() const { return m_titleRow; }
-    /// The header of the window's one tab group is its title (Custom frame).
+    /// The header of the window's one tab group is its title (Custom and
+    /// Unified frames).
     [[nodiscard]] bool headerIsTitle() const { return m_titleBar && !m_titleRow && !m_ghost; }
     /// No title row to move the window by: the headers of its groups do
-    /// that (Minimal frame, and Custom while a header is the title).
-    [[nodiscard]] bool isMovedByHeaders() const { return m_customFrame && !m_titleRow; }
+    /// that (Minimal frame, and Custom or Unified while a header is the
+    /// title).
+    [[nodiscard]] bool isMovedByHeaders() const { return (m_customFrame || m_unified) && !m_titleRow; }
     /// What the frame drawn here takes around the dock area: its border and
     /// the title row, if that is there.
     [[nodiscard]] QMargins customFrameMargins() const;
@@ -131,6 +147,7 @@ public:
     [[nodiscard]] bool takesDrops() const { return m_takesDrops; }
 
 protected:
+    bool event(QEvent *event) override;
     void paintEvent(QPaintEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void moveEvent(QMoveEvent *event) override;
@@ -152,12 +169,15 @@ private:
     void updateFrameMargins();
     [[nodiscard]] bool wantsTitleRow(const LayoutTree &tree) const;
     bool showTitleRow(bool shown);
+    void prepareUnifiedFrame();
+    void systemTitleChanged();
 
     DockManagerPrivate *m_manager;
     QString m_containerId;
     QString m_owner;
     DockAreaWidget *m_area;
     bool m_customFrame;
+    bool m_unified;
     int m_borderWidth = 0;
     int m_cornerRadius = 0;
     QList<QWidget *> m_grips;
@@ -186,7 +206,7 @@ private:
     /// The size last asked for as such a window.
     QSize m_fitted;
 
-    // Custom frame only.
+    // Custom and Unified frames only (the buttons: Custom only).
     QWidget *m_titleBar = nullptr;
     bool m_titleRow = false;
     bool m_buttonsAtStart = false;

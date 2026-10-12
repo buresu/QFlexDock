@@ -116,7 +116,7 @@ Features: `Movable`, `Closable`, `Floatable`, `Tabbable` (both the dragged and t
 floating window are none.
 
 **Behaviour and looks** — `setLinkedSplittersEnabled()`, `setCornerResizeEnabled()`, `setSplitterPushEnabled()`, `setFloatsOnOutsideDrop()`,
-`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setTabReorder()`, `setFloatingWindowFrame(FloatingWindowFrame::Custom | Minimal | Native)`,
+`setCenterDropEnabled()`, `setTabDragPreviewEnabled()`, `setTabReorder()`, `setFloatingWindowFrame(FloatingWindowFrame::Custom | Minimal | Native | Unified)`,
 `setFloatingWindowType(FloatingWindowType::Window | Tool)`, `setGroupHeader()`, `setTitleBarMovesGroup()`,
 `setAutoHideReveal(AutoHideReveal::Over | Beside)`,
 `setDragGhostEnabled()`, `setTheme()`, `setOverlayPainter()`. See [styling.md](styling.md) and
@@ -235,7 +235,7 @@ columns. A column is what stands above one another: a tab group, or several.
 - Every column of panels that may be moved has a bar above it. Dragged, it moves the column as it is. Its
   button, or a double click, iconifies the column (below).
 - A floating window that is one column is moved and closed by that bar and has no title row:
-  `FloatingWindowFrame::Custom` is `Minimal` there.
+  `FloatingWindowFrame::Custom` and `Unified` are `Minimal` there.
 
 `setColumnIconified(anyPanelOfColumn, true)` shrinks a column to a strip of buttons, one for each panel,
 those of a tab group under a grip; `false` shows the panels again, at their size. It works in any

@@ -112,12 +112,15 @@ accepts whatever is dragged onto it (`QQuickWidget` does). Other drags reach the
 
 `DockManager::setFloatingWindowFrame()` chooses the frame of floating windows created from then on.
 
-| | `Custom` (default) | `Minimal` | `Native` |
-|---|---|---|---|
-| Title bar and border | A border and one title drawn by QFlexDock (below) | Only a border; the headers of the groups inside serve as the title | The window system's |
-| Move and resize | Requested with `QWindow::startSystemMove()` / `startSystemResize()` | Resize as `Custom`; moved by dragging a header (below) | The window system |
-| Snapping, tiling, window menu | Up to the window system | Up to the window system | Yes |
-| Re-dock by dragging the title | A header that is the title: as `Minimal`. The title row: on Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag (on Windows and macOS: a tab only) | No (drag a tab instead) |
+| | `Custom` (default) | `Minimal` | `Native` | `Unified` (Windows, macOS) |
+|---|---|---|---|---|
+| Title bar and border | A border and one title drawn by QFlexDock (below) | Only a border; the headers of the groups inside serve as the title | The window system's | The window system's, with the title of `Custom` in its title bar (below) |
+| Move and resize | Requested with `QWindow::startSystemMove()` / `startSystemResize()` | Resize as `Custom`; moved by dragging a header (below) | The window system | Resize: the window system. Move: as `Custom` |
+| Snapping, tiling, window menu | Up to the window system | Up to the window system | Yes | Yes |
+| Re-dock by dragging the title | A header that is the title: as `Minimal`. The title row: on Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag (on Windows and macOS: a tab only) | No (drag a tab instead) | As `Custom` |
+
+Elsewhere (X11, Wayland, `offscreen`) a `Unified` window gets the `Custom` frame, and in a workspace that
+docks in columns the `Minimal` one, as `Custom` does.
 
 **The title of a `Custom` window** is the header of its tab group, as long as it holds one: a single panel
 is named there without a tab, several have their tabs there, and the maximize and close buttons in it are
@@ -140,20 +143,44 @@ three of a macOS window. Tested with a style that has them at the start, and tri
 Frames drawn by QFlexDock can have round corners (`DockTheme::floatingCornerRadius`). The window is then
 translucent, which needs a compositor: without one (a bare X server) the corners are black.
 
+### The `Unified` frame
+
+The window is made with `Qt::ExpandedClientAreaHint` and `Qt::NoTitleBarBackgroundHint`: what it holds
+reaches up into the title bar, which has no background of its own. The title is that of `Custom` (the header
+of the one tab group, or the title row) without QFlexDock's two buttons, as high as the title bar, and
+leaves room for the buttons of the window system. The theme's `floatingBorderWidth`,
+`floatingCornerRadius` and `floatingButtonSide` do not apply.
+
+**Windows.** The title bar is not the system's: Qt draws it itself, in a window of its own over the top of
+the window (`QWindowsWindow`, Qt 6.9 to 6.12). Border, shadow and round corners are the system's.
+
+- QFlexDock gives the window maximize and close only, and no title: otherwise Qt draws the icon and the
+  title over the header. (QWidget gives every window with buttons a title, so this is set on the
+  `QWindow`.)
+- The buttons are Qt's drawing: the maximize button has no snap layouts. Their glyphs are light or dark by
+  the application's colour scheme (`QStyleHints::colorScheme()`), not by the theme of QFlexDock.
+- Qt has the title bar as high as the system's caption and resize border, and each button half as wide
+  again. `QWindow::safeAreaMargins()` reports that height for 96 dpi on a screen at 200% (Qt 6.12), so
+  QFlexDock works it out from the system's metrics, as Qt does.
+- A press on the title that nothing takes (the header beside the tabs, the title row) is a press on a
+  caption to the system: it moves the window, snaps it to the screen edges and maximizes it on a double
+  click.
+
+Checked on the native platform at 200% (`tst_floating`, and pictures of the window with Qt's title bar on
+it); **not tried by hand** with a real pointer, and not at other scalings or on a second monitor.
+
+**macOS.** The title bar is the system's, with its three buttons. QFlexDock hides the window's title
+(`NSWindow.titleVisibility`), and leaves the buttons as much room again beside them as they have from the
+edge (`standardWindowButton`). **Not verified** on macOS at all, neither built nor run.
+
 ### Shadows and the window system's buttons
 
 QFlexDock draws no shadow around a window whose frame it draws: it has the one the window system gives a
 frameless window. macOS gives it one, around round corners too (seen by hand). With
-`FloatingWindowFrame::Native` the shadow is the window system's everywhere.
+`FloatingWindowFrame::Native` and `Unified` the shadow is the window system's.
 
-**Not implemented**, and what is known about each way to get there:
+**Not implemented**, and what is known about it:
 
-- **A fourth frame: the window system's, with the headers drawn into its title bar**
-  (`Qt::ExpandedClientAreaHint` with `Qt::NoTitleBarBackgroundHint`, Qt 6.9: the minimum would go up). The
-  frame stays, and with it the shadow, snapping and the system's own buttons: on Windows a shadow for what
-  is `Custom` today, on macOS the three buttons of a window in place of QFlexDock's two. The headers
-  would have to keep clear of those buttons (`QWindow::safeAreaMargins()`). Nothing of this was tried, and
-  it can only be built with Windows and macOS at hand. It does nothing for X11 and Wayland.
 - **A shadow drawn by QFlexDock**: a translucent window larger than its frame. On Wayland the compositor
   has to be told which part of it is the window (`xdg_surface.set_window_geometry`), or it snaps and tiles
   by the shadow; Qt has that as private API only (`setCustomMargins()` in `qplatformwindow_p.h`, Qt 6.12).
@@ -242,9 +269,8 @@ an OpenGL window rendering on X11. Vulkan, Direct3D and Metal were not tried.
 
 ## macOS
 
-Qt 6.8.3, the last open-source release of 6.8, cannot be linked against the macOS 26 SDK: it asks for the
-AGL framework, which that SDK no longer has (QTBUG-137687, fixed in Qt 6.8.4 and 6.9.2). With Qt 6.8,
-build with Xcode 16; otherwise use Qt 6.9.2 or later.
+Qt 6.9.0 and 6.9.1 cannot be linked against the macOS 26 SDK: they ask for the AGL framework, which that
+SDK no longer has (QTBUG-137687, fixed in Qt 6.9.2). Use Qt 6.9.2 or later, or build with Xcode 16.
 
 ## High DPI and multiple monitors
 
@@ -275,6 +301,11 @@ What the tests cannot drive, to be tried with the examples:
   left of its title, before its tabs once it has two, and at the left of the title row once the window is
   split; the menu of a group stays at the right; the window has a shadow, which in
   `qflexdock-photoshop-style` follows the round corners.
+- **`Unified` frame (Windows, macOS)**, `qflexdock-basic` with Layout > Floating Window Frame > Unified — a
+  floated panel has its name (with several, its tabs) in the title bar, clear of the system's buttons, which
+  maximize and close the window; dragged beside the tabs or by the title row the window moves and snaps
+  to the screen edges, a double click there maximizes it; its only tab docks it; the edges resize it; the
+  window has the system's shadow and corners; on macOS no title is written over the header.
 - **Splitters**, `qflexdock-basic` — boundaries in a line highlight and move together, Alt moves one; the
   point where two boundaries meet shows the four-way cursor and moves both.
 - **Workspace inside a panel**, `qflexdock-vscode-style` — a document tab splits and re-tabs only within

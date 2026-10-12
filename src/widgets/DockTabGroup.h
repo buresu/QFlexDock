@@ -199,6 +199,7 @@ private:
     void showGroupMenu();
     void showPanelMenu(const PanelId &panel, const QPoint &globalPos);
     void restyle();
+    [[nodiscard]] int titleBarHeight() const;
     void startPanelDrag(const PanelId &panel, const QPixmap &pixmap);
     void moveTabByUser(const PanelId &panel, int index);
     void showTabsAsPlaced();
