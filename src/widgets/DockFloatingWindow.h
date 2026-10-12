@@ -76,6 +76,12 @@ public:
     /// window system takes (top), and how far in from the left and the right
     /// its buttons reach there. None for the other frames.
     [[nodiscard]] QMargins systemTitleInsets() const;
+    /// Unified frame: whether a press at `pos` in the title bar is the window
+    /// system's, which moves the window, as nothing of ours is there.
+    [[nodiscard]] bool isCaptionAt(const QPoint &pos) const;
+    /// Unified frame, Windows: what lies over the buttons Qt draws into the
+    /// title bar and takes the clicks on them (maximize, close).
+    [[nodiscard]] QList<QWidget *> systemButtons() const { return m_systemButtons; }
     [[nodiscard]] QWidget *titleBar() const { return m_titleBar; }
     /// Whether the title row of the Custom or Unified frame is there at the
     /// moment.
@@ -87,6 +93,11 @@ public:
     /// that (Minimal frame, and Custom or Unified while a header is the
     /// title).
     [[nodiscard]] bool isMovedByHeaders() const { return (m_customFrame || m_unified) && !m_titleRow; }
+    /// Whether the window is docked by its title, dragged: the title row and
+    /// the header beside the tabs too (Custom and Unified frames). The
+    /// header of a Minimal window, beside the tabs, only moves it, as the
+    /// window system does better where it moves the window.
+    [[nodiscard]] bool isDockedByTitle() const { return m_titleBar != nullptr; }
     /// What the frame drawn here takes around the dock area: its border and
     /// the title row, if that is there.
     [[nodiscard]] QMargins customFrameMargins() const;
@@ -148,6 +159,7 @@ public:
 
 protected:
     bool event(QEvent *event) override;
+    bool nativeEvent(const QByteArray &eventType, void *message, qintptr *result) override;
     void paintEvent(QPaintEvent *event) override;
     void closeEvent(QCloseEvent *event) override;
     void moveEvent(QMoveEvent *event) override;
@@ -171,6 +183,7 @@ private:
     bool showTitleRow(bool shown);
     void prepareUnifiedFrame();
     void systemTitleChanged();
+    void placeSystemButtons();
 
     DockManagerPrivate *m_manager;
     QString m_containerId;
@@ -181,6 +194,7 @@ private:
     int m_borderWidth = 0;
     int m_cornerRadius = 0;
     QList<QWidget *> m_grips;
+    QList<QWidget *> m_systemButtons; // maximize, close
     /// The geometries last reported to the manager, oldest first, with when.
     struct Reported
     {

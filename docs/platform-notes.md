@@ -70,9 +70,12 @@ a timer, for as long as the drag lasts:
   front when the window is put down over it. (Where a window of another application lies between the two,
   that one does.) Dropped on a dock area the window docks; Esc puts it back where it was. A maximized window
   is not moved: a ghost stands in for it.
-- What stands for a title bar still moves its window through the window system, which snaps it to the
-  screen edges: a custom title row, and in a `Minimal` window the header beside the tabs. Such a window is
-  docked by dragging a tab (or, with `DockGroupHeader::TitleBar`, the title of its panel).
+- **Dragging the title of a `Custom` or `Unified` window** (the title row, or the header beside the tabs)
+  is the same: the window itself follows, and docks when let go of over a dock area. The window system
+  does not snap it to the screen edges then.
+- The header beside the tabs of a `Minimal` window still moves its window through the window system,
+  which snaps it to the screen edges. Such a window is docked by dragging a tab (or, with
+  `DockGroupHeader::TitleBar`, the title of its panel).
 - Outside a dock area the pointer shows the system's "no drop" cursor, although letting go there floats.
 - `DockManager::setDragGhostEnabled(false)` goes back to a picture of the tab.
 
@@ -115,9 +118,9 @@ accepts whatever is dragged onto it (`QQuickWidget` does). Other drags reach the
 | | `Custom` (default) | `Minimal` | `Native` | `Unified` (Windows, macOS) |
 |---|---|---|---|---|
 | Title bar and border | A border and one title drawn by QFlexDock (below) | Only a border; the headers of the groups inside serve as the title | The window system's | The window system's, with the title of `Custom` in its title bar (below) |
-| Move and resize | Requested with `QWindow::startSystemMove()` / `startSystemResize()` | Resize as `Custom`; moved by dragging a header (below) | The window system | Resize: the window system. Move: as `Custom` |
-| Snapping, tiling, window menu | Up to the window system | Up to the window system | Yes | Yes |
-| Re-dock by dragging the title | A header that is the title: as `Minimal`. The title row: on Wayland with `xdg-toplevel-drag` | Yes, it is a dock drag (on Windows and macOS: a tab only) | No (drag a tab instead) | As `Custom` |
+| Move and resize | Resize requested with `QWindow::startSystemResize()`. Move: a dock drag of its title, which takes the window along (on X11 the title row is moved with `startSystemMove()`) | Resize as `Custom`; moved by dragging a header (below) | The window system | Resize: the window system. Move: as `Custom` |
+| Snapping, tiling, window menu | Up to the window system; no snapping while it is dragged by its title (Windows, macOS) | Up to the window system | Yes | As `Custom` |
+| Re-dock by dragging the title | Yes, by all of its title: tabs, beside them, the title row (not on X11) | Yes, it is a dock drag (on Windows and macOS: a tab only) | No (drag a tab instead) | As `Custom` |
 
 Elsewhere (X11, Wayland, `offscreen`) a `Unified` window gets the `Custom` frame, and in a workspace that
 docks in columns the `Minimal` one, as `Custom` does.
@@ -129,8 +132,8 @@ its own above them.
 
 A window without a title row (`Minimal`, and `Custom` with one tab group) is moved by a dock drag of what
 it contains: on Wayland, Windows and macOS the window follows the pointer, on X11 a picture does and the
-window then moves by as much as the pointer did. (On Windows and macOS that is so for its only tab or its
-title; the header beside the tabs moves the window and nothing else.) Where outside drops do not float
+window then moves by as much as the pointer did. (On Windows and macOS a `Minimal` window is moved that
+way by its only tab or its title; the header beside the tabs moves it and nothing else.) Where outside drops do not float
 (they were turned off, and nothing carries a window), the drag just moves the window and docking is left to
 the float button. A double click on the header of its one tab group, beside the tabs, maximizes such a
 window. A `Minimal` window that holds more than one tab group has nothing to move it by as a whole.
@@ -162,10 +165,15 @@ the window (`QWindowsWindow`, Qt 6.9 to 6.12). Border, shadow and round corners 
 - Qt has the title bar as high as the system's caption and resize border, and each button half as wide
   again. `QWindow::safeAreaMargins()` reports that height for 96 dpi on a screen at 200% (Qt 6.12), so
   QFlexDock works it out from the system's metrics, as Qt does.
-- A press on the title that nothing takes (the header beside the tabs, the title row) is a press on a
-  caption to the system: it moves the window, snaps it to the screen edges and maximizes it on a double
-  click. A title that names its panel takes the press, so that dragging it is a dock drag that can dock
-  the window, and so does a right click on a header, which opens the panel's menu.
+- Qt decides what a press in the title bar is while the system asks where the pointer is
+  (`WM_NCHITTEST`), from the mouse button it reads then, and sends the window the press besides the one
+  that follows: its buttons, and tabs dragged out of the title bar, did not always work. QFlexDock answers
+  that question itself (`nativeEvent()`), from where the pointer is alone: the borders resize, and all of
+  the title (tabs, beside them, the title row, buttons) is the window's. Over Qt's two buttons lie widgets
+  of QFlexDock's that take the clicks.
+- As with `Custom`, all of the title is a dock drag: the window follows the pointer, docks when it is let
+  go of over a dock area, and stays where it is let go of elsewhere. The system does not snap it to the
+  screen edges then; a double click on the title still maximizes it.
 
 Checked on the native platform at 200% (`tst_floating`, and pictures of the window with Qt's title bar on
 it); **not tried by hand** with a real pointer, and not at other scalings or on a second monitor.
@@ -297,16 +305,18 @@ What the tests cannot drive, to be tried with the examples:
   application, a title bar) a floating window appears exactly where the ghost was; Esc while it is held
   there floats nothing; the only tab of a floating window moves that window, opaque, which turns
   translucent over another dock window, docks when dropped on a zone there, goes back where it was on Esc,
-  and put down over another application stays in front of it.
+  and put down over another application stays in front of it; so does the title of a `Custom` window, by
+  the header beside its tabs and, once it is split, by its title row.
 - **Floating window buttons (macOS)**, `qflexdock-basic` — a floated panel has close and maximize at the
   left of its title, before its tabs once it has two, and at the left of the title row once the window is
   split; the menu of a group stays at the right; the window has a shadow, which in
   `qflexdock-photoshop-style` follows the round corners.
 - **`Unified` frame (Windows, macOS)**, `qflexdock-basic` with Layout > Floating Window Frame > Unified — a
   floated panel has its name (with several, its tabs) in the title bar, clear of the system's buttons, which
-  maximize and close the window; dragged beside the tabs or by the title row the window moves and snaps
-  to the screen edges, a double click there maximizes it; its only tab docks it; the edges resize it; the
-  window has the system's shadow and corners; on macOS no title is written over the header.
+  maximize and close the window; dragged by its title (the name, a tab, beside the tabs, or, split in two,
+  the title row) the window follows the pointer and docks where it is let go of over a dock area; a double
+  click beside the tabs maximizes it; the edges resize it; the window has the system's shadow and corners;
+  on macOS no title is written over the header.
 - **Splitters**, `qflexdock-basic` — boundaries in a line highlight and move together, Alt moves one; the
   point where two boundaries meet shows the four-way cursor and moves both.
 - **Workspace inside a panel**, `qflexdock-vscode-style` — a document tab splits and re-tabs only within

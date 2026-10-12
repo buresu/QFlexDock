@@ -28,6 +28,10 @@
 #include <QtWidgets/QStyleOption>
 #include <QtWidgets/QToolButton>
 
+#ifdef Q_OS_WIN
+#  include <QtCore/qt_windows.h>
+#endif
+
 using namespace QFlexDock;
 using namespace TestUtils;
 
@@ -70,6 +74,19 @@ public:
         return rect;
     }
 };
+
+#ifdef Q_OS_WIN
+/// What the window system is told of a point (in `window`) when it asks
+/// where the pointer is.
+LRESULT hitTest(QWidget *window, const QPoint &pos)
+{
+    const qreal ratio = window->devicePixelRatioF();
+    POINT point{LONG(qRound(pos.x() * ratio)), LONG(qRound(pos.y() * ratio))};
+    const HWND hwnd = reinterpret_cast<HWND>(window->winId());
+    ClientToScreen(hwnd, &point);
+    return SendMessageW(hwnd, WM_NCHITTEST, 0, MAKELPARAM(point.x, point.y));
+}
+#endif
 
 void buildLayout(TwoWindows &f)
 {
@@ -321,9 +338,56 @@ private Q_SLOTS:
         const QPoint onTitle = group->titleLabel()->geometry().center();
         QVERIFY(pressTaken(group->titleBar(), onTitle, Qt::LeftButton));
         QVERIFY(pressTaken(group->titleBar(), onTitle, Qt::RightButton));
+        const auto inWindow = [window](const QWidget *widget, const QPoint &pos) {
+            return widget->mapTo(window, pos);
+        };
+#ifdef Q_OS_WIN
+        // Where the pointer is goes by where it is alone: the title bar is
+        // the window system's where nothing of ours takes a press.
+        const auto systemButtons = window->systemButtons();
+        QCOMPARE(systemButtons.size(), 2);
+        for (QWidget *button : systemButtons) {
+            QVERIFY(button->isVisible());
+            QCOMPARE(button->y(), 0);
+            QCOMPARE(button->height(), title.top());
+            QVERIFY(button->x() >= window->width() - title.right() - 1);
+            QCOMPARE(hitTest(window, button->geometry().center()), LRESULT(HTCLIENT));
+        }
+        QCOMPARE(hitTest(window, inWindow(group->titleBar(), onTitle)), LRESULT(HTCLIENT));
+        QCOMPARE(hitTest(window, window->rect().center()), LRESULT(HTCLIENT));
+        QCOMPARE(hitTest(window, QPoint(1, window->height() / 2)), LRESULT(HTLEFT));
+        QCOMPARE(hitTest(window, QPoint(window->width() / 2, 1)), LRESULT(HTTOP));
+        QCOMPARE(hitTest(window, QPoint(window->width() - 2, window->height() - 2)),
+                 LRESULT(HTBOTTOMRIGHT));
+        // Its buttons are those of the window.
+        const QSize normalSize = window->size();
+        QTest::mouseClick(systemButtons.constFirst(), Qt::LeftButton);
+        if (QTest::qWaitFor([&] { return window->isMaximized() && window->size() != normalSize; }, 3000)) {
+            QTest::qWait(100);
+            QTest::mouseClick(systemButtons.constFirst(), Qt::LeftButton);
+            QTRY_VERIFY(!window->isMaximized());
+            QTRY_COMPARE(window->size(), normalSize);
+        }
+#else
+        Q_UNUSED(inWindow);
+#endif
         QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Center));
         QVERIFY(group->tabBar()->isVisible());
         QTRY_VERIFY(clearOfTheButtons(group->titleBar()));
+        // Dragged beside the tabs, the header takes the window along and can
+        // dock it, where the window system would only move it.
+        QVERIFY(!window->area()->moveWindowInstead(2, true));
+#ifdef Q_OS_WIN
+        // So the press is the window's, as on a tab.
+        const DockTabBar *tabs = group->tabBar();
+        const QRect lastTab = tabs->tabRect(tabs->count() - 1);
+        QVERIFY(lastTab.right() + 20 < tabs->width());
+        QCOMPARE(hitTest(window, inWindow(tabs, lastTab.center())), LRESULT(HTCLIENT));
+        QCOMPARE(hitTest(window, inWindow(tabs, QPoint(lastTab.right() + 20, lastTab.center().y()))),
+                 LRESULT(HTCLIENT));
+        QCOMPARE(hitTest(window, inWindow(group->menuButton(), group->menuButton()->rect().center())),
+                 LRESULT(HTCLIENT));
+#endif
 
         // Two groups: the title row of the Custom frame, without its buttons.
         QVERIFY(f.manager.movePanel(p("d"), p("b"), DockArea::Right));
@@ -336,6 +400,11 @@ private Q_SLOTS:
         QCOMPARE(window->customFrameMargins(), QMargins(0, row->height(), 0, 0));
         QCOMPARE(window->area()->geometry().top(), row->height());
         grab(window, p("floating-unified-title-row"));
+        // So does the title row.
+        QVERIFY(priv(f.manager)->drag->dragsWindowByTitle(window));
+#ifdef Q_OS_WIN
+        QCOMPARE(hitTest(window, QPoint(row->width() / 3, row->height() / 2)), LRESULT(HTCLIENT));
+#endif
         QVERIFY(f.manager.movePanel(p("d"), p("a"), DockArea::Center));
         QVERIFY(!window->hasTitleRow());
         QVERIFY(group->maximizeButton()->isHidden());
@@ -351,6 +420,15 @@ private Q_SLOTS:
         QVERIFY(ghost->systemTitleInsets().isNull());
         controller->finish(Qt::IgnoreAction, ghost, false);
         QTRY_VERIFY(!ghost);
+
+#ifdef Q_OS_WIN
+        // The window system's close button closes the window, and its panels.
+        const QPointer<DockFloatingWindow> guard(window);
+        QTest::mouseClick(window->systemButtons().constLast(), Qt::LeftButton);
+        QVERIFY(!f.manager.panel(p("b"))->isOpen());
+        QVERIFY(!f.manager.panel(p("c"))->isOpen());
+        QTRY_VERIFY(!guard);
+#endif
     }
 
     void toolWindowsWhereAWorkspaceOwnsThem()
@@ -1688,9 +1766,22 @@ private Q_SLOTS:
         controller->cancel();
 
         // Where windows cannot be carried along with a drag, the title row
-        // just moves the window (through the window system).
-        if (!onWayland())
-            QVERIFY(!controller->requestWindowDrag(floatingWindowOf(f, "e")->containerId(), QPoint(5, 5)));
+        // just moves the window (through the window system). Elsewhere it
+        // docks it, also where the window is moved from here (Windows,
+        // macOS). (A drag requested there would really begin.)
+        const DockFloatingWindow *titled = floatingWindowOf(f, "e");
+        QCOMPARE(controller->dragsWindowByTitle(titled), controller->carriesWindows());
+        if (!controller->carriesWindows())
+            QVERIFY(!controller->requestWindowDrag(titled->containerId(), QPoint(5, 5)));
+        // The header of a Minimal window, beside the tabs, is a title bar of
+        // the window system's sort there: it moves the window, and snaps it.
+        f.manager.setFloatingWindowFrame(DockManager::FloatingWindowFrame::Minimal);
+        QVERIFY(f.manager.dockPanel(p("e")));
+        QVERIFY(f.manager.floatPanel(p("e"), QRect(60, 60, 320, 240)));
+        const DockFloatingWindow *minimal = floatingWindowOf(f, "e");
+        QVERIFY(minimal->hasMinimalFrame() && !minimal->isDockedByTitle());
+        QCOMPARE(controller->dragsWindowByTitle(minimal),
+                 controller->carriesWindows() && !controller->movesCarriedWindows());
     }
 
     // Qt closes every window for the application to quit. A floating window

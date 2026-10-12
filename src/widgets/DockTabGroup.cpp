@@ -322,9 +322,11 @@ void DockTabGroup::autoHideGroup()
 // Elsewhere a drag of everything in the window just moves the window.
 //
 // Where the window would have to be moved from here to follow the drag
-// (Windows, macOS), only a tab is worth that: it can be put among the tabs of
-// another window. The header beside the tabs (`byHeader`) is the title bar
-// such a window does not have, and the window system moves a window better.
+// (Windows, macOS), only a tab of a Minimal window is worth that: it can be
+// put among the tabs of another window. The header beside the tabs
+// (`byHeader`) is the title bar such a window does not have, and the window
+// system moves a window better. A window whose header is its title (Custom,
+// Unified) is docked by all of that title.
 bool DockTabGroup::moveWindowInstead(qsizetype draggedPanels, bool byHeader)
 {
     return m_area->moveWindowInstead(draggedPanels, byHeader);

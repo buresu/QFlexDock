@@ -68,10 +68,15 @@ public:
     /// The whole column the panel is in (LayoutTree::columnOf()).
     void requestColumnDrag(const PanelId &anyPanelOfColumn, const QPixmap &pixmap);
     /// A floating window dragged by its (custom) title row, held at `grip`
-    /// (window coordinates). False if the platform cannot carry a window with
-    /// a drag, or would have to move the window itself where the window
-    /// system does that better; the caller then lets it.
+    /// (window coordinates). False if dragsWindowByTitle() says no; the
+    /// caller then lets the window system move the window.
     bool requestWindowDrag(const QString &containerId, const QPoint &grip);
+    /// Whether a drag of `window` by its title row is a dock drag: not where
+    /// the platform cannot carry a window with a drag, nor where the window
+    /// would have to be moved from here and the window system does that
+    /// better (but for a window docked by its title, DockFloatingWindow::
+    /// isDockedByTitle()).
+    [[nodiscard]] bool dragsWindowByTitle(const DockFloatingWindow *window) const;
 
     // --- Session lifecycle (driven directly by tests) ------------------------
     /// Starts a session for one panel or for its whole tab group. Null if the

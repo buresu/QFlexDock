@@ -212,9 +212,7 @@ const DragSession *DockDragController::begin(const PanelId &panel, bool wholeGro
 bool DockDragController::requestWindowDrag(const QString &containerId, const QPoint &grip)
 {
     DockFloatingWindow *window = m_manager->floatingWindows.value(containerId);
-    // (A window that would be moved from here is better moved by the window
-    // system, which also snaps it to the edges of the screen.)
-    if (!carriesWindows() || movesCarriedWindows() || !window || m_session)
+    if (!window || m_session || !dragsWindowByTitle(window))
         return false;
     const QPointer<DockFloatingWindow> guard(window);
     QMetaObject::invokeMethod(this, [this, containerId, guard, grip] {
@@ -222,6 +220,14 @@ bool DockDragController::requestWindowDrag(const QString &containerId, const QPo
             run(QPixmap(), guard, grip);
     }, Qt::QueuedConnection);
     return true;
+}
+
+// A window that would be moved from here is better moved by the window
+// system, which also snaps it to the edges of the screen. Unless the window
+// is docked by its title: then that is what it is dragged by.
+bool DockDragController::dragsWindowByTitle(const DockFloatingWindow *window) const
+{
+    return carriesWindows() && (!movesCarriedWindows() || window->isDockedByTitle());
 }
 
 const DragSession *DockDragController::beginContainer(const QString &containerId)

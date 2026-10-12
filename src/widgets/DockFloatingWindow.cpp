@@ -3,6 +3,7 @@
 
 #include "core/DockDragController.h"
 #include "widgets/DockAreaWidget.h"
+#include "widgets/DockTabGroup.h"
 
 #include <QtCore/QtMath>
 #include <QtGui/QCloseEvent>
@@ -15,6 +16,7 @@
 #include <QtWidgets/QStyleOption>
 #include <QtWidgets/QToolButton>
 
+#include <functional>
 #include <utility>
 
 #ifdef Q_OS_WIN
@@ -92,6 +94,37 @@ private:
     }
 
     DockFloatingWindow *m_window;
+};
+
+// Lies over a button that Qt draws into the title bar of a Unified window
+// (Windows), and does what that button says when it is clicked. It paints
+// nothing: the button shows through.
+class SystemButton : public QWidget
+{
+public:
+    SystemButton(const QString &name, std::function<void()> action, QWidget *window)
+        : QWidget(window)
+        , m_action(std::move(action))
+    {
+        setAttribute(Qt::WA_NoSystemBackground);
+        setToolTip(name);
+        setAccessibleName(name);
+    }
+
+protected:
+    void mousePressEvent(QMouseEvent *event) override
+    {
+        if (event->button() != Qt::LeftButton)
+            event->ignore();
+    }
+    void mouseReleaseEvent(QMouseEvent *event) override
+    {
+        if (event->button() == Qt::LeftButton && rect().contains(event->position().toPoint()))
+            m_action();
+    }
+
+private:
+    std::function<void()> m_action;
 };
 
 // What a ghost shows: the picture of what is dragged, at the size of the
@@ -460,6 +493,13 @@ void DockFloatingWindow::prepareUnifiedFrame()
     handle->setFlags((handle->flags() & ~(Qt::WindowTitleHint | Qt::WindowMinimizeButtonHint))
                      | Qt::CustomizeWindowHint | Qt::WindowSystemMenuHint
                      | Qt::WindowMaximizeButtonHint | Qt::WindowCloseButtonHint);
+    // Qt has its buttons act on what it learns of the mouse button when it
+    // is asked where the pointer is (WM_NCHITTEST), which it is not always.
+    // Clicks on them are taken here instead (see nativeEvent()).
+    if (m_systemButtons.isEmpty()) {
+        m_systemButtons = {new SystemButton(tr("Maximize"), [this] { toggleMaximized(); }, this),
+                           new SystemButton(tr("Close"), [this] { close(); }, this)};
+    }
 #endif
 #ifdef Q_OS_MACOS
     // macOS writes the title in the middle of its title bar, over ours.
@@ -477,8 +517,33 @@ void DockFloatingWindow::systemTitleChanged()
     if (!m_unified)
         return;
     refreshAppearance();
+    placeSystemButtons();
     if (headerIsTitle())
         m_area->refreshAppearance();
+}
+
+// Over the buttons Qt draws at the right of the title bar, each half as wide
+// again as the title bar is high.
+void DockFloatingWindow::placeSystemButtons()
+{
+    const QMargins title = systemTitleInsets();
+    const int width = title.right() / int(qMax<qsizetype>(1, m_systemButtons.size()));
+    int right = this->width();
+    for (qsizetype i = m_systemButtons.size() - 1; i >= 0; --i) {
+        QWidget *button = m_systemButtons.at(i);
+        button->setGeometry(right - width, 0, width, title.top());
+        button->setVisible(title.top() > 0);
+        button->raise();
+        right -= width;
+    }
+}
+
+// All of our title takes a press, beside the tabs and the title row too:
+// dragged, they dock the window. What is between is the window system's.
+bool DockFloatingWindow::isCaptionAt(const QPoint &pos) const
+{
+    const QWidget *child = childAt(pos);
+    return !child || child == m_area || qobject_cast<const DockTabGroup *>(child);
 }
 
 // --- Drag ghost --------------------------------------------------------------
@@ -614,6 +679,45 @@ bool DockFloatingWindow::event(QEvent *event)
     return QWidget::event(event);
 }
 
+// Where the pointer is, to the window system, in a Unified window (Windows).
+// Qt would say so from what it learns of the mouse button then, and send the
+// window a press of its own, besides the one that follows. Said here from
+// where the pointer is alone: the borders resize, the title bar is the window
+// system's where nothing of ours is, and all else is the window's.
+bool DockFloatingWindow::nativeEvent(const QByteArray &eventType, void *message, qintptr *result)
+{
+#ifdef Q_OS_WIN
+    const auto *msg = static_cast<const MSG *>(message);
+    if (m_unified && !m_ghost && eventType == "windows_generic_MSG" && msg->message == WM_NCHITTEST) {
+        const HWND hwnd = msg->hwnd;
+        POINT point{static_cast<short>(LOWORD(msg->lParam)), static_cast<short>(HIWORD(msg->lParam))};
+        ScreenToClient(hwnd, &point);
+        RECT client;
+        GetClientRect(hwnd, &client);
+        if (isPlain()) {
+            const UINT dpi = GetDpiForWindow(hwnd);
+            const int border = GetSystemMetricsForDpi(SM_CXSIZEFRAME, dpi)
+                + GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+            const bool left = point.x < border;
+            const bool right = point.x >= client.right - border;
+            const bool top = point.y < border;
+            const bool bottom = point.y >= client.bottom - border;
+            if (top || bottom || left || right) {
+                *result = top ? (left ? HTTOPLEFT : right ? HTTOPRIGHT : HTTOP)
+                    : bottom  ? (left ? HTBOTTOMLEFT : right ? HTBOTTOMRIGHT : HTBOTTOM)
+                    : left    ? HTLEFT
+                              : HTRIGHT;
+                return true;
+            }
+        }
+        const QPoint pos = (QPointF(point.x, point.y) / devicePixelRatioF()).toPoint();
+        *result = pos.y() < systemTitleInsets().top() && isCaptionAt(pos) ? HTCAPTION : HTCLIENT;
+        return true;
+    }
+#endif
+    return QWidget::nativeEvent(eventType, message, result);
+}
+
 void DockFloatingWindow::paintEvent(QPaintEvent *)
 {
     QPainter painter(this);
@@ -678,6 +782,7 @@ void DockFloatingWindow::resizeEvent(QResizeEvent *event)
 {
     QWidget::resizeEvent(event);
     updateFrameMargins(); // the grips follow the edges
+    placeSystemButtons();
     if (m_sizeToKeep.isValid()) {
         if (m_clock.elapsed() >= AdoptionTime || !isPlain() || m_sizeKept >= AdoptionResizes) {
             m_sizeToKeep = QSize();
@@ -882,9 +987,10 @@ bool DockFloatingWindow::eventFilter(QObject *watched, QEvent *event)
             m_titlePressed = false;
             if (isMaximized())
                 break;
-            // Where the platform can carry a window along with a drag, moving
-            // the window is a dock drag at the same time: drop it onto a dock
-            // area to dock it. Elsewhere the window system just moves it.
+            // Where the platform can carry a window along with a drag, or it
+            // is moved from here (Windows, macOS), moving the window is a dock
+            // drag at the same time: drop it onto a dock area to dock it.
+            // Elsewhere the window system just moves it.
             const QPoint grip = m_titleBar->mapTo(this, m_titlePress);
             if (!m_manager || !m_manager->drag->requestWindowDrag(m_containerId, grip)) {
                 if (windowHandle())

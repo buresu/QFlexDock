@@ -741,7 +741,9 @@ bool DockAreaWidget::moveWindowInstead(qsizetype draggedPanels, bool byHeader)
         return false;
     }
     const DockDragController *drag = m_manager->drag;
-    const bool leftToTheHeader = byHeader && drag->movesCarriedWindows();
+    // (Not where it is the title of the window, which docks it as well.)
+    const bool leftToTheHeader =
+        byHeader && drag->movesCarriedWindows() && !floating->isDockedByTitle();
     if (!leftToTheHeader && (drag->carriesWindows() || m_manager->floatOnOutsideDrop))
         return false;
     return floating->windowHandle()->startSystemMove();

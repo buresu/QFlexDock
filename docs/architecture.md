@@ -223,10 +223,10 @@ nobody took returns late there.) What happens after a drag is all in
 - **Native windows are hidden during a dock drag** because they would cover the drop guide. A separate
   translucent top-level window for the guide was rejected: its position and stacking cannot be guaranteed on Wayland.
 - **Floating windows have a frame of QFlexDock's by default** (`FloatingWindowFrame::Custom`): it is styled
-  like the rest of the dock UI, the header of a window's one tab group can be its title, and that title
-  can be dragged onto a dock area. Moving and resizing are still left to the window system
-  (`startSystemMove()` / `startSystemResize()`). `Native` keeps the window system's frame as it is, and
-  `Unified` puts the title of `Custom` into it where the platform allows (Windows, macOS).
+  like the rest of the dock UI, the header of a window's one tab group can be its title, and all of that
+  title, the title row included, can be dragged onto a dock area, which takes the window along. Resizing
+  is still left to the window system (`startSystemResize()`). `Native` keeps the window system's frame as
+  it is, and `Unified` puts the title of `Custom` into it where the platform allows (Windows, macOS).
 - **The window-carrying drag relies on an undocumented Qt behaviour.** It is the one exception to "public
   Qt API only", accepted because everything falls back cleanly when it is absent.
 - **A handle does not push further neighbours** when the one next to it reaches its minimum size, unless
