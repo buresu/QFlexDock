@@ -1069,6 +1069,8 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
             return QRect(bar->mapTo(this, region.topLeft()), region.size()).contains(pos);
         };
         DockArea outerHit = DockArea::None;
+        // How deep the outer band is where the pointer is.
+        int hitBand = band;
         if (buttons) {
             // A button in the middle of each border.
             const int around = (style.zoneGap + 1) / 2;
@@ -1090,7 +1092,6 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
             // (All of the row is left to the tabs where it is the one way to
             // become a tab: the middle of the groups takes no drop.)
             const bool headersTakeTabs = !m_manager->centerDropFor(m_containerId);
-            int hitBand = band;
             for (auto it = m_groups.cbegin(); it != m_groups.cend(); ++it) {
                 if (maximized && maximized->id != it.key())
                     continue;
@@ -1233,8 +1234,11 @@ DropCandidate DockAreaWidget::candidateAt(const QPoint &pos, const DragSession &
                 } else if (!tabDrop && !headerDrop) {
                     DropZoneLayout zones = zoneLayout(c.zoneRect, style);
                     // A row that takes no tab of this drag is no dead space:
-                    // the area next to it reaches over it.
-                    zones.bounds = reach;
+                    // the area next to it reaches over it, out to the strip
+                    // the outer band shrinks to there.
+                    const int outerBand = c.outerZones ? hitBand : 0;
+                    zones.bounds = rect.intersected(
+                        bounds.adjusted(outerBand, outerBand, -outerBand, -outerBand));
                     hit = zones.hitTest(pos, c.zones);
                 }
                 if (hit != DockArea::None) {

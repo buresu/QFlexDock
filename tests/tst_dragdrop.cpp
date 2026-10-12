@@ -927,7 +927,11 @@ private Q_SLOTS:
 
         Drag drag(f.manager);
         QVERIFY(drag.begin("d"));
-        for (const QPoint &local : {bar->tabRect(0).center(),
+        // Near the edge of the area too, where the outer band is only a thin
+        // strip over the tabs (whatever the width of the first tab).
+        const QPoint nearEdge(bar->mapFrom(area, QPoint(12, 0)).x(), bar->height() / 2);
+        QVERIFY(bar->tabRect(0).contains(nearEdge));
+        for (const QPoint &local : {bar->tabRect(0).center(), nearEdge,
                                     QPoint(bar->tabRect(0).right() + 200, bar->height() / 2)}) {
             const DropCandidate onRow = area->candidateAt(bar->mapTo(area, local), drag.session());
             QVERIFY(onRow.valid);
