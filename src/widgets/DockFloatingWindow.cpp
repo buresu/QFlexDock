@@ -619,9 +619,14 @@ void DockFloatingWindow::setCarriedAlong(bool carried)
 
 void DockFloatingWindow::setTakesDrops(bool takes)
 {
-    if (takes == m_takesDrops || !m_ghost)
+    if (takes == m_takesDrops)
         return;
     m_takesDrops = takes;
+    // A ghost always hears of the drag (see dragEnterEvent()). A window
+    // moved along with it does where its dock area turns the drag down,
+    // which then goes on to the window itself.
+    if (!m_ghost)
+        setAcceptDrops(takes);
     // On the window as it is, as in setCarriedAlong().
     if (QWindow *handle = windowHandle(); handle && m_carriedAlong)
         handle->setFlag(Qt::WindowTransparentForInput, !takes);
@@ -629,9 +634,12 @@ void DockFloatingWindow::setTakesDrops(bool takes)
 
 void DockFloatingWindow::dragEnterEvent(QDragEnterEvent *event)
 {
-    // Only a ghost takes drops itself (its dock area is hidden). It accepts
-    // the drag just to keep hearing about it: see ghostDragMoved().
-    if (m_ghost && m_manager && m_manager->drag->noteDragOver(this, event->position().toPoint())) {
+    // Only what is carried along with the drag takes drops itself: a ghost
+    // (its dock area is hidden), or a window that takes them for the time
+    // (setTakesDrops()). A ghost accepts the drag just to keep hearing about
+    // it: see ghostDragMoved().
+    if ((m_ghost || m_takesDrops) && m_manager
+        && m_manager->drag->noteDragOver(this, event->position().toPoint())) {
         event->accept();
         ghostDragMoved();
     } else {
@@ -641,8 +649,8 @@ void DockFloatingWindow::dragEnterEvent(QDragEnterEvent *event)
 
 void DockFloatingWindow::dragMoveEvent(QDragMoveEvent *event)
 {
-    const bool carried =
-        m_ghost && m_manager && m_manager->drag->noteDragOver(this, event->position().toPoint());
+    const bool carried = (m_ghost || m_takesDrops) && m_manager
+        && m_manager->drag->noteDragOver(this, event->position().toPoint());
     ghostDragMoved();
     if (carried && m_takesDrops)
         event->acceptProposedAction();
@@ -652,7 +660,7 @@ void DockFloatingWindow::dragMoveEvent(QDragMoveEvent *event)
 
 void DockFloatingWindow::dropEvent(QDropEvent *event)
 {
-    if (m_ghost && m_takesDrops && m_manager && m_manager->drag->sessionFor(event->mimeData())) {
+    if (m_takesDrops && m_manager && m_manager->drag->sessionFor(event->mimeData())) {
         m_manager->drag->noteDropOnGhost();
         event->acceptProposedAction();
     } else {

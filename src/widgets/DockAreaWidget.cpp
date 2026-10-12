@@ -1489,9 +1489,15 @@ void DockAreaWidget::handleDrag(QDragMoveEvent *event)
 void DockAreaWidget::dragEnterEvent(QDragEnterEvent *event)
 {
     // The window carried along with the drag is never its target. It keeps
-    // receiving the drag, though, to notice if it is not being carried.
+    // receiving the drag, though, to notice if it is not being carried;
+    // unless the window takes the drop itself (DockFloatingWindow::
+    // setTakesDrops()): then the drag goes on to the window.
     if (m_manager && m_manager->drag->noteDragOver(this, event->position().toPoint())) {
-        event->accept();
+        const auto *floating = qobject_cast<const DockFloatingWindow *>(window());
+        if (floating && floating->takesDrops())
+            event->ignore();
+        else
+            event->accept();
         return;
     }
     // What may not be dropped anywhere in here is none of this area's

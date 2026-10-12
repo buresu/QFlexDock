@@ -1075,9 +1075,9 @@ private Q_SLOTS:
     }
 
     // A floating window that is itself moved along with a drag lets the
-    // pointer through only where another window with a dock area is: what
-    // tells is where the windows of the manager are.
-    void dockWindowsAtAPoint()
+    // pointer through only where a dock area of another window is: what
+    // tells is where the dock areas of the manager are.
+    void dockAreasAtAPoint()
     {
         TwoWindows f;
         f.windowA.move(20, 20);
@@ -1089,28 +1089,35 @@ private Q_SLOTS:
         QVERIFY(QTest::qWaitForWindowExposed(window));
         const DockDragController *controller = priv(f.manager)->drag;
 
-        // The window of a workspace, a floating window; nothing elsewhere.
+        // A workspace, the dock area of a floating window; nothing elsewhere.
         const QRect all =
             f.windowA.frameGeometry() | f.windowB.frameGeometry() | window->frameGeometry();
-        QVERIFY(controller->dockWindowAt(f.windowA.frameGeometry().center(), window));
-        QVERIFY(controller->dockWindowAt(window->frameGeometry().center(), &f.windowA));
-        QVERIFY(!controller->dockWindowAt(all.bottomRight() + QPoint(50, 50), window));
+        const QPoint inWorkspace = f.a->mapToGlobal(f.a->rect().center());
+        QVERIFY(controller->dockAreaAt(inWorkspace, window));
+        QVERIFY(controller->dockAreaAt(window->area()->mapToGlobal(window->area()->rect().center()),
+                                       &f.windowA));
+        QVERIFY(!controller->dockAreaAt(all.bottomRight() + QPoint(50, 50), window));
 
         // Not the window that is left out, and not one that is not shown.
-        const QPoint corner = f.windowA.frameGeometry().topLeft() + QPoint(5, 5);
+        const QPoint corner = f.a->mapToGlobal(QPoint(5, 5));
+        // Nor the rest of a window: its frame, or what is around the workspace.
+        const QPoint frame = f.windowA.frameGeometry().topLeft() + QPoint(5, 5);
         if (!windowPositionsWork() || f.windowB.frameGeometry().contains(corner)
-            || window->frameGeometry().contains(corner)) {
+            || window->frameGeometry().contains(corner) || window->frameGeometry().contains(frame)
+            || f.windowB.frameGeometry().contains(frame)) {
             return;
         }
-        QVERIFY(controller->dockWindowAt(corner, window));
-        QVERIFY(!controller->dockWindowAt(corner, &f.windowA));
+        QVERIFY(controller->dockAreaAt(corner, window));
+        if (!QRect(f.a->mapToGlobal(QPoint(0, 0)), f.a->size()).contains(frame)) // (a frame there)
+            QVERIFY(!controller->dockAreaAt(frame, window));
+        QVERIFY(!controller->dockAreaAt(corner, &f.windowA));
         f.windowA.hide();
-        QVERIFY(!controller->dockWindowAt(corner, window));
+        QVERIFY(!controller->dockAreaAt(corner, window));
     }
 
     // Such a ghost may take the drop itself, where there is no dock area
-    // (macOS): that is a drop outside whatever else is known of the drag,
-    // and the window proper comes where the ghost is.
+    // (Windows, macOS): that is a drop outside whatever else is known of the
+    // drag, and the window proper comes where the ghost is.
     void ghostThatTakesTheDropFloatsWhereItIs()
     {
         TwoWindows f;
@@ -1230,6 +1237,45 @@ private Q_SLOTS:
         QVERIFY(ghost.windowOpacity() < 1.0);
         ghost.setTakesDrops(false);
         QVERIFY(ghostHandle->flags().testFlag(Qt::WindowTransparentForInput));
+
+        // A window moved along takes the drop itself, where it does not let
+        // the pointer through: its dock area turns the drag down, and the
+        // window takes it, so the drag has a taker there. Put down there, it
+        // is only moved.
+        DockDragController *controller = priv(f.manager)->drag;
+        QVERIFY(controller->begin(p("a"), false));
+        QCOMPARE(controller->windowDraggedWhole(), window);
+        controller->setCarriedWindow(window);
+        const std::unique_ptr<QMimeData> mime(controller->createMimeData());
+        const QPoint at = window->area()->rect().center();
+        const auto offered = [&] {
+            QT_WARNING_PUSH
+            QT_WARNING_DISABLE_DEPRECATED
+            QDragEnterEvent enter(at, Qt::MoveAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+            QCoreApplication::sendEvent(window->area(), &enter);
+            QDragMoveEvent move(at, Qt::MoveAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+            move.ignore();
+            QCoreApplication::sendEvent(window->area(), &move);
+            QT_WARNING_POP
+            return move.isAccepted();
+        };
+        QVERIFY(!offered());
+        window->setTakesDrops(true);
+        QVERIFY(window->takesDrops());
+        QVERIFY(!handle->flags().testFlag(Qt::WindowTransparentForInput));
+        QVERIFY(offered());
+        QDropEvent drop(at, Qt::MoveAction, mime.get(), Qt::LeftButton, Qt::NoModifier);
+        drop.ignore();
+        QCoreApplication::sendEvent(window->area(), &drop);
+        QVERIFY(drop.isAccepted());
+        window->setTakesDrops(false);
+        QVERIFY(!offered());
+        controller->setCarriedWindow(nullptr);
+        const QRect put = window->geometry();
+        controller->finish(Qt::MoveAction, nullptr, true);
+        QVERIFY(!controller->isActive());
+        QCOMPARE(floatingWindowOf(f, "a"), window);
+        QCOMPARE(window->geometry(), put);
     }
 
     void carriedWindowIsNamedInTheMimeData()

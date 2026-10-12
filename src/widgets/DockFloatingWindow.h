@@ -150,10 +150,11 @@ public:
     /// turned back, and is whenever nothing it could be docked in is
     /// underneath.
     void setCarriedAlong(bool carried);
-    /// For a ghost that is kept at the pointer that way: whether it takes
-    /// the drop itself, the pointer not going through it for the time. It
-    /// then stands for everywhere that is not a dock area, and tells the
-    /// drag controller of a drop there (DockDragController::noteDropOnGhost()).
+    /// For a ghost, or a window, that is kept at the pointer that way:
+    /// whether it takes the drop itself, the pointer not going through it for
+    /// the time. It then stands for everywhere that is not a dock area, and
+    /// tells the drag controller of a drop there
+    /// (DockDragController::noteDropOnGhost()). A window is put down there.
     void setTakesDrops(bool takes);
     [[nodiscard]] bool takesDrops() const { return m_takesDrops; }
 

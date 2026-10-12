@@ -61,25 +61,31 @@ Things to know:
 Nothing carries a window on Windows or macOS, but a client may move one to the pointer. QFlexDock does, on
 a timer, for as long as the drag lasts:
 
-- **Dragging a tab** shows the same ghost as on Wayland. The pointer goes through it, so the drag reaches
-  the dock area underneath, and it is translucent, so the drop guide shows. Dropped outside every dock area,
-  a floating window appears in its place (the ghost itself is not kept).
+- **Dragging a tab** shows the same ghost as on Wayland. It is translucent, so the drop guide shows, and
+  over a dock area the pointer goes through it, so the drag reaches that area. Anywhere else the ghost takes
+  the drop itself, where letting go floats (`setFloatsOnOutsideDrop()`): a floating window appears in its
+  place (the ghost itself is not kept).
 - **Dragging everything a floating window contains** moves that window itself. It is a window being moved,
-  and in the way of the drag, until the pointer is over another window with a dock area: only there does it
-  turn translucent and let the pointer through. So no other application sees the drag, or comes to the
-  front when the window is put down over it. (Where a window of another application lies between the two,
-  that one does.) Dropped on a dock area the window docks; Esc puts it back where it was. A maximized window
-  is not moved: a ghost stands in for it.
+  and in the way of the drag, until the pointer is over a dock area of another window: only there does it
+  turn translucent and let the pointer through. Anywhere else it takes the drop itself, and stays where it
+  is let go of. So no other application sees the drag, or comes to the front when the window is put down
+  over it. (Where a window of another application lies between the two, that one does.) Dropped on a dock
+  area the window docks; Esc puts it back where it was. A maximized window is not moved: a ghost stands in
+  for it.
 - **Dragging the title of a `Custom` or `Unified` window** (the title row, or the header beside the tabs)
   is the same: the window itself follows, and docks when let go of over a dock area. The window system
   does not snap it to the screen edges then.
 - The header beside the tabs of a `Minimal` window still moves its window through the window system,
   which snaps it to the screen edges. Such a window is docked by dragging a tab (or, with
   `DockGroupHeader::TitleBar`, the title of its panel).
-- Outside a dock area the pointer shows the system's "no drop" cursor, although letting go there floats.
+- As something of ours takes the drag wherever no dock area does, the pointer never shows the system's
+  "no drop" cursor, also over the menu bar or the title bar of a window with a dock area. It still does
+  where letting go of a tab does nothing (outside drops do not float), over a spot of a dock area that
+  takes no drop, and without a ghost.
 - `DockManager::setDragGhostEnabled(false)` goes back to a picture of the tab.
 
-All of this was tried by hand on Windows 11 at 200% scaling, Esc included. **Not verified:** a maximized
+All of this was tried by hand on Windows 11 at 200% scaling, Esc included, before the ghost and the moved
+window took drops themselves there; that is covered by `tst_floating` only. **Not verified:** a maximized
 `Minimal` window taken by its header, drags by touch or pen (a drop is told from Esc by the mouse button),
 and monitors of different scaling.
 
@@ -92,9 +98,9 @@ differs is this.
   and the Escape key while the drag lasts (`CGEventSourceButtonState`, `CGEventSourceKeyState`): the window
   stops following when the button goes up and floats where it was then; on Esc a ghost disappears and a
   window that was itself moved goes back at once. The floating window appears when the drag has returned.
-- To spare a drop outside that wait, the ghost takes the drop itself wherever no window with a dock area
-  is under the pointer (it lets the pointer through only over one): the drag returns at once, and no other
-  application sees it (tried by hand). Over a dock window but on no dock area of it, the wait remains.
+- The ghost, and a window that is itself moved, taking the drop wherever no dock area is under the pointer
+  (above) spares a drop outside that wait: the drag returns at once (tried by hand for the ghost, when it
+  did so only outside windows with a dock area).
 - The picture that slides back is an empty one: Qt gives a drag without a picture one of its own.
 - **Not verified:** what Windows leaves open above.
 

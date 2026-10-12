@@ -286,18 +286,19 @@ bool DockDragController::buttonStillDown() const
     return !m_letGoAt && dragButtonStillDown();
 }
 
-bool DockDragController::dockWindowAt(const QPoint &globalPos, const QWidget *except) const
+bool DockDragController::dockAreaAt(const QPoint &globalPos, const QWidget *except) const
 {
-    const auto isAt = [&](const QWidget *window) {
-        return window && window != except && window->isVisible() && !window->isMinimized()
-            && window->frameGeometry().contains(globalPos);
+    const auto isAt = [&](const QWidget *area) {
+        const QWidget *window = area ? area->window() : nullptr;
+        return window && window != except && area->isVisible() && !window->isMinimized()
+            && QRect(area->mapToGlobal(QPoint(0, 0)), area->size()).contains(globalPos);
     };
     for (const DockWorkspace *workspace : std::as_const(m_manager->workspaces)) {
-        if (isAt(workspace->window()))
+        if (isAt(workspace))
             return true;
     }
     for (const DockFloatingWindow *window : std::as_const(m_manager->floatingWindows)) {
-        if (!window->isGhost() && isAt(window))
+        if (!window->isGhost() && isAt(window->area()))
             return true;
     }
     return false;
@@ -550,10 +551,12 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     // it came from. How the drag ended has to be seen when it does, and by
     // asking the system: Qt hears of neither the button nor the Escape key.
     const bool endsUnseen = onMac();
-    // That wait is not there when somebody takes the drop. So the ghost
-    // does, wherever no window with a dock area is under the pointer: the
-    // drag returns at once, and no other application gets to see it.
-    const bool ghostTakesDrops = onMac();
+    // That wait is not there when somebody takes the drop. So what is moved
+    // along takes it itself, wherever no dock area is under the pointer: the
+    // drag returns at once, no other application gets to see it, and the
+    // pointer never says the drag could not be let go of there (Windows). A
+    // ghost does so where letting go of it there floats what it pictures.
+    const bool ghostTakesDrops = m_manager->floatOnOutsideDrop;
     QTimer follow;
     const auto keepAtPointer = [this, followed, hold, origin, endsUnseen, ghostTakesDrops,
                                 isGhost = !carriedWindow] {
@@ -584,11 +587,14 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
         // take the drop where nothing else of ours would. A window that is
         // itself moved only does over where it could be docked: anywhere
         // else it is a window being moved, which no other application is to
-        // take for something dragged over it.
-        if (!isGhost)
-            followed->setCarriedAlong(dockWindowAt(pointer, followed));
-        else if (ghostTakesDrops)
-            followed->setTakesDrops(!dockWindowAt(pointer, followed));
+        // take for something dragged over it, and which is put down there.
+        const bool overDockArea = dockAreaAt(pointer, followed);
+        if (!isGhost) {
+            followed->setCarriedAlong(overDockArea);
+            followed->setTakesDrops(!overDockArea);
+        } else {
+            followed->setTakesDrops(ghostTakesDrops && !overDockArea);
+        }
     };
     if (followed || endsUnseen) {
         follow.setTimerType(Qt::PreciseTimer);
@@ -621,6 +627,7 @@ void DockDragController::run(const QPixmap &pixmap, DockFloatingWindow *carriedW
     keepAtPointer(); // where it was let go of, to the pixel
     if (followed && carriedWindow) {
         carriedWindow->setCarriedAlong(false);
+        carriedWindow->setTakesDrops(false);
         if (!m_pendingDrop) {
             // Put down, it stays there; a cancelled drag takes it back.
             // Either way it is the window the user has been holding.

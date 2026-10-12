@@ -97,10 +97,11 @@ public:
     /// Whether the window a drag carries is moved from here, the window
     /// system not doing it (Windows, macOS).
     [[nodiscard]] bool movesCarriedWindows() const;
-    /// Whether a window with a dock area of this manager's, other than
-    /// `except`, is at `globalPos`: a window of a workspace or a floating
-    /// window. Whatever else may lie on top of it there is not looked at.
-    [[nodiscard]] bool dockWindowAt(const QPoint &globalPos, const QWidget *except) const;
+    /// Whether a dock area of this manager's, in a window other than
+    /// `except`, is at `globalPos`: a workspace, or the dock area of a
+    /// floating window. Not the rest of their windows (a title bar, a menu
+    /// bar), and whatever else may lie on top of it there is not looked at.
+    [[nodiscard]] bool dockAreaAt(const QPoint &globalPos, const QWidget *except) const;
     /// The floating window whose whole content the active session drags, if
     /// that is what it does (the only tab of a floating window, or its only
     /// tab group). Such a drag needs no ghost: the window is what moves.
