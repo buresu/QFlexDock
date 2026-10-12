@@ -34,6 +34,14 @@ int limitAlong(const QSize &size, Qt::Orientation o)
     return o == Qt::Horizontal ? size.width() : size.height();
 }
 
+using MayGo = std::function<bool(const LayoutNode &)>;
+
+// A tab group that a handle pushed against it may squeeze out of the layout.
+bool givesWay(const LayoutNode &node, const MayGo &mayGo)
+{
+    return mayGo && node.isTabs() && !node.iconified && mayGo(node);
+}
+
 } // namespace
 
 std::vector<int> SplitterCoordinator::linkedHandles(const SolvedLayout &layout, int handleIndex)
@@ -152,7 +160,7 @@ SplitterCoordinator::squeezed(const LayoutTree &tree, const SolvedLayout &layout
         // Moving by +d shrinks `after`, by -d `before`.
         const LayoutNode &shrinking = delta > 0 ? after : before;
         const LayoutNode &growing = delta > 0 ? before : after;
-        if (!shrinking.isTabs() || shrinking.iconified || !mayGo(shrinking))
+        if (!givesWay(shrinking, mayGo))
             continue;
         const Qt::Orientation o = handle.orientation;
         const int left = extentAlong(layout.rects.value(shrinking.id), o) - std::abs(delta);
@@ -177,18 +185,22 @@ struct Side
 };
 
 Side sideOf(const LayoutNode &split, const SolvedLayout &layout, int handle, bool before,
-            Qt::Orientation o, bool push)
+            Qt::Orientation o, bool push, const MayGo &mayGo)
 {
     Side side;
     const int count = int(split.children.size());
     const int first = before ? handle : handle + 1;
     const int last = push ? (before ? 0 : count - 1) : first;
+    // A group next to the handle that may be squeezed out is not pushed
+    // through: it goes instead, and what is behind it gives nothing.
+    const bool through = !givesWay(split.children[size_t(first)], mayGo);
     for (int i = first; before ? i >= last : i <= last; before ? --i : ++i) {
         const LayoutNode &child = split.children[size_t(i)];
         const int size = extentAlong(layout.rects.value(child.id), o);
         const SizeLimits limits = layout.limits.value(child.id);
         side.index.push_back(i);
-        side.shrink.push_back(std::max(0, size - limitAlong(limits.min, o)));
+        side.shrink.push_back(i == first || through ? std::max(0, size - limitAlong(limits.min, o))
+                                                    : 0);
         side.grow.push_back(std::max(0, limitAlong(limits.max, o) - size));
         side.canShrink += side.shrink.back();
         side.canGrow += side.grow.back();
@@ -211,7 +223,8 @@ void spread(std::vector<double> &sizes, const Side &side, int amount, bool grow)
 
 std::pair<int, int> SplitterCoordinator::deltaRange(const LayoutTree &tree,
                                                     const SolvedLayout &layout,
-                                                    const std::vector<int> &group, bool push)
+                                                    const std::vector<int> &group, bool push,
+                                                    const MayGo &mayGo)
 {
     int lowest = -UnboundedSize;
     int highest = UnboundedSize;
@@ -223,8 +236,8 @@ std::pair<int, int> SplitterCoordinator::deltaRange(const LayoutTree &tree,
         if (!split || handle.index + 1 >= int(split->children.size()))
             return {0, 0};
         const Qt::Orientation o = handle.orientation;
-        const Side before = sideOf(*split, layout, handle.index, true, o, push);
-        const Side after = sideOf(*split, layout, handle.index, false, o, push);
+        const Side before = sideOf(*split, layout, handle.index, true, o, push, mayGo);
+        const Side after = sideOf(*split, layout, handle.index, false, o, push, mayGo);
 
         // Moving by +d grows what is before the handle and shrinks what is after.
         lowest = int(std::max<qint64>({lowest, -before.canShrink, -after.canGrow}));
@@ -239,9 +252,10 @@ std::pair<int, int> SplitterCoordinator::deltaRange(const LayoutTree &tree,
 
 std::vector<SplitterCoordinator::WeightUpdate>
 SplitterCoordinator::moveHandles(const LayoutTree &tree, const SolvedLayout &layout,
-                                 const std::vector<int> &group, int delta, bool push)
+                                 const std::vector<int> &group, int delta, bool push,
+                                 const MayGo &mayGo)
 {
-    const auto [lowest, highest] = deltaRange(tree, layout, group, push);
+    const auto [lowest, highest] = deltaRange(tree, layout, group, push, mayGo);
     delta = std::clamp(delta, lowest, highest);
 
     std::vector<WeightUpdate> updates;
@@ -258,8 +272,9 @@ SplitterCoordinator::moveHandles(const LayoutTree &tree, const SolvedLayout &lay
         for (const auto &child : split->children)
             update.weights.push_back(extentAlong(layout.rects.value(child.id), handle.orientation));
         if (push) {
-            const Side before = sideOf(*split, layout, handle.index, true, handle.orientation, true);
-            const Side after = sideOf(*split, layout, handle.index, false, handle.orientation, true);
+            const Qt::Orientation o = handle.orientation;
+            const Side before = sideOf(*split, layout, handle.index, true, o, true, mayGo);
+            const Side after = sideOf(*split, layout, handle.index, false, o, true, mayGo);
             spread(update.weights, delta > 0 ? before : after, std::abs(delta), true);
             spread(update.weights, delta > 0 ? after : before, std::abs(delta), false);
         } else {

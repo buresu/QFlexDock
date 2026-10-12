@@ -27,8 +27,8 @@
 //  - A document becomes a tab by a row of tabs or a title only, and a window
 //    when it is let go of anywhere else: the middle of the document groups
 //    takes no drop (setCenterDropEnabled() for their workspace).
-//  - A split handle pushes on through what cannot get smaller
-//    (setSplitterPushEnabled()): dragging the boundary of the column at the
+//  - A split handle pushes on through what cannot get smaller (the default,
+//    setSplitterPushEnabled()): dragging the boundary of the column at the
 //    right moves the strip of icons beside it along, at the documents' cost.
 //  - A drop filter keeps the rest in shape: columns only at the sides, and
 //    nothing above or below the documents or the tools.
@@ -240,7 +240,6 @@ void Workbench::setUpDocking()
 
     m_manager.setLinkedSplittersEnabled(false);
     m_manager.setCornerResizeEnabled(false);
-    m_manager.setSplitterPushEnabled(true);
     m_manager.setFloatsOnOutsideDrop(true);
     m_manager.setTabDragPreviewEnabled(true);
     m_manager.setFloatingWindowType(DockManager::FloatingWindowType::Tool);

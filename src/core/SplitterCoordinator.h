@@ -89,19 +89,20 @@ public:
     /// move without breaking any minimum or maximum size. Always contains 0.
     /// With `push`, a handle goes on where the child next to it can give no
     /// more: the children behind that one give in turn, nearest first, and
-    /// likewise take what the nearest cannot.
-    [[nodiscard]] static std::pair<int, int> deltaRange(const LayoutTree &tree,
-                                                        const SolvedLayout &layout,
-                                                        const std::vector<int> &group,
-                                                        bool push = false);
+    /// likewise take what the nearest cannot. A tab group next to the handle
+    /// that `mayGo` lets be squeezed out is not pushed through: it gives way
+    /// instead (squeezed()), and what is behind it keeps its size.
+    [[nodiscard]] static std::pair<int, int>
+    deltaRange(const LayoutTree &tree, const SolvedLayout &layout, const std::vector<int> &group,
+               bool push = false, const std::function<bool(const LayoutNode &)> &mayGo = {});
 
     /// Weights that move every handle in `group` by `delta` pixels relative to
     /// `layout` (the layout at the start of the drag). `delta` is clamped to
     /// deltaRange().
-    [[nodiscard]] static std::vector<WeightUpdate> moveHandles(const LayoutTree &tree,
-                                                               const SolvedLayout &layout,
-                                                               const std::vector<int> &group,
-                                                               int delta, bool push = false);
+    [[nodiscard]] static std::vector<WeightUpdate>
+    moveHandles(const LayoutTree &tree, const SolvedLayout &layout, const std::vector<int> &group,
+                int delta, bool push = false,
+                const std::function<bool(const LayoutNode &)> &mayGo = {});
 };
 
 } // namespace QFlexDock

@@ -229,9 +229,10 @@ nobody took returns late there.) What happens after a drag is all in
   it is, and `Unified` puts the title of `Custom` into it where the platform allows (Windows, macOS).
 - **The window-carrying drag relies on an undocumented Qt behaviour.** It is the one exception to "public
   Qt API only", accepted because everything falls back cleanly when it is absent.
-- **A handle does not push further neighbours** when the one next to it reaches its minimum size, unless
-  asked to (`DockManager::setSplitterPushEnabled()`): `SplitterCoordinator` then hands what the nearest
-  child cannot give or take to the ones behind it, in order.
+- **A handle pushes further neighbours** when the one next to it reaches its minimum size
+  (`DockManager::setSplitterPushEnabled()`, on by default): `SplitterCoordinator` hands what the nearest
+  child cannot give or take to the ones behind it, in order, within the same split. A collapsible tab group
+  next to the handle is the exception: it is squeezed out instead, and nothing behind it shrinks.
 - **A node that leaves a split gives its share to one neighbour** (the one before it; after it for the
   first), instead of spreading it over all of them. Where a size limit held the node at another size
   than its share, the share is first made what it showed as (`DockManagerPrivate::settleShare()`): the

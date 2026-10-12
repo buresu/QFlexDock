@@ -384,6 +384,111 @@ private Q_SLOTS:
         QVERIFY(!f.manager.canUndo());
     }
 
+    // --- pushing -------------------------------------------------------------
+    // Three in a row: a boundary dragged towards the other two takes the one
+    // next to it down to its minimum, and then the one behind that.
+    void pushingTakesEachPanelDownToItsMinimum_data()
+    {
+        QTest::addColumn<Qt::Orientation>("orientation");
+        QTest::newRow("columns") << Qt::Horizontal;
+        QTest::newRow("rows") << Qt::Vertical;
+    }
+
+    void pushingTakesEachPanelDownToItsMinimum()
+    {
+        QFETCH(Qt::Orientation, orientation);
+        const bool columns = orientation == Qt::Horizontal;
+        TwoWindows f;
+        f.show();
+        const DockArea next = columns ? DockArea::Right : DockArea::Bottom;
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), next, -1, 0.6));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), next, -1, 0.5));
+        QCOMPARE(describe(f.a), p(columns ? "H(a, b, c)" : "V(a, b, c)"));
+        f.manager.clearUndoHistory();
+        DockAreaWidget *area = areaOf(f.a);
+        QVERIFY(f.manager.isSplitterPushEnabled());
+
+        const auto extent = [&](const char *panel) {
+            const QRect r = area->groupOfPanel(p(panel))->geometry();
+            return columns ? r.width() : r.height();
+        };
+        const auto minimum = [&](const char *panel) {
+            const QSize min = area->groupOfPanel(p(panel))->sizeLimits().min;
+            return columns ? min.width() : min.height();
+        };
+        const auto along = [&](int distance) {
+            return columns ? QPoint(distance, 0) : QPoint(0, distance);
+        };
+        const QList<int> before{extent("a"), extent("b"), extent("c")};
+        const int total = before[0] + before[1] + before[2];
+        for (const char *panel : {"a", "b", "c"})
+            QVERIFY2(extent(panel) > minimum(panel) + 20, panel);
+
+        // From the first boundary towards b and c: both get to their minimum.
+        drag(handleAfter(area, "a", orientation), along(2000));
+        QCOMPARE(extent("b"), minimum("b"));
+        QCOMPARE(extent("c"), minimum("c"));
+        QCOMPARE(extent("a") + extent("b") + extent("c"), total);
+        QVERIFY(area->tree().validate());
+        grab(&f.windowA, p(columns ? "splitter-pushed-columns" : "splitter-pushed-rows"));
+        // One undo step brings all three back.
+        QVERIFY(f.manager.undo());
+        QCOMPARE((QList<int>{extent("a"), extent("b"), extent("c")}), before);
+
+        // From the second boundary towards a and b.
+        drag(handleAfter(area, "b", orientation), along(-2000));
+        QCOMPARE(extent("a"), minimum("a"));
+        QCOMPARE(extent("b"), minimum("b"));
+        QCOMPARE(extent("a") + extent("b") + extent("c"), total);
+        QVERIFY(f.manager.undo());
+
+        // Turned off, b stops at its minimum and c keeps its size.
+        QSignalSpy toggled(&f.manager, &DockManager::splitterPushEnabledChanged);
+        f.manager.setSplitterPushEnabled(false);
+        QCOMPARE(toggled.size(), 1);
+        drag(handleAfter(area, "a", orientation), along(2000));
+        QCOMPARE(extent("b"), minimum("b"));
+        QCOMPARE(extent("c"), before[2]);
+    }
+
+    // A collapsible group next to the boundary is not pushed through: it gives
+    // way (see below), and what is behind it keeps its size.
+    void pushingStopsAtACollapsibleNeighbour()
+    {
+        TwoWindows f;
+        f.widgets[p("b")]->setMinimumWidth(200);
+        f.show();
+        QVERIFY(f.a->addPanel(p("a")));
+        QVERIFY(f.manager.movePanel(p("b"), p("a"), DockArea::Right, -1, 0.6));
+        QVERIFY(f.manager.movePanel(p("c"), p("b"), DockArea::Right, -1, 0.3));
+        QCOMPARE(describe(f.a), p("H(a, b, c)"));
+        f.manager.panel(p("b"))->setCollapsible(true);
+        DockAreaWidget *area = areaOf(f.a);
+        const int a = widthOf(area, "a");
+        const int width = widthOf(area, "b");
+        const int minimum = area->groupOfPanel(p("b"))->sizeLimits().min.width();
+        QVERIFY(width > minimum + 20);
+
+        DockSplitHandle *handle = handleAfter(area, "b", Qt::Horizontal);
+        QVERIFY(handle);
+        QTest::mousePress(handle, Qt::LeftButton, {}, handle->rect().center());
+        const QPoint origin = handle->mapToGlobal(handle->rect().center());
+        // Past its minimum, not yet far enough to go: it holds, and so does a.
+        QPoint to = origin - QPoint(width - minimum + minimum / 2 - 10, 0);
+        QTest::mouseMove(handle, handle->mapFromGlobal(to));
+        QCOMPARE(widthOf(area, "b"), minimum);
+        QCOMPARE(widthOf(area, "a"), a);
+        // Far enough: it goes, and a keeps its size.
+        to = origin - QPoint(width + 40, 0);
+        QTest::mouseMove(handle, handle->mapFromGlobal(to));
+        QTest::mouseRelease(handle, Qt::LeftButton, {}, handle->mapFromGlobal(to));
+        QVERIFY(!f.manager.panel(p("b"))->isOpen());
+        QCOMPARE(describe(f.a), p("H(a, c)"));
+        // (Give or take its share of the boundary that went with b.)
+        QVERIFY(qAbs(widthOf(area, "a") - a) <= area->handleWidth());
+    }
+
     // --- squeezing a group out -----------------------------------------------
     // A side area that the handle is pushed far enough against gives way,
     // comes back if the pointer returns, and is closed when the button is

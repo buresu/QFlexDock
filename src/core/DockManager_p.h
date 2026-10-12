@@ -328,7 +328,7 @@ public:
     std::shared_ptr<DockOverlayPainter> overlayPainter;
     bool linkedSplitters = true;
     bool cornerResize = true;
-    bool splitterPush = false;
+    bool splitterPush = true;
     bool centerDrop = true;
     bool tabDragPreview = false;
     DockTabReorder tabReorder = DockTabReorder::Instant;

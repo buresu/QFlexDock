@@ -512,14 +512,15 @@ private Q_SLOTS:
         }
         QVERIFY(handle >= 0);
 
-        // As a rule it does not go left: the strip is as narrow as it gets.
-        QVERIFY(!f.manager.isSplitterPushEnabled());
+        // Not pushing, it does not go left: the strip is as narrow as it gets.
+        QVERIFY(f.manager.isSplitterPushEnabled());
+        f.manager.setSplitterPushEnabled(false);
         area->beginHandleDrag(handle, false);
         area->moveHandleDrag(-80);
         area->endHandleDrag(false);
         QCOMPARE(area->groupOfPanel(p("c"))->geometry(), c);
 
-        // Pushing, the strip goes with it, and a gives the room.
+        // Pushing (the default), the strip goes with it, and a gives the room.
         f.manager.setSplitterPushEnabled(true);
         QVERIFY(f.manager.isSplitterPushEnabled());
         area->beginHandleDrag(handle, false);

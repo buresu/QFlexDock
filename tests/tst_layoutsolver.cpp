@@ -521,6 +521,59 @@ private Q_SLOTS:
         QCOMPARE(rectOf(plain, LayoutSolver::solve(plain, bounds, 4, limitsBy(table)), "a").width(), 500);
     }
 
+    void aPushingHandleTakesEachInTurnDownToItsMinimum()
+    {
+        // H(a, b, c), 300 wide each, at least 100.
+        LayoutTree tree;
+        (void)tree.insertPanel(p("a"), {}, DockArea::Center);
+        (void)tree.insertPanel(p("b"), groupOf(tree, "a"), DockArea::Right);
+        (void)tree.insertPanel(p("c"), groupOf(tree, "b"), DockArea::Right);
+        QHash<QString, SizeLimits> table;
+        for (const char *panel : {"a", "b", "c"})
+            table[p(panel)] = {QSize(100, 0), QSize(UnboundedSize, UnboundedSize)};
+        const QRect bounds(0, 0, 908, 600);
+        QVERIFY(tree.setWeights(tree.root()->id, {1, 1, 1}));
+        const SolvedLayout start = LayoutSolver::solve(tree, bounds, 4, limitsBy(table));
+        QCOMPARE(rectOf(tree, start, "b").width(), 300);
+        const int first = handleIndex(tree, start, "a", Qt::Horizontal);
+        const int second = handleIndex(tree, start, "b", Qt::Horizontal);
+        const NodeId b = groupOf(tree, "b");
+        const auto bMayGo = [b](const LayoutNode &node) { return node.id == b; };
+
+        const auto widths = [&](int handle, int delta, const auto &mayGo) {
+            LayoutTree moved = tree;
+            applyUpdates(moved,
+                         SplitterCoordinator::moveHandles(tree, start, {handle}, delta, true, mayGo));
+            const SolvedLayout layout = LayoutSolver::solve(moved, bounds, 4, limitsBy(table));
+            return QList<int>{rectOf(moved, layout, "a").width(), rectOf(moved, layout, "b").width(),
+                              rectOf(moved, layout, "c").width()};
+        };
+        const std::function<bool(const LayoutNode &)> none;
+
+        // The first boundary towards the other two: b gives first, then c.
+        QCOMPARE(SplitterCoordinator::deltaRange(tree, start, {first}, true), std::make_pair(-200, 400));
+        QCOMPARE(widths(first, 150, none), QList<int>({450, 150, 300}));
+        QCOMPARE(widths(first, 300, none), QList<int>({600, 100, 200}));
+        QCOMPARE(widths(first, 5000, none), QList<int>({700, 100, 100}));
+        // The second one the other way: b, then a.
+        QCOMPARE(widths(second, -5000, none), QList<int>({100, 100, 700}));
+
+        // A group next to the handle that may be squeezed out is not pushed
+        // through: it stops at its minimum, and goes when pushed far enough.
+        QCOMPARE(SplitterCoordinator::deltaRange(tree, start, {second}, true, bMayGo),
+                 std::make_pair(-200, 200));
+        QCOMPARE(widths(second, -5000, bMayGo), QList<int>({300, 100, 500}));
+        QCOMPARE(SplitterCoordinator::squeezed(tree, start, {second}, -251, bMayGo),
+                 std::vector<SplitterCoordinator::Squeezed>({{b, groupOf(tree, "c")}}));
+        QCOMPARE(widths(first, 5000, bMayGo), QList<int>({500, 100, 300}));
+        // Taking room is not held back by it.
+        QCOMPARE(widths(first, -5000, bMayGo), QList<int>({100, 500, 300}));
+        // Further away it is pushed like any other.
+        const NodeId c = groupOf(tree, "c");
+        const auto cMayGo = [c](const LayoutNode &node) { return node.id == c; };
+        QCOMPARE(widths(first, 5000, cMayGo), QList<int>({700, 100, 100}));
+    }
+
     void deltaRangeIsTheIntersectionOfAllLimits()
     {
         LayoutTree tree = makeGrid();

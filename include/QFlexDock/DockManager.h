@@ -330,9 +330,12 @@ public:
     [[nodiscard]] bool isSplitterPushEnabled() const;
     /// Whether a split handle that is dragged against a neighbour that can
     /// get no smaller goes on, and takes the room from what lies behind that
-    /// neighbour, which is moved along as it is (default false: the handle
-    /// stops there). A column that is a strip of buttons, or a palette of
-    /// fixed width, is then no obstacle between two areas that can change.
+    /// neighbour, which is moved along as it is (default true). With three or
+    /// more panels in a row, each one on that side gets down to its minimum
+    /// in turn, nearest first; a strip of buttons or a palette of fixed width
+    /// is no obstacle. A collapsible neighbour is not pushed through: it gives
+    /// way (DockPanel::setCollapsible()). Turned off, the handle stops where
+    /// the panel next to it is at its minimum.
     void setSplitterPushEnabled(bool enabled);
     [[nodiscard]] bool isCenterDropEnabled() const;
     /// Whether the middle of a tab group takes a dragged panel (default

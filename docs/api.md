@@ -188,10 +188,13 @@ theme.overlay.centerSize = QSize(140, 90);     // or: theme.overlay.centerFracti
 manager.setTheme(theme);
 ```
 
-With `setSplitterPushEnabled(true)` a boundary that is dragged against a neighbour that can get no smaller
-goes on: the neighbour is moved along as it is, and what lies behind it gives the room (nearest first;
-likewise what the nearest cannot take goes to the next). A strip of buttons or a palette of fixed width
-between two areas is then no obstacle to resizing them. By default a boundary stops at such a neighbour.
+A boundary that is dragged against a neighbour that can get no smaller goes on: the neighbour is moved
+along as it is, and what lies behind it gives the room (nearest first; likewise what the nearest cannot
+take goes to the next). With three panels in a row, dragging the first boundary towards the other two
+takes the second down to its minimum and then the third. A strip of buttons or a palette of fixed width
+between two areas is no obstacle to resizing them. A collapsible neighbour is not pushed through: it gives
+way, as below. `setSplitterPushEnabled(false)` makes a boundary stop where the panel next to it is at its
+minimum.
 
 Linked splitters are boundaries in one line: they are dragged as one, and they stay in one line when the
 minimum or maximum size of a panel holds one of them back (the others go where it can go). Turned off,

@@ -1702,16 +1702,9 @@ void DockAreaWidget::movePartDrag(const QPoint &delta)
     // cannot accumulate while the mouse moves. The two runs of a corner drag
     // change different splits (those of the columns and those of the rows),
     // and neither axis limits the other, so each is worked out on its own.
-    const bool push = m_manager->splitterPush;
-    auto updates =
-        SplitterCoordinator::moveHandles(m_tree, m_dragStart, m_dragGroup, delta.x(), push);
-    auto rows =
-        SplitterCoordinator::moveHandles(m_tree, m_dragStart, m_dragCrossGroup, delta.y(), push);
-    updates.insert(updates.end(), std::make_move_iterator(rows.begin()),
-                   std::make_move_iterator(rows.end()));
-
     // A group pushed well past its minimum size gives way, if its panels
-    // say it may. It is back as soon as the pointer returns.
+    // say it may (rather than push what is behind it). It is back as soon as
+    // the pointer returns.
     const DockManagerPrivate *manager = m_manager;
     const auto mayGo = [manager](const LayoutNode &group) {
         return std::all_of(group.panels.begin(), group.panels.end(), [manager](const PanelId &id) {
@@ -1719,6 +1712,14 @@ void DockAreaWidget::movePartDrag(const QPoint &delta)
             return panel && panel->isCollapsible();
         });
     };
+    const bool push = m_manager->splitterPush;
+    auto updates = SplitterCoordinator::moveHandles(m_tree, m_dragStart, m_dragGroup, delta.x(),
+                                                    push, mayGo);
+    auto rows = SplitterCoordinator::moveHandles(m_tree, m_dragStart, m_dragCrossGroup, delta.y(),
+                                                 push, mayGo);
+    updates.insert(updates.end(), std::make_move_iterator(rows.begin()),
+                   std::make_move_iterator(rows.end()));
+
     m_squeezed = SplitterCoordinator::squeezed(m_tree, m_dragStart, m_dragGroup, delta.x(), mayGo);
     for (const auto &gone :
          SplitterCoordinator::squeezed(m_tree, m_dragStart, m_dragCrossGroup, delta.y(), mayGo)) {
