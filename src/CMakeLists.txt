@@ -58,7 +58,11 @@ target_sources(QFlexDock
 target_include_directories(QFlexDock PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_link_libraries(QFlexDock PUBLIC Qt6::Core Qt6::Gui Qt6::Widgets)
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
-    # The title bar of a window (DockFloatingWindow, Unified frame).
+    # The title bar of a window (DockFloatingWindow, Unified frame). Without
+    # OBJCXX enabled, CMake compiles the .mm with the C++ compiler, which reads
+    # it as Objective-C++ by its extension. Enabling OBJCXX here would not do:
+    # in a project that adds this one as a subdirectory, it turns every .mm of
+    # the project into OBJCXX, also where no rule to compile it is defined.
     target_sources(QFlexDock PRIVATE
         widgets/DockFloatingWindow_mac.h
         widgets/DockFloatingWindow_mac.mm)
