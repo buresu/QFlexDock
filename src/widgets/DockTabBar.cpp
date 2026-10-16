@@ -86,9 +86,29 @@ void DockTabBar::setHugsTabs(bool hugs)
     updateGeometry();
 }
 
+namespace {
+// The room after the title of a tab with unsaved changes: a space, and an en
+// space the dot is drawn in. Blank, so the style lays it out with the title
+// and the dot follows the title wherever the style puts it.
+QString dirtyMark()
+{
+    return QStringLiteral(" \u2002");
+}
+} // namespace
+
+QFont DockTabBar::tabFont(int index) const
+{
+    QFont tabFont = font();
+    tabFont.setItalic(tabFont.italic() || m_italic.contains(panelAt(index)));
+    return tabFont;
+}
+
 QSize DockTabBar::tabSizeHint(int index) const
 {
     QSize size = QTabBar::tabSizeHint(index);
+    // The mark is drawn, not part of the text QTabBar measures.
+    if (m_dirty.contains(panelAt(index)))
+        size.rwidth() += QFontMetrics(tabFont(index)).horizontalAdvance(dirtyMark());
     if (m_measuringMinimum)
         return size;
     if (m_tabWidth > 0)
@@ -188,6 +208,61 @@ void DockTabBar::setItalicPanels(const QSet<PanelId> &panels)
     if (m_italic == panels)
         return;
     m_italic = panels;
+    update();
+}
+
+void DockTabBar::setDirtyPanels(const QSet<PanelId> &panels)
+{
+    if (m_dirty == panels)
+        return;
+    m_dirty = panels;
+    setElideMode(elideMode()); // has the tabs measured again
+    update();
+}
+
+// QTabBar elides the title to the tab; a mark appended to the title would be
+// the first thing to go. So the title is elided to what the mark leaves.
+//
+// The mark is a dot drawn by hand rather than a character: a glyph is as tall
+// and as bright as the title, and reads as part of it.
+QString DockTabBar::displayedText(int index) const
+{
+    QStyleOptionTab option;
+    initStyleOption(&option, index);
+    if (!m_dirty.contains(panelAt(index)))
+        return option.text;
+    const QFontMetrics metrics(tabFont(index));
+    if (elideMode() == Qt::ElideNone)
+        return tabText(index) + dirtyMark();
+    const QRect textRect = style()->subElementRect(QStyle::SE_TabBarTabText, &option, this);
+    const int room = qMax(0, textRect.width() - metrics.horizontalAdvance(dirtyMark()));
+    return metrics.elidedText(tabText(index), elideMode(), room, Qt::TextShowMnemonic)
+        + dirtyMark();
+}
+
+QRect DockTabBar::dirtyMarkRect(int index) const
+{
+    if (!m_dirty.contains(panelAt(index)))
+        return {};
+    QStyleOptionTab option;
+    initStyleOption(&option, index);
+    option.text = displayedText(index);
+    const QFontMetrics metrics(tabFont(index));
+    const QRect textRect = style()->subElementRect(QStyle::SE_TabBarTabText, &option, this);
+    const QRect drawn = style()->itemTextRect(metrics, textRect, Qt::AlignCenter | Qt::TextShowMnemonic,
+                                              true, option.text);
+    // In the en space, as wide as the x of the font.
+    const int slot = metrics.horizontalAdvance(QChar(0x2002));
+    const int size = qMax(4, qRound(metrics.xHeight() * 0.8));
+    const QPoint center(drawn.right() + 1 - slot / 2, textRect.center().y() + 1);
+    return QRect(center.x() - size / 2, center.y() - size / 2, size, size);
+}
+
+void DockTabBar::setDirtyMarkColor(const QColor &color)
+{
+    if (m_dirtyMarkColor == color)
+        return;
+    m_dirtyMarkColor = color;
     update();
 }
 
@@ -452,13 +527,25 @@ void DockTabBar::paintEvent(QPaintEvent *)
             return;
         QStyleOptionTab option;
         initStyleOption(&option, index);
+        option.text = displayedText(index);
         option.rect.translate(slideOffset(index), 0);
         if (!option.rect.intersects(rect()))
             return;
-        QFont tabFont = font();
-        tabFont.setItalic(tabFont.italic() || m_italic.contains(panelAt(index)));
-        painter.setFont(tabFont);
+        painter.setFont(tabFont(index));
         painter.drawControl(QStyle::CE_TabBarTab, option);
+        if (const QRect mark = dirtyMarkRect(index); !mark.isEmpty()) {
+            QColor color = m_dirtyMarkColor;
+            if (!color.isValid()) {
+                color = option.palette.color(QPalette::WindowText);
+                color.setAlphaF(color.alphaF() * 0.6f);
+            }
+            painter.save();
+            painter.setRenderHint(QPainter::Antialiasing);
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(color);
+            painter.drawEllipse(QRectF(mark).translated(slideOffset(index), 0));
+            painter.restore();
+        }
     };
 
     const int current = currentIndex();

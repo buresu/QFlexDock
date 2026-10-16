@@ -34,7 +34,7 @@ There are no sub-controls or pseudo-states beyond these.
 | `#dockMenuButton`, `#dockMaximizeButton`, `#dockFloatButton`, `#dockAutoHideButton`, `QFlexDock--DockTabGroup #dockCloseButton` | Title row buttons | As `QToolButton` |
 | `#dockTitleActions`, `#dockTitleStartActions`, `#dockTabActions` | What holds a panel's own actions (`DockPanel::setTitleActions()`): at the end of the header, at its start, behind the tabs | `background`, … |
 | `#dockActionButton`, `#dockActionSeparator` | Their buttons, and the lines between them | As `QToolButton` / `background`, `margin`, `min-width`; a button has the object name of its action as property `action` |
-| `QFlexDock--DockTabBar` | The tab bar (`QTabBar`) | `qproperty-activeIndicatorColor`; property `activeGroup` |
+| `QFlexDock--DockTabBar` | The tab bar (`QTabBar`) | `qproperty-activeIndicatorColor`, `qproperty-dirtyMarkColor`; property `activeGroup` |
 | `QFlexDock--DockTabBar::tab`, `::tab:selected`, … | Tabs, above or below the content | The same as `QTabBar::tab` |
 | `QFlexDock--DockSplitHandle` | Split handles | `background`, `border`; properties `orientation` (`1`: vertical bar, `2`: horizontal bar), `hovered`, `pressed` |
 | `QFlexDock--DockEdgeHandle` | The edge closed collapsible panels are pulled out of | `background`, drawn only while it is hovered or held; properties `edge` (`left`, `right`, `top`, `bottom`), `hovered`, `pressed` |
@@ -87,6 +87,8 @@ Notes:
   sheet is removed.
 - The 2px mark on the current tab of the active group takes its color from `qproperty-activeIndicatorColor`;
   a fully transparent color removes it.
+- The dot after the title of a panel with unsaved changes (`DockPanel::setDirty()`) takes its color from
+  `qproperty-dirtyMarkColor`; without it, the tab's text color, faded.
 
 ### A pane with its tab
 

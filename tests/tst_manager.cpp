@@ -1581,9 +1581,20 @@ private Q_SLOTS:
         a->setToolTip(p("tip"));
         QCOMPARE(bar->tabToolTip(0), p("tip"));
         a->setDirty(true);
-        QVERIFY(bar->tabText(0).endsWith(QChar(0x25CF)));
-        a->setDirty(false);
         QCOMPARE(bar->tabText(0), p("Scene && View"));
+        QVERIFY(bar->displayedText(0).endsWith(QChar(0x2002)));
+        QVERIFY(bar->tabRect(0).contains(bar->dirtyMarkRect(0)));
+        // A tab too narrow for its title keeps the mark and elides the title.
+        const int tabWidth = bar->tabWidth();
+        const DockTabOverflow overflow = bar->tabOverflow();
+        bar->setTabSizing(bar->tabRect(0).width() * 3 / 4, DockTabOverflow::Shrink);
+        QVERIFY(bar->displayedText(0).endsWith(QChar(0x2002)));
+        QVERIFY(bar->displayedText(0).contains(QChar(0x2026)));
+        QVERIFY(bar->tabRect(0).contains(bar->dirtyMarkRect(0)));
+        bar->setTabSizing(tabWidth, overflow);
+        a->setDirty(false);
+        QCOMPARE(bar->displayedText(0), p("Scene && View"));
+        QVERIFY(bar->dirtyMarkRect(0).isEmpty());
 
         QVERIFY(bar->tabButton(0, side));
         a->setPinnedTab(true);

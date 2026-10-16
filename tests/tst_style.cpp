@@ -257,7 +257,7 @@ private Q_SLOTS:
             #dockMenuButton { background: #abcdef; border: none; }
             #dockMaximizeButton { background: #fedcba; border: none; }
             QFlexDock--DockSplitHandle[hovered="true"] { background: #ffff00; }
-            QFlexDock--DockTabBar { qproperty-activeIndicatorColor: #ff00ff; }
+            QFlexDock--DockTabBar { qproperty-activeIndicatorColor: #ff00ff; qproperty-dirtyMarkColor: #00ff00; }
             QFlexDock--DockTabBar[activeGroup="true"] { qproperty-toolTip: "active group"; }
             QFlexDock--DockAutoHideBar[edge="right"] { background: #ff0000; }
             #dockPinButton { background: #00ff00; border: none; }
@@ -317,6 +317,10 @@ private Q_SLOTS:
         QCOMPARE(pixel(bar, QPoint(selected.left() + 3, selected.bottom() - 3)), QColor(0x70, 0x70, 0x70));
         QCOMPARE(pixel(bar, QPoint(other.left() + 3, other.bottom() - 3)), QColor(0x50, 0x50, 0x50));
         QCOMPARE(pixel(bar, QPoint(selected.center().x(), selected.top())), QColor(0xff, 0, 0xff));
+        QCOMPARE(bar->dirtyMarkColor(), QColor(0, 0xff, 0));
+        f.manager.panel(p("a"))->setDirty(true);
+        QTRY_COMPARE(pixel(bar, bar->dirtyMarkRect(bar->currentIndex()).center()), QColor(0, 0xff, 0));
+        f.manager.panel(p("a"))->setDirty(false);
         QCOMPARE(pixel(active->titleBar(), QPoint(bar->tabRect(bar->count() - 1).right() + 30, 4)),
                  QColor(0x30, 0x30, 0x30));
 

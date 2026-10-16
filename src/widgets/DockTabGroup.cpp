@@ -881,8 +881,6 @@ void DockTabGroup::updateTab(int index)
 
     QString text = panel->title();
     text.replace(QLatin1Char('&'), QLatin1String("&&")); // no mnemonics in titles
-    if (panel->isDirty())
-        text += QStringLiteral(" ●");
     m_tabBar->setTabText(index, text);
     m_tabBar->setTabIcon(index, m_manager->theme.tabIcons ? panel->icon() : QIcon());
     m_tabBar->setTabToolTip(index, panel->toolTip());
@@ -915,15 +913,19 @@ void DockTabGroup::updateTab(int index)
     }
 
     QSet<PanelId> italic;
+    QSet<PanelId> dirty;
     QSet<PanelId> movable;
     for (const PanelId &id : std::as_const(m_panels)) {
         const DockPanel *p = m_manager->panels.value(id);
         if (p && p->isPreviewTab())
             italic.insert(id);
+        if (p && p->isDirty())
+            dirty.insert(id);
         if (p && p->features().testFlag(DockFeature::Movable))
             movable.insert(id);
     }
     m_tabBar->setItalicPanels(italic);
+    m_tabBar->setDirtyPanels(dirty);
     m_tabBar->setMovablePanels(movable);
 }
 

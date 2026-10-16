@@ -312,7 +312,8 @@ macOS style), and where `DockTheme::floatingButtonSide` (`DockButtonSide::Style`
 Title, icon, tool tip, policy, and state (`isOpen()`, `isActive()`, `isCurrent()`, `isFloating()`,
 `isAutoHidden()`, `workspace()`), all as properties that QML can bind to. `isCurrent()` is true for the tab
 in front of its group, one in every group; `isActive()` for the one panel the user works in. `setDirty()`, `setPinnedTab()` and `setPreviewTab()`
-only change how the tab is drawn; the application supplies the state. `setTabCloseButton(false)` leaves
+only change how the tab is drawn; the application supplies the state. The dot `setDirty()` puts after the
+title stays when the title is elided. `setTabCloseButton(false)` leaves
 the tab of a panel that may be closed without a button for it: it is closed from its menu, with the
 middle button, or with the window it floats in. (`DockTheme::tabCloseButtons` does so for every tab.)
 

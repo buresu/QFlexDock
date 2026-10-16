@@ -35,6 +35,9 @@ class QFLEXDOCK_EXPORT DockTabBar : public QTabBar
     /// Colour of that mark. Invalid uses the palette's Highlight; a fully
     /// transparent colour turns the mark off.
     Q_PROPERTY(QColor activeIndicatorColor READ activeIndicatorColor WRITE setActiveIndicatorColor)
+    /// Colour of the mark of unsaved changes (setDirtyPanels()). Invalid uses
+    /// the palette's text, faded.
+    Q_PROPERTY(QColor dirtyMarkColor READ dirtyMarkColor WRITE setDirtyMarkColor)
 
 public:
     explicit DockTabBar(QWidget *parent = nullptr);
@@ -50,6 +53,17 @@ public:
 
     /// Panels whose title is drawn in italics (preview tabs).
     void setItalicPanels(const QSet<PanelId> &panels);
+    /// Panels with unsaved changes: a small dot follows their title, and
+    /// stays when the title is elided.
+    void setDirtyPanels(const QSet<PanelId> &panels);
+    /// The title as the tab at `index` draws it: elided to its room, followed
+    /// by the room the dot is drawn in.
+    [[nodiscard]] QString displayedText(int index) const;
+    /// Where the dot of the tab at `index` is drawn, in the tab's place
+    /// (tabRect()). Empty without one.
+    [[nodiscard]] QRect dirtyMarkRect(int index) const;
+    [[nodiscard]] QColor dirtyMarkColor() const { return m_dirtyMarkColor; }
+    void setDirtyMarkColor(const QColor &color);
     /// Panels whose tab can be moved among the others by dragging it along
     /// the bar. Any other tab is dragged as it would be off the bar.
     void setMovablePanels(const QSet<PanelId> &panels);
@@ -117,6 +131,8 @@ public:
 
 protected:
     [[nodiscard]] QSize tabSizeHint(int index) const override;
+    /// The font the tab at `index` is drawn in.
+    [[nodiscard]] QFont tabFont(int index) const;
     [[nodiscard]] QSize minimumTabSizeHint(int index) const override;
     void tabLayoutChange() override;
     void paintEvent(QPaintEvent *event) override;
@@ -140,6 +156,8 @@ private:
     [[nodiscard]] int slideOffset(int index) const;
 
     QSet<PanelId> m_italic;
+    QSet<PanelId> m_dirty;
+    QColor m_dirtyMarkColor;
     QSet<PanelId> m_movable;
     /// The panel whose tab is being moved along the bar.
     PanelId m_moving;
